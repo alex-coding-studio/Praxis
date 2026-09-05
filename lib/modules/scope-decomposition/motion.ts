@@ -2,7 +2,7 @@ import {
   defineAgentGraphMotionRegistry,
   motionProfile,
 } from '../../graph/agent/motion.ts';
-import type { TaskDecompositionHarnessResult } from './harness.ts';
+import type { ScopeDecompositionResult } from './contract.ts';
 
 export const taskDecompositionMotionRegistry = defineAgentGraphMotionRegistry({
   module: 'task-decomposition',
@@ -41,7 +41,7 @@ export function taskDecompositionMotionProfile(value: unknown) {
 
 export function validateTaskDecompositionMotionResult(
   motion: TaskDecompositionMotion,
-  result: TaskDecompositionHarnessResult,
+  result: ScopeDecompositionResult,
   outputCount = result.outcome === 'proposal' ? result.candidates.length : 0,
 ) {
   if (result.outcome !== 'proposal') return;

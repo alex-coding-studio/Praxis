@@ -2,7 +2,7 @@ import {
   defineAgentGraphIntentionRegistry,
   intentionProfile,
 } from '../../graph/agent/intention.ts';
-import type { TaskDecompositionHarnessResult } from './harness.ts';
+import type { ScopeDecompositionResult } from './contract.ts';
 
 export const taskDecompositionIntentionRegistry =
   defineAgentGraphIntentionRegistry({
@@ -53,7 +53,7 @@ export function taskDecompositionIntentionProfile(value: unknown) {
 
 export function validateTaskDecompositionIntentionResult(
   intention: TaskDecompositionIntention,
-  result: TaskDecompositionHarnessResult,
+  result: ScopeDecompositionResult,
 ) {
   if (result.outcome !== 'proposal' || intention === 'understanding') return;
   for (const candidate of result.candidates) {

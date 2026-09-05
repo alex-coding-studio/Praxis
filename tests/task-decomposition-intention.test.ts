@@ -10,6 +10,7 @@ import {
 } from '../lib/modules/scope-decomposition/intention.ts';
 import { buildTaskDecompositionPrompt } from '../lib/modules/scope-decomposition/prompt.ts';
 import type { TaskDecompositionHarnessResult } from '../lib/modules/scope-decomposition/harness.ts';
+import { toScopeDecompositionSemanticResult } from '../lib/modules/scope-decomposition/producer-adapter.ts';
 import {
   taskDecompositionMotionRegistry,
   validateTaskDecompositionMotionResult,
@@ -80,7 +81,11 @@ void test('Break It Down owns its Motion profiles and validates their cardinalit
   );
 });
 
-function proposal(
+function proposal(metadata: Record<string, unknown>) {
+  return toScopeDecompositionSemanticResult(harnessProposal(metadata));
+}
+
+function harnessProposal(
   metadata: Record<string, unknown>,
 ): TaskDecompositionHarnessResult {
   return {
