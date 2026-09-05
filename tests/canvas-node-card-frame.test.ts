@@ -580,21 +580,17 @@ void test('Graph and Flow modules run inside Latest Response while Just Do It st
     ),
     'The accepted context is ready.',
   );
-  const runningCard = await readFile(
+  const planningRunningCard = await readFile(
     new URL('../components/agent-graph-running-card.tsx', import.meta.url),
     'utf8',
   );
-  assert.match(runningCard, /AgentGraphComposerCard/);
-  assert.match(runningCard, /\{agent\} is running/);
-  assert.match(runningCard, /latestReadableAgentActivity/);
-  assert.match(runningCard, /collapsedIcon=\{<RunningIndicator \/>\}/);
-  assert.match(runningCard, /collapsedLabel=\{t\('Expand Agent Run'\)\}/);
-  assert.match(
-    runningCard,
-    /descriptionClassName="line-clamp-4 overflow-hidden/,
-  );
-  assert.doesNotMatch(runningCard, /overflow-y-auto/);
-  assert.match(runningCard, /<Square/);
+  assert.doesNotMatch(planningRunningCard, /AgentGraphComposerCard/);
+  assert.match(planningRunningCard, /data-planning-run-header="true"/);
+  assert.match(planningRunningCard, /\{agent\} is running/);
+  assert.match(planningRunningCard, /latestReadableAgentActivity/);
+  assert.match(planningRunningCard, /line-clamp-4 overflow-hidden/);
+  assert.doesNotMatch(planningRunningCard, /overflow-y-auto/);
+  assert.match(planningRunningCard, /<Square/);
   for (const file of [
     'whats-next-workspace.tsx',
     'task-decomposition-workspace.tsx',
@@ -634,6 +630,11 @@ void test('Graph and Flow modules run inside Latest Response while Just Do It st
     'utf8',
   );
   assert.match(justDoIt, /<AgentGraphRunningCard/);
+  assert.match(justDoIt, /<AgentGraphRunningCard[\s\S]*?'sticky top-0 z-30/);
+  assert.match(
+    justDoIt,
+    /<AgentGraphComposerCard\s+className="fixed z-30 m-0!"\s+title=""\s+running/,
+  );
 });
 
 void test('terminal What’s Next outcomes leave the Canvas and stay in Latest Response', async () => {

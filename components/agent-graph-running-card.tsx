@@ -2,10 +2,10 @@
 
 import { Square } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { AgentGraphComposerCard } from '@/components/agent-graph-composer-card';
 import { Button } from '@/components/ui/button';
 import { useUiText } from '@/components/ui-language-provider';
 import type { AgentProfile } from '@/lib/agents/profile';
+import { cn } from '@/lib/utils';
 
 export function AgentGraphRunningCard({
   agent,
@@ -32,11 +32,14 @@ export function AgentGraphRunningCard({
   }, []);
   const elapsed = Math.max(0, Math.floor((now - Date.parse(startedAt)) / 1000));
   return (
-    <AgentGraphComposerCard
-      className={className}
-      collapsedIcon={<RunningIndicator />}
-      collapsedLabel={t('Expand Agent Run')}
-      title={
+    <section
+      data-planning-run-header="true"
+      className={cn(
+        'flex flex-wrap items-start justify-between gap-4 border border-border bg-background/95 p-4 shadow-sm backdrop-blur',
+        className,
+      )}
+    >
+      <div className="min-w-0 flex-1">
         <span className="flex items-center gap-3 text-sm">
           <RunningIndicator />
           {t('{agent} is running', {
@@ -49,20 +52,19 @@ export function AgentGraphRunningCard({
           })}{' '}
           · {formatDuration(elapsed)}
         </span>
-      }
-      description={t(latestReadableAgentActivity(activity, fallback))}
-      descriptionClassName="line-clamp-4 overflow-hidden break-words"
-      action={
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={cancelDisabled}
-          onClick={onCancel}
-        >
-          <Square className="size-3.5" /> {t('Cancel')}
-        </Button>
-      }
-    />
+        <p className="mt-2 line-clamp-4 overflow-hidden text-xs break-words text-muted-foreground">
+          {t(latestReadableAgentActivity(activity, fallback))}
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={cancelDisabled}
+        onClick={onCancel}
+      >
+        <Square className="size-3.5" /> {t('Cancel')}
+      </Button>
+    </section>
   );
 }
 

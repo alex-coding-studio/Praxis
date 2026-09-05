@@ -662,6 +662,27 @@ export function JustDoItLiveWorkspace({ projectId }: { projectId: string }) {
                 </Button>
               )}
             </header>
+            {running && !scopedBusy && (
+              <>
+                <div
+                  ref={attachPlanHeaderSentinel}
+                  aria-hidden="true"
+                  className="h-px"
+                />
+                <AgentGraphRunningCard
+                  className={cn(
+                    'sticky top-0 z-30 transition-[border-radius] duration-150',
+                    planHeaderStuck ? 'rounded-b-xl border-t-0' : 'rounded-xl',
+                  )}
+                  agent={card.run?.profile.agent ?? 'codex'}
+                  startedAt={card.run?.startedAt ?? new Date().toISOString()}
+                  activity={[]}
+                  fallback="Preparing your plan…"
+                  cancelDisabled={pending}
+                  onCancel={() => command('cancel')}
+                />
+              </>
+            )}
             {dependencyReview.length > 0 && (
               <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
                 <h2 className="text-sm font-semibold">
@@ -731,13 +752,10 @@ export function JustDoItLiveWorkspace({ projectId }: { projectId: string }) {
               </p>
             )}
             {running && !scopedBusy ? (
-              <AgentGraphRunningCard
-                agent={card.run?.profile.agent ?? 'codex'}
-                startedAt={card.run?.startedAt ?? new Date().toISOString()}
-                activity={[]}
-                fallback="Preparing your plan…"
-                cancelDisabled={pending}
-                onCancel={() => command('cancel')}
+              <AgentGraphComposerCard
+                className="fixed z-30 m-0!"
+                title=""
+                running
               />
             ) : !card.plan ? (
               <AgentGraphComposerCard
