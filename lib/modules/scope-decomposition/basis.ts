@@ -9,6 +9,8 @@ import {
 import type { GraphProposalRevision } from '../../graph/proposal/contract.ts';
 import { identitiesFingerprint } from '../../graph/identity-store.ts';
 import { SCOPE_DECOMPOSITION_RESULT_CONTRACT } from './contract.ts';
+import type { TaskDecompositionIntention } from './intention.ts';
+import type { TaskDecompositionMotion } from './motion.ts';
 import type { RegisteredProject } from '../../project-registry.ts';
 
 export type ScopeDecompositionOperation =
@@ -23,9 +25,16 @@ type GraphProposalState = Omit<
 >;
 
 export type ScopeDecompositionMaterializationBasis = MaterializationBasisCore &
-  GraphProposalState & { operation: ScopeDecompositionOperation };
+  GraphProposalState & {
+    operation: ScopeDecompositionOperation;
+    intention: TaskDecompositionIntention;
+    motion: TaskDecompositionMotion;
+    recomposeCandidateIds: readonly string[];
+  };
 
 type ScopeDecompositionBasisSubject = {
+  intention: TaskDecompositionIntention;
+  motion: TaskDecompositionMotion;
   knownNodeIds: readonly string[];
   acceptedCandidateIds: readonly string[];
   knownResourcePaths: readonly string[];
@@ -36,10 +45,20 @@ type ScopeDecompositionBasisSubject = {
 export type ScopeDecompositionBasisInput = ScopeDecompositionBasisSubject &
   (
     | {
-        operation: 'propose' | 'append-candidates' | 'recompose-candidates';
+        operation: 'propose' | 'append-candidates';
         revisionTarget?: never;
+        recomposeCandidateIds?: never;
       }
-    | { operation: 'revise-candidate'; revisionTarget: GraphProposalRevision }
+    | {
+        operation: 'recompose-candidates';
+        revisionTarget?: never;
+        recomposeCandidateIds: readonly string[];
+      }
+    | {
+        operation: 'revise-candidate';
+        revisionTarget: GraphProposalRevision;
+        recomposeCandidateIds?: never;
+      }
   );
 
 function frozenState(
@@ -101,5 +120,8 @@ export async function prepareScopeDecompositionMaterializationBasis(
     contract: contractIdentity(SCOPE_DECOMPOSITION_RESULT_CONTRACT),
     fingerprint: graphProposalBasisFingerprint(state),
     preparedAt: now(),
+    intention: input.intention,
+    motion: input.motion,
+    recomposeCandidateIds: [...(input.recomposeCandidateIds ?? [])],
   });
 }
