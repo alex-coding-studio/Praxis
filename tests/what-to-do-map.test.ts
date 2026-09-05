@@ -243,6 +243,12 @@ void test('a dependency-only update retains identity and republishes the Contrac
       candidates: [],
       sourceClaims: [
         { ...result.sourceClaims[0]!, contractCandidateIds: retainedIds },
+        {
+          ...result.sourceClaims[0]!,
+          claimId: 'CLAIM-CURRENT',
+          summary: 'The current adjustment applies to the retained Contract.',
+          contractCandidateIds: [retainedIds[1]!],
+        },
       ],
       contractDependencyUpdates: [
         { candidateId: retainedIds[1]!, dependsOn: [] },
@@ -260,6 +266,10 @@ void test('a dependency-only update retains identity and republishes the Contrac
   assert.equal(adjusted.contracts[1]!.id, currentMap.contracts[1]!.id);
   assert.equal(adjusted.contracts[1]!.uid, currentMap.contracts[1]!.uid);
   assert.deepEqual(adjusted.contracts[1]!.dependsOn, []);
+  assert.deepEqual(adjusted.contracts[1]!.sourceClaimIds, [
+    'CLAIM-1',
+    'CLAIM-CURRENT',
+  ]);
   assert.match(
     adjusted.contracts[1]!.outputPath,
     /RUN-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/,

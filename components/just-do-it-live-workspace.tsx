@@ -626,7 +626,20 @@ export function JustDoItLiveWorkspace({ projectId }: { projectId: string }) {
               {t('All goals')}
             </Button>
             <header>
-              <h2 className="text-2xl font-semibold">{card.source.title}</h2>
+              <div className="flex items-center justify-between gap-4">
+                <h2 className="min-w-0 text-2xl font-semibold">
+                  {card.source.title}
+                </h2>
+                {card.actions.length > 0 &&
+                  card.actions.every((action) =>
+                    card.execution?.acceptedActionIds.includes(action.id),
+                  ) && (
+                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                      <Check aria-hidden="true" className="size-4" />
+                      {t('Completed')}
+                    </span>
+                  )}
+              </div>
               <details className="mt-3 text-sm text-muted-foreground">
                 <summary className="cursor-pointer">{t('Source')}</summary>
                 <p className="mt-2">{card.source.summary}</p>

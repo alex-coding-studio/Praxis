@@ -3,12 +3,34 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { latestActionGitHub } from '../lib/modules/implementation/result-display.ts';
+import type { ActionRun } from '../lib/modules/implementation/execution-types.ts';
 import type { LatestResponseDocument } from '../lib/execution-observability/types.ts';
 
 const { ExecutionHeaderStatus } =
   await import('../components/execution-sticky-header.tsx');
 const { UiLanguageProvider } =
   await import('../components/ui-language-provider.tsx');
+
+void test('a new modification round keeps only its own Action PR until a newer publication exists', () => {
+  const previous = { pullRequests: [{ number: 3 }] };
+  const newer = { pullRequests: [{ number: 3, headRefOid: 'new-head' }] };
+  const runs = [
+    { actionId: 'one', github: { pullRequests: [{ number: 2 }] } },
+    { actionId: 'two', github: previous },
+    { actionId: 'two', status: 'running', github: null },
+  ] as unknown as ActionRun[];
+  assert.equal(latestActionGitHub(runs, 'two'), previous);
+  assert.equal(latestActionGitHub(runs, 'three'), undefined);
+  runs.push({
+    actionId: 'two',
+    status: 'failed',
+    github: { pullRequests: [] },
+  } as unknown as ActionRun);
+  assert.equal(latestActionGitHub(runs, 'two'), previous);
+  runs.push({ actionId: 'two', github: newer } as unknown as ActionRun);
+  assert.equal(latestActionGitHub(runs, 'two'), newer);
+});
 
 function document(
   overrides: Partial<LatestResponseDocument> = {},
@@ -190,6 +212,6 @@ void test('the workspace header no longer says Plan finalized and keeps Cancel w
   assert.match(rightPortal, /latest\?\.result &&\s*requiredPassed \? \(/);
   assert.match(
     action,
-    /<AgentGraphComposerCard\s+className="fixed z-30"\s+running=\{latest\?\.status === 'running' \|\| running\}/,
+    /<AgentGraphComposerCard\s+className="fixed z-30[^"]*"\s+running=\{latest\?\.status === 'running' \|\| running\}/,
   );
 });

@@ -2058,6 +2058,14 @@ export function createExecutionService(
   ) {
     assertCardUuid(cardId);
     assertCardUuid(outputId);
+    const settling = active.get(cardKey(project, cardId));
+    if (
+      settling?.reservation?.settled &&
+      settling.reservation.stopResult !== 'unconfirmed'
+    ) {
+      if (settling.timer) clearTimeout(settling.timer);
+      active.delete(cardKey(project, cardId));
+    }
     if (active.has(cardKey(project, cardId)))
       throw new PublicApiError(
         'Wait for this Card to finish before rechecking.',

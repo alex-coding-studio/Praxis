@@ -6,6 +6,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { includeInGitHistory } from '../implementation/git.ts';
 import type { RegisteredProject } from '../../project-registry.ts';
+import { PublicApiError } from '../../api-errors.ts';
 
 const execute = promisify(execFile);
 const MAX_FILES = 5_000;
@@ -159,14 +160,12 @@ export async function readWhatToDoTargetedRepositoryEvidence(
         throw new Error(
           'Requested What to Do repository evidence is unavailable.',
         );
-      let text: string;
-      try {
-        text = new TextDecoder('utf-8', { fatal: true }).decode(content);
-      } catch {
-        throw new Error(
-          'Requested What to Do repository evidence is not UTF-8 text.',
+      const text = decodeRepositoryText(content);
+      if (text === null)
+        throw new PublicApiError(
+          'Selected repository evidence must be UTF-8 text. Images and other binary files cannot be used as text evidence.',
+          400,
         );
-      }
       return { path: relative, content: text };
     }),
   );
@@ -349,7 +348,7 @@ async function readEvidence(root: string, files: string[]) {
   const evidence: WhatToDoRepositoryFacts['evidence'] = [];
   for (const relative of unique(files).slice(0, MAX_EVIDENCE_FILES)) {
     const content = await readOwnedFile(root, relative, MAX_EVIDENCE_BYTES);
-    if (!content) continue;
+    if (!content || decodeRepositoryText(content) === null) continue;
     evidence.push({
       path: relative,
       size: content.length,
@@ -357,6 +356,16 @@ async function readEvidence(root: string, files: string[]) {
     });
   }
   return evidence;
+}
+
+function decodeRepositoryText(content: Uint8Array): string | null {
+  if (content.some((byte) => byte < 32 && ![9, 10, 12, 13].includes(byte)))
+    return null;
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(content);
+  } catch {
+    return null;
+  }
 }
 
 async function readPackageScripts(root: string, files: string[]) {

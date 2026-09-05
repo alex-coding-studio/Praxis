@@ -130,7 +130,8 @@ export async function prepareWhatToDoContext(
         [...automatic, ...targeted].map((entry) => [entry.path, entry]),
       ).values(),
     ];
-  } catch {
+  } catch (error) {
+    if (error instanceof PublicApiError) throw error;
     throw new PublicApiError(
       'Repository evidence changed or is unavailable. Reload before continuing.',
       409,

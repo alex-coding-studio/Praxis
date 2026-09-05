@@ -559,6 +559,52 @@ void test('a retained Contract can update only its hard dependencies', () => {
   );
 });
 
+void test('a new current-input Claim can be assigned to retained Contracts without repeating their payloads', () => {
+  const knownCandidates = [knownCandidate('CANDIDATE-0001')];
+  const knownSourceClaims = proposal().sourceClaims;
+  const currentClaim = {
+    ...structuredClone(knownSourceClaims[0]!),
+    claimId: 'CLAIM-CURRENT',
+    sourcePath: userInput.path,
+    sourceSha256: userInput.sha256,
+    anchor: 'Remove the legacy behavior from this delivery.',
+    summary: 'Current input updates the retained Contract.',
+    contractCandidateIds: ['CANDIDATE-0001'],
+  };
+  const adjusted = proposal([], {
+    sourceClaims: [currentClaim],
+    recomposition: {
+      effects: [
+        {
+          kind: 'retain',
+          from: ['CANDIDATE-0001'],
+          to: ['CANDIDATE-0001'],
+        },
+      ],
+    },
+  });
+  const validationContext = context({
+    operation: 'adjust-map',
+    knownCandidates,
+    knownSourceClaims,
+    knownSources: {
+      [sourcePath]: { sha256: sourceHash, content: sourceContent },
+      [userInput.path]: {
+        sha256: userInput.sha256,
+        content: userInput.content,
+      },
+    },
+  });
+  const validated = validateWhatToDoHarnessResult(adjusted, validationContext);
+  assert.equal(validated.outcome, 'map-proposal');
+  if (validated.outcome === 'map-proposal') {
+    const completeClaim = validated.sourceClaims.find(
+      (item) => item.claimId === 'CLAIM-CURRENT',
+    );
+    assert.deepEqual(completeClaim?.contractCandidateIds, ['CANDIDATE-0001']);
+  }
+});
+
 void test('adjustment preserves prior claims and reserves old identity for retain only', () => {
   const knownCandidates = [knownCandidate('CANDIDATE-0001')];
   const knownSourceClaims = proposal().sourceClaims;

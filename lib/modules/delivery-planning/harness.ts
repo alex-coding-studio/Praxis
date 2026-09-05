@@ -621,6 +621,14 @@ export function validateWhatToDoHarnessResult(
     ),
     ...result.candidates,
   ];
+  const retainedSet = new Set(retainedIds);
+  for (const candidate of completeMap)
+    if (retainedSet.has(candidate.candidateId))
+      candidate.sourceClaimIds = result.sourceClaims
+        .filter((claim) =>
+          claim.contractCandidateIds.includes(candidate.candidateId),
+        )
+        .map((claim) => claim.claimId);
   validateCompleteMap(completeMap);
   validateClaims(result.sourceClaims, completeMap, context);
   return result;

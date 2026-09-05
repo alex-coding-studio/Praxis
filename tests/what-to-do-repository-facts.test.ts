@@ -8,10 +8,54 @@ import { promisify } from 'node:util';
 import type { RegisteredProject } from '../lib/project-registry.ts';
 import {
   collectWhatToDoRepositoryFacts,
+  readWhatToDoRepositoryEvidence,
   readWhatToDoTargetedRepositoryEvidence,
 } from '../lib/modules/delivery-planning/repository-facts.ts';
 
 const execute = promisify(execFile);
+
+void test('automatic evidence skips binary contents while preserving text and file inventory', async (t) => {
+  const { project, rootPath } = await fixture(t);
+  await mkdir(path.join(rootPath, 'docs'));
+  await writeFile(path.join(rootPath, 'docs/design.html'), '<h1>设计规范</h1>');
+  await writeFile(
+    path.join(rootPath, 'docs/NOTES'),
+    'Plain text without an extension',
+  );
+  await writeFile(
+    path.join(rootPath, 'docs/image.png'),
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+  );
+  await writeFile(
+    path.join(rootPath, 'docs/.thumbnail'),
+    Buffer.from([0, 1, 2, 3]),
+  );
+  await writeFile(
+    path.join(rootPath, 'docs/legacy.md'),
+    Buffer.from([255, 254, 65, 0]),
+  );
+  const facts = await collectWhatToDoRepositoryFacts(project);
+  assert.equal(facts.observedFileCount, 5);
+  assert.ok(facts.paths.documentation.includes('docs/image.png'));
+  const evidence = await readWhatToDoRepositoryEvidence(project, facts);
+  assert.deepEqual(evidence.map((entry) => entry.path).sort(), [
+    'docs/NOTES',
+    'docs/design.html',
+  ]);
+  assert.equal(
+    evidence.find((entry) => entry.path === 'docs/design.html')?.content,
+    '<h1>设计规范</h1>',
+  );
+  await assert.rejects(
+    readWhatToDoTargetedRepositoryEvidence(project, facts, ['docs/image.png']),
+    /Images and other binary files/,
+  );
+  await writeFile(path.join(rootPath, 'docs/design.html'), '<h1>Changed</h1>');
+  await assert.rejects(
+    readWhatToDoRepositoryEvidence(project, facts),
+    /evidence changed/,
+  );
+});
 
 async function fixture(t: test.TestContext) {
   const rootPath = await mkdtemp(path.join(os.tmpdir(), 'repository-facts-'));

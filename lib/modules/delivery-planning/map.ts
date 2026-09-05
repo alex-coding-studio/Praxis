@@ -206,7 +206,15 @@ export function materializeWhatToDoDeliveryMap(
       outputPath: `what-to-do/runs/${input.runId}/contracts/${identity.id}/output.md`,
     };
   });
-  const contracts = [...retainedContracts, ...newContracts];
+  const contracts = [...retainedContracts, ...newContracts].map((contract) => {
+    const candidateId = whatToDoContractCandidateId(contract);
+    return {
+      ...contract,
+      sourceClaimIds: input.result.sourceClaims
+        .filter((claim) => claim.contractCandidateIds.includes(candidateId))
+        .map((claim) => claim.claimId),
+    };
+  });
   const snapshotByPath = new Map(
     [
       ...(input.currentMap?.sourceSnapshots ?? []),
