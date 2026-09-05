@@ -1,0 +1,478 @@
+{
+  "domain-model/runs/RUN-U5/change.json": {
+    "kind": "applied",
+    "runId": "RUN-U5",
+    "userInputPath": "input/user-input.md",
+    "summary": "Created Item and Container.",
+    "baseVersion": 0,
+    "stateVersion": 1,
+    "added": [
+      "ENTITY-U0",
+      "ENTITY-U2",
+      "FIELD-U1",
+      "RELATIONSHIP-U3",
+      "CONSTRAINT-U4"
+    ],
+    "removed": [],
+    "updated": [],
+    "items": {
+      "added": [
+        {
+          "id": "ENTITY-U0",
+          "kind": "card",
+          "label": "Item"
+        },
+        {
+          "id": "ENTITY-U2",
+          "kind": "card",
+          "label": "Container"
+        },
+        {
+          "id": "FIELD-U1",
+          "kind": "field",
+          "label": "Item · title"
+        },
+        {
+          "id": "RELATIONSHIP-U3",
+          "kind": "relationship",
+          "label": "Container → Item · contains"
+        },
+        {
+          "id": "CONSTRAINT-U4",
+          "kind": "constraint",
+          "label": "An Item has at most one parent Container."
+        }
+      ],
+      "updated": [],
+      "removed": []
+    },
+    "createdAt": "T"
+  },
+  "domain-model/runs/RUN-U5/request.json": {
+    "harnessVersion": 2,
+    "requestId": "RUN-U5",
+    "baseVersion": 0,
+    "content": {
+      "input": {
+        "role": "primary",
+        "kind": "user-input",
+        "logicalPath": "domain-model/runs/RUN-U5/context/input/user-input.md",
+        "workspacePath": "input/user-input.md",
+        "sha256": "H0"
+      },
+      "references": [],
+      "external": []
+    },
+    "selectedIds": [],
+    "model": {
+      "schemaVersion": 1,
+      "stateVersion": 0,
+      "entities": [],
+      "relationships": [],
+      "constraints": [],
+      "lastRunId": null,
+      "updatedAt": null
+    },
+    "previousSummary": "",
+    "contextRoot": ".praxis/domain-model/runs/RUN-U5/context",
+    "inputFingerprint": "H1"
+  },
+  "domain-model/runs/RUN-U5/run.json": {
+    "schemaVersion": 1,
+    "id": "RUN-U5",
+    "status": "succeeded",
+    "userInputPath": "input/user-input.md",
+    "selectedIds": [],
+    "contextRefs": [],
+    "attachmentNames": [],
+    "profile": {
+      "agent": "codex",
+      "model": "gpt-5.6-sol",
+      "effort": "high"
+    },
+    "baseVersion": 0,
+    "startedAt": "T",
+    "endedAt": "T",
+    "agentSessionId": "fixture-session-1",
+    "usage": null,
+    "sessionUsage": null,
+    "activity": [
+      {
+        "at": "T",
+        "summary": "Generating the Domain Model."
+      }
+    ],
+    "result": {
+      "harnessVersion": 2,
+      "requestId": "RUN-U5",
+      "baseVersion": 0,
+      "inputFingerprint": "H1",
+      "outcome": "applied",
+      "summary": "Created Item and Container.",
+      "model": {
+        "entities": [
+          {
+            "id": "NEW_ENTITY_ITEM",
+            "name": "Item",
+            "meaning": "A physical thing the user wants to locate.",
+            "provenance": "explicit",
+            "fields": [
+              {
+                "id": "NEW_FIELD_TITLE",
+                "name": "title",
+                "meaning": "The name shown to the user.",
+                "valueType": "text",
+                "required": true,
+                "multiple": false,
+                "display": "primary",
+                "provenance": "explicit"
+              }
+            ]
+          },
+          {
+            "id": "NEW_ENTITY_CONTAINER",
+            "name": "Container",
+            "meaning": "An Item that can manage child Items.",
+            "provenance": "explicit",
+            "fields": []
+          }
+        ],
+        "relationships": [
+          {
+            "id": "NEW_RELATIONSHIP_CONTAINS",
+            "sourceEntityId": "NEW_ENTITY_CONTAINER",
+            "targetEntityId": "NEW_ENTITY_ITEM",
+            "label": "contains",
+            "meaning": "A Container manages zero or more Items.",
+            "semanticRole": "containment",
+            "direction": "directed",
+            "sourceCardinality": "1",
+            "targetCardinality": "0..*",
+            "provenance": "explicit"
+          }
+        ],
+        "constraints": [
+          {
+            "id": "NEW_CONSTRAINT_PARENT",
+            "target": {
+              "kind": "model",
+              "id": null
+            },
+            "text": "An Item has at most one parent Container.",
+            "provenance": "inferred"
+          }
+        ]
+      }
+    },
+    "change": {
+      "kind": "applied",
+      "runId": "RUN-U5",
+      "userInputPath": "input/user-input.md",
+      "summary": "Created Item and Container.",
+      "baseVersion": 0,
+      "stateVersion": 1,
+      "added": [
+        "ENTITY-U0",
+        "ENTITY-U2",
+        "FIELD-U1",
+        "RELATIONSHIP-U3",
+        "CONSTRAINT-U4"
+      ],
+      "removed": [],
+      "updated": [],
+      "items": {
+        "added": [
+          {
+            "id": "ENTITY-U0",
+            "kind": "card",
+            "label": "Item"
+          },
+          {
+            "id": "ENTITY-U2",
+            "kind": "card",
+            "label": "Container"
+          },
+          {
+            "id": "FIELD-U1",
+            "kind": "field",
+            "label": "Item · title"
+          },
+          {
+            "id": "RELATIONSHIP-U3",
+            "kind": "relationship",
+            "label": "Container → Item · contains"
+          },
+          {
+            "id": "CONSTRAINT-U4",
+            "kind": "constraint",
+            "label": "An Item has at most one parent Container."
+          }
+        ],
+        "updated": [],
+        "removed": []
+      },
+      "createdAt": "T"
+    },
+    "error": null,
+    "logRef": "domain-model/runs/RUN-U5/run.log",
+    "hostPid": 0,
+    "response": {
+      "status": "completed",
+      "title": "Applied",
+      "detail": "Created Item and Container.",
+      "supplementaryWarnings": [],
+      "recovery": ["log", "continue"]
+    }
+  },
+  "domain-model/runs/RUN-U5/summary.md": "# Applied\n\nCreated Item and Container.\n\n## Change summary\n\n- Added: 2 Cards · 5 model entries · Item, Container\n- Updated: 0 Cards · 0 model entries\n- Removed: 0 Cards · 0 model entries\n",
+  "domain-model/runs/RUN-U6/change.json": null,
+  "domain-model/runs/RUN-U6/request.json": {
+    "harnessVersion": 2,
+    "requestId": "RUN-U6",
+    "baseVersion": 1,
+    "content": {
+      "input": {
+        "role": "primary",
+        "kind": "user-input",
+        "logicalPath": "domain-model/runs/RUN-U6/context/input/user-input.md",
+        "workspacePath": "input/user-input.md",
+        "sha256": "H2"
+      },
+      "references": [],
+      "external": []
+    },
+    "selectedIds": [],
+    "model": {
+      "schemaVersion": 1,
+      "stateVersion": 1,
+      "entities": [
+        {
+          "id": "ENTITY-U0",
+          "name": "Item",
+          "meaning": "A physical thing the user wants to locate.",
+          "fields": [
+            {
+              "id": "FIELD-U1",
+              "name": "title",
+              "meaning": "The name shown to the user.",
+              "valueType": "text",
+              "required": true,
+              "multiple": false,
+              "display": "primary",
+              "provenance": "explicit"
+            }
+          ],
+          "provenance": "explicit"
+        },
+        {
+          "id": "ENTITY-U2",
+          "name": "Container",
+          "meaning": "An Item that can manage child Items.",
+          "fields": [],
+          "provenance": "explicit"
+        }
+      ],
+      "relationships": [
+        {
+          "id": "RELATIONSHIP-U3",
+          "sourceEntityId": "ENTITY-U2",
+          "targetEntityId": "ENTITY-U0",
+          "label": "contains",
+          "meaning": "A Container manages zero or more Items.",
+          "semanticRole": "containment",
+          "direction": "directed",
+          "sourceCardinality": "1",
+          "targetCardinality": "0..*",
+          "provenance": "explicit"
+        }
+      ],
+      "constraints": [
+        {
+          "id": "CONSTRAINT-U4",
+          "target": {
+            "kind": "model",
+            "id": null
+          },
+          "text": "An Item has at most one parent Container.",
+          "provenance": "inferred"
+        }
+      ],
+      "lastRunId": "RUN-U5",
+      "updatedAt": "T"
+    },
+    "previousSummary": "# Applied\n\nCreated Item and Container.\n\n## Change summary\n\n- Added: 2 Cards · 5 model entries · Item, Container\n- Updated: 0 Cards · 0 model entries\n- Removed: 0 Cards · 0 model entries\n",
+    "contextRoot": ".praxis/domain-model/runs/RUN-U6/context",
+    "inputFingerprint": "H3"
+  },
+  "domain-model/runs/RUN-U6/run.json": {
+    "schemaVersion": 1,
+    "id": "RUN-U6",
+    "status": "succeeded",
+    "userInputPath": "input/user-input.md",
+    "selectedIds": [],
+    "contextRefs": [],
+    "attachmentNames": [],
+    "profile": {
+      "agent": "codex",
+      "model": "gpt-5.6-sol",
+      "effort": "high"
+    },
+    "baseVersion": 1,
+    "startedAt": "T",
+    "endedAt": "T",
+    "agentSessionId": "fixture-session-1",
+    "usage": null,
+    "sessionUsage": null,
+    "activity": [
+      {
+        "at": "T",
+        "summary": "Generating the Domain Model."
+      }
+    ],
+    "result": {
+      "harnessVersion": 2,
+      "requestId": "RUN-U6",
+      "baseVersion": 1,
+      "inputFingerprint": "H3",
+      "outcome": "no-change",
+      "summary": "The model already contains this meaning.",
+      "reason": "No model change is required."
+    },
+    "change": null,
+    "error": null,
+    "logRef": "domain-model/runs/RUN-U6/run.log",
+    "hostPid": 0,
+    "response": {
+      "status": "completed",
+      "title": "No change",
+      "detail": "The model already contains this meaning.",
+      "supplementaryWarnings": [],
+      "recovery": ["log", "continue"]
+    }
+  },
+  "domain-model/runs/RUN-U6/summary.md": "# No change\n\nThe model already contains this meaning.\n\n## Reason\n\nNo model change is required.\n",
+  "domain-model/state.json": {
+    "schemaVersion": 1,
+    "model": {
+      "schemaVersion": 1,
+      "stateVersion": 1,
+      "entities": [
+        {
+          "id": "ENTITY-U0",
+          "name": "Item",
+          "meaning": "A physical thing the user wants to locate.",
+          "fields": [
+            {
+              "id": "FIELD-U1",
+              "name": "title",
+              "meaning": "The name shown to the user.",
+              "valueType": "text",
+              "required": true,
+              "multiple": false,
+              "display": "primary",
+              "provenance": "explicit"
+            }
+          ],
+          "provenance": "explicit"
+        },
+        {
+          "id": "ENTITY-U2",
+          "name": "Container",
+          "meaning": "An Item that can manage child Items.",
+          "fields": [],
+          "provenance": "explicit"
+        }
+      ],
+      "relationships": [
+        {
+          "id": "RELATIONSHIP-U3",
+          "sourceEntityId": "ENTITY-U2",
+          "targetEntityId": "ENTITY-U0",
+          "label": "contains",
+          "meaning": "A Container manages zero or more Items.",
+          "semanticRole": "containment",
+          "direction": "directed",
+          "sourceCardinality": "1",
+          "targetCardinality": "0..*",
+          "provenance": "explicit"
+        }
+      ],
+      "constraints": [
+        {
+          "id": "CONSTRAINT-U4",
+          "target": {
+            "kind": "model",
+            "id": null
+          },
+          "text": "An Item has at most one parent Container.",
+          "provenance": "inferred"
+        }
+      ],
+      "lastRunId": "RUN-U5",
+      "updatedAt": "T"
+    },
+    "undo": {
+      "entities": [],
+      "relationships": [],
+      "constraints": [],
+      "lastRunId": null,
+      "updatedAt": null
+    },
+    "lastChange": {
+      "kind": "applied",
+      "runId": "RUN-U5",
+      "userInputPath": "input/user-input.md",
+      "summary": "Created Item and Container.",
+      "baseVersion": 0,
+      "stateVersion": 1,
+      "added": [
+        "ENTITY-U0",
+        "ENTITY-U2",
+        "FIELD-U1",
+        "RELATIONSHIP-U3",
+        "CONSTRAINT-U4"
+      ],
+      "removed": [],
+      "updated": [],
+      "items": {
+        "added": [
+          {
+            "id": "ENTITY-U0",
+            "kind": "card",
+            "label": "Item"
+          },
+          {
+            "id": "ENTITY-U2",
+            "kind": "card",
+            "label": "Container"
+          },
+          {
+            "id": "FIELD-U1",
+            "kind": "field",
+            "label": "Item · title"
+          },
+          {
+            "id": "RELATIONSHIP-U3",
+            "kind": "relationship",
+            "label": "Container → Item · contains"
+          },
+          {
+            "id": "CONSTRAINT-U4",
+            "kind": "constraint",
+            "label": "An Item has at most one parent Container."
+          }
+        ],
+        "updated": [],
+        "removed": []
+      },
+      "createdAt": "T"
+    },
+    "committedRuns": [
+      {
+        "runId": "RUN-U5",
+        "stateVersion": 1,
+        "committedAt": "T"
+      }
+    ]
+  }
+}
