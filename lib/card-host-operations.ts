@@ -18,6 +18,9 @@ import {
 } from './modules/implementation/worktree.ts';
 
 const exec = promisify(execFile);
+const githubRuntime = globalThis as typeof globalThis & {
+  praxisGitHubPublicationQueue?: Promise<void>;
+};
 
 export type CardExecutionRoles = {
   commit: string;
@@ -198,7 +201,11 @@ export async function prepareCardEnvironment(
   const roles = {
     ...request.roles,
     expectedGitHubLogin:
-      request.roles.expectedGitHubLogin ?? previous?.roles.expectedGitHubLogin,
+      request.roles.expectedGitHubLogin ??
+      previous?.roles.expectedGitHubLogin ??
+      (request.roles.delivery === 'bot'
+        ? process.env.PRAXIS_BOT_GITHUB_LOGIN?.trim() || 'cunqi-bot'
+        : undefined),
   };
   if (
     remoteUrl &&
@@ -256,6 +263,18 @@ export async function prepareCardEnvironment(
 export async function publishCardCandidate(
   request: CandidatePublishRequest,
   runner: HostCommandRunner = commandRunner,
+): Promise<CandidatePublication> {
+  return withGitHubPublicationIdentity(
+    runner,
+    request.environment.workspace.path,
+    request.environment.roles.expectedGitHubLogin,
+    (identityRunner) => publishCardCandidateUnlocked(request, identityRunner),
+  );
+}
+
+async function publishCardCandidateUnlocked(
+  request: CandidatePublishRequest,
+  runner: HostCommandRunner,
 ): Promise<CandidatePublication> {
   const { environment } = request;
   await verifyCardWorkspace(environment.workspace);
@@ -629,6 +648,127 @@ export async function publishCardCandidate(
     },
     publishedAt: new Date().toISOString(),
   };
+}
+
+export async function withGitHubPublicationIdentity<T>(
+  runner: HostCommandRunner,
+  workspace: string,
+  expectedLogin: string | undefined,
+  work: (runner: HostCommandRunner) => Promise<T>,
+) {
+  return serializeGitHubPublication(() =>
+    withGitHubPublicationIdentityUnlocked(
+      runner,
+      workspace,
+      expectedLogin,
+      work,
+    ),
+  );
+}
+
+async function withGitHubPublicationIdentityUnlocked<T>(
+  runner: HostCommandRunner,
+  workspace: string,
+  expectedLogin: string | undefined,
+  work: (runner: HostCommandRunner) => Promise<T>,
+) {
+  if (!expectedLogin) return work(runner);
+  const githubEnvironment = { ...process.env, GH_PROMPT_DISABLED: '1' };
+  const invoke = (arguments_: string[]) =>
+    runner('gh', arguments_, { cwd: workspace, env: githubEnvironment });
+  const initialLogin = await invoke(['api', 'user', '--jq', '.login']);
+  if (initialLogin === expectedLogin) return work(runner);
+  const status = JSON.parse(
+    await invoke([
+      'auth',
+      'status',
+      '--hostname',
+      'github.com',
+      '--json',
+      'hosts',
+    ]),
+  ) as {
+    hosts?: Record<
+      string,
+      Array<{ login?: string; active?: boolean; state?: string }>
+    >;
+  };
+  const accounts = status.hosts?.['github.com'] ?? [];
+  const initialAccount = accounts.find(
+    (account) => account.active && account.state === 'success',
+  )?.login;
+  if (!initialAccount)
+    throw new Error('The active GitHub CLI account could not be identified.');
+  let selectedAccount: string | null = null;
+  let result: T | undefined;
+  let failure: unknown;
+  try {
+    for (const account of accounts) {
+      if (
+        account.state !== 'success' ||
+        !account.login ||
+        account.login === initialAccount
+      )
+        continue;
+      await invoke([
+        'auth',
+        'switch',
+        '--hostname',
+        'github.com',
+        '--user',
+        account.login,
+      ]);
+      if ((await invoke(['api', 'user', '--jq', '.login'])) === expectedLogin) {
+        selectedAccount = account.login;
+        break;
+      }
+    }
+    if (!selectedAccount)
+      throw new Error(
+        `No authenticated GitHub CLI account matches the required ${expectedLogin} identity.`,
+      );
+    result = await work(runner);
+  } catch (error) {
+    failure = error;
+  }
+  try {
+    await invoke([
+      'auth',
+      'switch',
+      '--hostname',
+      'github.com',
+      '--user',
+      initialAccount,
+    ]);
+    const restored = await invoke(['api', 'user', '--jq', '.login']);
+    if (restored !== initialLogin)
+      throw new Error('The original GitHub identity could not be restored.');
+  } catch (restoreError) {
+    if (failure)
+      throw new AggregateError(
+        [failure, restoreError],
+        'GitHub publication failed and the original identity could not be restored.',
+      );
+    throw restoreError;
+  }
+  if (failure) throw failure;
+  return result as T;
+}
+
+function serializeGitHubPublication<T>(work: () => Promise<T>): Promise<T> {
+  const previous =
+    githubRuntime.praxisGitHubPublicationQueue ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  githubRuntime.praxisGitHubPublicationQueue = previous
+    .catch(() => undefined)
+    .then(() => current);
+  return previous
+    .catch(() => undefined)
+    .then(work)
+    .finally(() => release());
 }
 
 export async function deliverCardCandidate(
