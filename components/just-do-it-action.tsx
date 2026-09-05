@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   unverifiedDeliveryRefs,
+  latestActionGitHub,
   hasUnsupportedAppArtifact,
   hasReviewableReport,
 } from '@/lib/modules/implementation/result-display';
@@ -122,7 +123,8 @@ export function JustDoItAction({
   const history =
     card.execution?.runs.filter((run) => run.actionId === action.id) ?? [];
   const latest = history.at(-1);
-  const headerPullRequests = latest?.github?.pullRequests ?? [];
+  const headerGitHub = latestActionGitHub(history, action.id);
+  const headerPullRequests = headerGitHub?.pullRequests ?? [];
   const accepted =
     card.execution?.acceptedActionIds.includes(action.id) ?? false;
   const current = card.actions.find(
@@ -863,7 +865,7 @@ export function JustDoItAction({
       )}
       {!accepted && current?.id === action.id ? (
         <AgentGraphComposerCard
-          className="fixed z-30"
+          className="fixed z-30 m-0!"
           running={latest?.status === 'running' || running}
           collapsed={composerCollapsed}
           onCollapsedChange={setComposerCollapsed}
@@ -1070,7 +1072,9 @@ export function JustDoItAction({
               }
               accepted={accepted}
               pullRequests={headerPullRequests}
-              staleGithub={Boolean(latest?.github?.error)}
+              staleGithub={Boolean(
+                headerGitHub?.error || latest?.github?.error,
+              )}
               openingWorkspace={pending}
               onOpenWorkspace={
                 card.execution?.workspace

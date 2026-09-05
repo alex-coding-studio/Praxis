@@ -1,5 +1,12 @@
 import type { ActionRun } from './execution-types.ts';
 
+export function latestActionGitHub(runs: ActionRun[], actionId: string) {
+  return runs.findLast(
+    (run) =>
+      run.actionId === actionId && Boolean(run.github?.pullRequests.length),
+  )?.github;
+}
+
 export function unverifiedDeliveryRefs(run: ActionRun) {
   const verified = new Set([
     ...run.observedRefs,
