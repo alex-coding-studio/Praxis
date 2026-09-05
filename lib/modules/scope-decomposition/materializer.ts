@@ -2,6 +2,7 @@ import { allocateCandidateAliases } from '../../graph/identity-store.ts';
 import { resolveProposalCandidates } from '../../graph/proposal/resolve.ts';
 import { MaterializationError } from '../../materialization/receipt.ts';
 import type { ScopeDecompositionMaterializationBasis } from './basis.ts';
+import { validateScopeDecompositionResult } from './validation.ts';
 import type { ProposalReference } from '../../graph/proposal/reference.ts';
 import type {
   ScopeDecompositionCandidateRecord,
@@ -54,6 +55,7 @@ export async function materializeScopeDecompositionResult(
   basis: ScopeDecompositionMaterializationBasis,
   result: ScopeDecompositionResult,
 ): Promise<ScopeDecompositionMaterialization | null> {
+  validateScopeDecompositionResult(basis, result);
   if (result.outcome !== 'proposal') return null;
   const { aliases, index } = await allocateCandidateAliases(
     basis.project.planningPath,

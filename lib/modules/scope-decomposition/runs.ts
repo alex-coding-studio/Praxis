@@ -104,19 +104,13 @@ import {
 import {
   taskDecompositionIntentionRegistry,
   taskDecompositionIntentionProfile,
-  validateTaskDecompositionIntentionResult,
   type TaskDecompositionIntention,
 } from './intention.ts';
 import {
   taskDecompositionMotionProfile,
-  validateTaskDecompositionMotionResult,
   type TaskDecompositionMotion,
 } from './motion.ts';
-import {
-  validateAgentGraphRecomposeDependencies,
-  validateAgentGraphRecomposePlan,
-  successfulRecomposeOutputCandidateIds,
-} from '../../graph/agent/recompose.ts';
+import { successfulRecomposeOutputCandidateIds } from '../../graph/agent/recompose.ts';
 
 export type TaskDecompositionRunStatus =
   | 'running'
@@ -1042,6 +1036,9 @@ async function finishTaskDecompositionRun(
       },
     );
     const subject = {
+      intention:
+        record.intention ?? taskDecompositionIntentionRegistry.defaultId,
+      motion: record.motion ?? 'unspecified',
       knownNodeIds: nodes.map((node) => node.id),
       acceptedCandidateIds,
       knownResourcePaths: resources.map((resource) => resource.logicalPath),
@@ -1084,21 +1081,6 @@ async function finishTaskDecompositionRun(
         'A revision must return exactly the requested Candidate identifier.',
       );
     }
-    validateTaskDecompositionIntentionResult(
-      record.intention ?? taskDecompositionIntentionRegistry.defaultId,
-      result,
-    );
-    validateRecomposeResult(record, result, knownCandidates);
-    const motionOutputCount =
-      result.outcome === 'proposal' && result.recomposition
-        ? new Set(result.recomposition.effects.flatMap((effect) => effect.to))
-            .size
-        : undefined;
-    validateTaskDecompositionMotionResult(
-      record.motion ?? 'unspecified',
-      result,
-      motionOutputCount,
-    );
     const endedAt = new Date().toISOString();
     record.status = result.outcome;
     record.result = result;
@@ -1185,7 +1167,10 @@ async function scopeDecompositionBasis(
   project: RegisteredProject,
   record: TaskDecompositionRunRecord,
   revisionTarget: HarnessCandidate | undefined,
-  subject: Omit<ScopeDecompositionBasisInput, 'operation' | 'revisionTarget'>,
+  subject: Omit<
+    ScopeDecompositionBasisInput,
+    'operation' | 'revisionTarget' | 'recomposeCandidateIds'
+  >,
 ) {
   if (revisionTarget) {
     if (!revisionTarget.uid) {
@@ -1210,47 +1195,16 @@ async function scopeDecompositionBasis(
       'A revision Run must resolve the Candidate it is revising.',
     );
   }
+  if (record.operation === 'recompose-candidates') {
+    return prepareScopeDecompositionMaterializationBasis(project, {
+      ...subject,
+      operation: 'recompose-candidates',
+      recomposeCandidateIds: record.recomposeCandidateIds ?? [],
+    });
+  }
   return prepareScopeDecompositionMaterializationBasis(project, {
     ...subject,
     operation: record.operation,
-  });
-}
-
-function validateRecomposeResult(
-  record: TaskDecompositionRunRecord,
-  result: TaskDecompositionHarnessResult,
-  knownCandidates: Array<
-    Extract<
-      TaskDecompositionHarnessResult,
-      { outcome: 'proposal' }
-    >['candidates'][number]
-  >,
-) {
-  if (record.operation !== 'recompose-candidates') {
-    if (result.outcome === 'proposal' && result.recomposition)
-      throw new Error('Only Recompose may return recomposition effects.');
-    return;
-  }
-  if (result.outcome !== 'proposal') return;
-  if (!result.recomposition)
-    throw new Error('Recompose requires explicit working-set effects.');
-  const selectedIds = record.recomposeCandidateIds ?? [];
-  const retainedIds = result.recomposition.effects
-    .filter((effect) => effect.kind === 'retain')
-    .flatMap((effect) => effect.to);
-  validateAgentGraphRecomposePlan({
-    selectedIds,
-    outputIds: [
-      ...retainedIds,
-      ...result.candidates.map((candidate) => candidate.candidateId),
-    ],
-    effects: result.recomposition.effects,
-  });
-  validateAgentGraphRecomposeDependencies({
-    selectedIds,
-    retainedIds,
-    outputCandidates: result.candidates,
-    knownCandidates,
   });
 }
 
