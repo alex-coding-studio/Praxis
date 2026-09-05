@@ -12,7 +12,6 @@ import {
 import { candidatePromptView } from '../../graph/identity.ts';
 import {
   ensureGraphIdentities,
-  parseIdentifiedResult,
   readIdentifiedEntities,
   reserveNodeIdentity,
   reservedCandidateAliases,
@@ -49,6 +48,13 @@ import {
   type HarnessCandidate,
   type TaskDecompositionHarnessResult,
 } from './harness.ts';
+import {
+  prepareScopeDecompositionMaterializationBasis,
+  type ScopeDecompositionBasisInput,
+} from './basis.ts';
+import { MaterializationError } from '../../materialization/receipt.ts';
+import { materializeScopeDecompositionResult } from './materializer.ts';
+import { toScopeDecompositionSemanticResult } from './producer-adapter.ts';
 import {
   buildTaskDecompositionContinuationPrompt,
   buildTaskDecompositionPrompt,
@@ -1007,9 +1013,10 @@ async function finishTaskDecompositionRun(
     await writeRunRecord(project, record);
     if (superseded()) return;
 
-    const result = await parseIdentifiedResult(
-      project.planningPath,
-      'task-graph',
+    const acceptedCandidateIds = nodes.flatMap((node) =>
+      node.provenance?.candidateId ? [node.provenance.candidateId] : [],
+    );
+    const envelope = parseTaskDecompositionHarnessResult(
       agentResult.finalOutput,
       {
         request: {
@@ -1025,9 +1032,7 @@ async function finishTaskDecompositionRun(
           ),
         ],
         knownResourcePaths: resources.map((resource) => resource.logicalPath),
-        acceptedCandidateIds: nodes.flatMap((node) =>
-          node.provenance?.candidateId ? [node.provenance.candidateId] : [],
-        ),
+        acceptedCandidateIds,
         previousCandidateRevisions: revisionTarget
           ? { [revisionTarget.candidateId]: revisionTarget.revision }
           : undefined,
@@ -1035,19 +1040,40 @@ async function finishTaskDecompositionRun(
         reservedCandidateIds,
         knownCandidates,
       },
-      parseTaskDecompositionHarnessResult,
-      revisionTarget,
     );
-    if (result.outcome === 'proposal' && result.recomposition) {
-      const aliases = result.candidateAliases ?? {};
-      result.recomposition.effects = result.recomposition.effects.map(
-        (effect) => ({
-          ...effect,
-          from: effect.from.map((id) => aliases[id] ?? id),
-          to: effect.to.map((id) => aliases[id] ?? id),
-        }),
-      );
-    }
+    const subject = {
+      knownNodeIds: nodes.map((node) => node.id),
+      acceptedCandidateIds,
+      knownResourcePaths: resources.map((resource) => resource.logicalPath),
+      reservedCandidateIds,
+      currentCandidates: knownCandidates.map((candidate) => ({
+        candidateId: candidate.candidateId,
+        revision: candidate.revision,
+        dependsOn: [...candidate.dependsOn],
+      })),
+    };
+    const basis = await scopeDecompositionBasis(
+      project,
+      record,
+      revisionTarget,
+      subject,
+    );
+    const materialized = await materializeScopeDecompositionResult(
+      basis,
+      toScopeDecompositionSemanticResult(envelope),
+    );
+    const result = materialized
+      ? {
+          ...envelope,
+          candidates: materialized.candidates,
+          ...(materialized.candidateAliases && {
+            candidateAliases: materialized.candidateAliases,
+          }),
+          ...(materialized.effects && {
+            recomposition: { effects: materialized.effects },
+          }),
+        }
+      : envelope;
     if (
       revisionTarget &&
       result.outcome === 'proposal' &&
@@ -1153,6 +1179,41 @@ async function finishTaskDecompositionRun(
   } finally {
     activeRuns.delete(runKey(project, record.runId));
   }
+}
+
+async function scopeDecompositionBasis(
+  project: RegisteredProject,
+  record: TaskDecompositionRunRecord,
+  revisionTarget: HarnessCandidate | undefined,
+  subject: Omit<ScopeDecompositionBasisInput, 'operation' | 'revisionTarget'>,
+) {
+  if (revisionTarget) {
+    if (!revisionTarget.uid) {
+      throw new MaterializationError(
+        'identity',
+        `Candidate ${revisionTarget.candidateId} has no stable identity to revise.`,
+      );
+    }
+    return prepareScopeDecompositionMaterializationBasis(project, {
+      ...subject,
+      operation: 'revise-candidate',
+      revisionTarget: {
+        candidateId: revisionTarget.candidateId,
+        revision: revisionTarget.revision,
+        uid: revisionTarget.uid,
+      },
+    });
+  }
+  if (record.operation === 'revise-candidate') {
+    throw new MaterializationError(
+      'validation',
+      'A revision Run must resolve the Candidate it is revising.',
+    );
+  }
+  return prepareScopeDecompositionMaterializationBasis(project, {
+    ...subject,
+    operation: record.operation,
+  });
 }
 
 function validateRecomposeResult(
