@@ -23,7 +23,7 @@ import type { CardWorkspace } from '../lib/modules/implementation/worktree.ts';
 
 const execute = promisify(execFile);
 
-void test('GitHub publication switches to the required API identity serially and restores the caller account', async () => {
+void test('GitHub publication switches to the required API identity and restores the caller account', async () => {
   let activeAccount = 'Cunqi';
   const apiLogins: Record<string, string> = {
     Cunqi: 'human-user',
@@ -51,44 +51,18 @@ void test('GitHub publication switches to the required API identity serially and
     }
     throw new Error(`Unexpected command: ${arguments_.join(' ')}`);
   };
-  let releaseFirst!: () => void;
-  let firstStarted!: () => void;
-  const firstReady = new Promise<void>((resolve) => {
-    firstStarted = resolve;
-  });
-  const firstBlock = new Promise<void>((resolve) => {
-    releaseFirst = resolve;
-  });
-  let secondStarted = false;
-  const first = withGitHubPublicationIdentity(
+  const result = await withGitHubPublicationIdentity(
     runner,
     '/tmp/workspace',
     'cunqi-bot',
     async () => {
       assert.equal(activeAccount, 'xiaocq203');
-      firstStarted();
-      await firstBlock;
-      assert.equal(activeAccount, 'xiaocq203');
-      return 'first';
+      return 'published';
     },
   );
-  await firstReady;
-  const second = withGitHubPublicationIdentity(
-    runner,
-    '/tmp/workspace',
-    'cunqi-bot',
-    async () => {
-      secondStarted = true;
-      assert.equal(activeAccount, 'xiaocq203');
-      return 'second';
-    },
-  );
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(secondStarted, false);
-  releaseFirst();
-  assert.deepEqual(await Promise.all([first, second]), ['first', 'second']);
+  assert.equal(result, 'published');
   assert.equal(activeAccount, 'Cunqi');
-  assert.deepEqual(switches, ['xiaocq203', 'Cunqi', 'xiaocq203', 'Cunqi']);
+  assert.deepEqual(switches, ['xiaocq203', 'Cunqi']);
 });
 
 async function fixture(

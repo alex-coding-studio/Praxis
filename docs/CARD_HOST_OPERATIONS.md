@@ -17,14 +17,17 @@ only after a concrete contradiction.
 
 ## Candidate publication
 
-`scripts/publish-card-candidate.ts` accepts one Candidate HEAD, not one request per commit.
-It validates the complete base-to-head range, clean Card branch, forbidden paths, active
-GitHub identity and push permission. It then pushes and creates or reuses the branch Draft
-PR. Repeating the same environment and HEAD is idempotent.
+`scripts/publish-execution-candidate.ts` is the only Candidate publication entrypoint. It
+accepts one Action Candidate, not one request per commit. Before starting the script, the
+Host serializes publication across Codex, Claude and DeepSeek Workers. The script validates
+the complete base-to-head range, clean Card worktree and forbidden paths; selects and
+verifies the required bot identity; initializes a missing private repository; pushes the
+Action-scoped branch; and creates or updates that Action's Draft PR. It restores the caller's
+GitHub account after success or failure. Repeating the same Action and HEAD is idempotent.
 
-Full Access Codex workers receive the same operation as `publish_candidate`. A Worker may
-make several local commits, then call the Host once. It does not run individual `gh auth`,
-permission, push, PR-create or PR-query commands.
+Codex, Claude and DeepSeek Workers receive the same operation as `publish_candidate`. A
+Worker may make several local commits, then call the Host once. It does not run individual
+account, permission, push, PR-create or PR-query commands.
 
 ## System validation
 

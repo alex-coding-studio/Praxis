@@ -18,9 +18,6 @@ import {
 } from './modules/implementation/worktree.ts';
 
 const exec = promisify(execFile);
-const githubRuntime = globalThis as typeof globalThis & {
-  praxisGitHubPublicationQueue?: Promise<void>;
-};
 
 export type CardExecutionRoles = {
   commit: string;
@@ -656,22 +653,6 @@ export async function withGitHubPublicationIdentity<T>(
   expectedLogin: string | undefined,
   work: (runner: HostCommandRunner) => Promise<T>,
 ) {
-  return serializeGitHubPublication(() =>
-    withGitHubPublicationIdentityUnlocked(
-      runner,
-      workspace,
-      expectedLogin,
-      work,
-    ),
-  );
-}
-
-async function withGitHubPublicationIdentityUnlocked<T>(
-  runner: HostCommandRunner,
-  workspace: string,
-  expectedLogin: string | undefined,
-  work: (runner: HostCommandRunner) => Promise<T>,
-) {
   if (!expectedLogin) return work(runner);
   const githubEnvironment = { ...process.env, GH_PROMPT_DISABLED: '1' };
   const invoke = (arguments_: string[]) =>
@@ -753,22 +734,6 @@ async function withGitHubPublicationIdentityUnlocked<T>(
   }
   if (failure) throw failure;
   return result as T;
-}
-
-function serializeGitHubPublication<T>(work: () => Promise<T>): Promise<T> {
-  const previous =
-    githubRuntime.praxisGitHubPublicationQueue ?? Promise.resolve();
-  let release!: () => void;
-  const current = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  githubRuntime.praxisGitHubPublicationQueue = previous
-    .catch(() => undefined)
-    .then(() => current);
-  return previous
-    .catch(() => undefined)
-    .then(work)
-    .finally(() => release());
 }
 
 export async function deliverCardCandidate(
