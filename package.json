@@ -43,7 +43,7 @@
     "publish:execution-candidate": "node --experimental-strip-types scripts/publish-execution-candidate.ts",
     "handoff:execution-packet": "node --experimental-strip-types scripts/handoff-execution-packet.ts",
     "test:implementation-planning": "node --experimental-strip-types --test tests/just-do-it-planning.test.ts tests/local-agent-models.test.ts tests/deepseek-models.test.ts tests/dsh-runtime.test.ts tests/deepseek-session-driver.test.ts",
-    "test:implementation-execution": "node --experimental-strip-types --test tests/just-do-it-coordination.test.ts tests/coordinator-events.test.ts tests/just-do-it-checklist.test.ts tests/just-do-it-execution.test.ts tests/github-delivery.test.ts tests/just-do-it-worktree.test.ts tests/worker-session-resume.test.ts",
+    "test:implementation-execution": "node --experimental-strip-types --test tests/just-do-it-coordination.test.ts tests/coordinator-events.test.ts tests/just-do-it-checklist.test.ts tests/just-do-it-execution.test.ts tests/github-delivery.test.ts tests/just-do-it-worktree.test.ts tests/worker-session-resume.test.ts tests/candidate-publication.test.ts",
     "test:coordination-smoke": "node --experimental-strip-types scripts/smoke-coordination.ts",
     "test:simulator-access": "node --experimental-strip-types scripts/smoke-codex-simulator.ts",
     "test:worktree-sandbox": "node --experimental-strip-types scripts/smoke-card-worktree.ts",

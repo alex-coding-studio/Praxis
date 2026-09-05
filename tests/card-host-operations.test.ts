@@ -16,11 +16,54 @@ import {
   deliverCardCandidate,
   prepareCardEnvironment,
   publishCardCandidate,
+  withGitHubPublicationIdentity,
   type HostCommandRunner,
 } from '../lib/card-host-operations.ts';
 import type { CardWorkspace } from '../lib/modules/implementation/worktree.ts';
 
 const execute = promisify(execFile);
+
+void test('GitHub publication switches to the required API identity and restores the caller account', async () => {
+  let activeAccount = 'Cunqi';
+  const apiLogins: Record<string, string> = {
+    Cunqi: 'human-user',
+    xiaocq203: 'cunqi-bot',
+  };
+  const switches: string[] = [];
+  const runner: HostCommandRunner = async (command, arguments_) => {
+    assert.equal(command, 'gh');
+    if (arguments_.join(' ') === 'api user --jq .login')
+      return apiLogins[activeAccount]!;
+    if (arguments_[0] === 'auth' && arguments_[1] === 'status')
+      return JSON.stringify({
+        hosts: {
+          'github.com': Object.keys(apiLogins).map((login) => ({
+            login,
+            active: login === activeAccount,
+            state: 'success',
+          })),
+        },
+      });
+    if (arguments_[0] === 'auth' && arguments_[1] === 'switch') {
+      activeAccount = arguments_[arguments_.indexOf('--user') + 1]!;
+      switches.push(activeAccount);
+      return '';
+    }
+    throw new Error(`Unexpected command: ${arguments_.join(' ')}`);
+  };
+  const result = await withGitHubPublicationIdentity(
+    runner,
+    '/tmp/workspace',
+    'cunqi-bot',
+    async () => {
+      assert.equal(activeAccount, 'xiaocq203');
+      return 'published';
+    },
+  );
+  assert.equal(result, 'published');
+  assert.equal(activeAccount, 'Cunqi');
+  assert.deepEqual(switches, ['xiaocq203', 'Cunqi']);
+});
 
 async function fixture(
   t: { after: (callback: () => Promise<void>) => void },
@@ -323,6 +366,7 @@ void test('Candidate Publisher rejects generated output before GitHub writes', a
         commit: 'agent-bot',
         delivery: 'bot',
         approval: 'user',
+        expectedGitHubLogin: 'agent-bot',
       },
     },
     async (command, arguments_, options) => {

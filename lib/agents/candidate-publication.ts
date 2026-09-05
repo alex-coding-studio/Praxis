@@ -5,7 +5,17 @@ import type {
   CandidatePublishRequest,
 } from '../card-host-operations.ts';
 
+const publicationRuntime = globalThis as typeof globalThis & {
+  praxisCandidatePublicationQueue?: Promise<void>;
+};
+
 export function runCandidatePublicationScript(
+  request: CandidatePublishRequest,
+): Promise<CandidatePublication> {
+  return serializeCandidatePublication(() => runScript(request));
+}
+
+function runScript(
   request: CandidatePublishRequest,
 ): Promise<CandidatePublication> {
   return new Promise((resolve, reject) => {
@@ -42,4 +52,22 @@ export function runCandidatePublicationScript(
     child.stdin.on('error', () => undefined);
     child.stdin.end(JSON.stringify(request));
   });
+}
+
+export function serializeCandidatePublication<T>(
+  work: () => Promise<T>,
+): Promise<T> {
+  const previous =
+    publicationRuntime.praxisCandidatePublicationQueue ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  publicationRuntime.praxisCandidatePublicationQueue = previous
+    .catch(() => undefined)
+    .then(() => current);
+  return previous
+    .catch(() => undefined)
+    .then(work)
+    .finally(() => release());
 }
