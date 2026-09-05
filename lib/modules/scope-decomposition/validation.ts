@@ -45,6 +45,29 @@ function planEffects(effects: readonly ScopeDecompositionRecomposeEffect[]) {
   }));
 }
 
+function assertEffectReferences(
+  state: ScopeDecompositionValidationState,
+  result: Extract<ScopeDecompositionResult, { outcome: 'proposal' }>,
+) {
+  const localKeys = new Set(result.candidates.map((c) => c.localKey));
+  const selected = new Set(state.recomposeCandidateIds);
+  for (const effect of result.recomposition?.effects ?? []) {
+    for (const reference of effect.to) {
+      if (reference.kind === 'proposal') {
+        if (!localKeys.has(reference.localKey))
+          fail(
+            `Recompose effect names proposal key ${reference.localKey}, which this result does not propose.`,
+          );
+        continue;
+      }
+      if (!selected.has(reference.id))
+        fail(
+          `Recompose effect names Candidate ${reference.id}, which is not in the selected working set.`,
+        );
+    }
+  }
+}
+
 function validateRecomposition(
   state: ScopeDecompositionValidationState,
   result: Extract<ScopeDecompositionResult, { outcome: 'proposal' }>,
@@ -56,6 +79,7 @@ function validateRecomposition(
   }
   if (!result.recomposition)
     fail('Recompose requires explicit working-set effects.');
+  assertEffectReferences(state, result);
   const effects = planEffects(result.recomposition.effects);
   const retainedIds = effects
     .filter((effect) => effect.kind === 'retain')

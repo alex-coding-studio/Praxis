@@ -258,3 +258,30 @@ void test('a non-proposal outcome materializes nothing', async (t) => {
   );
   assert.deepEqual(await identityIndex(project), before);
 });
+
+void test('a Candidate reference cannot stand in for a proposal key it happens to match', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const selected = ['CANDIDATE-aaaaaaaa'];
+  const basis = await recomposeBasis(project, sourceNodeId, selected, [
+    { candidateId: selected[0]!, revision: 1, dependsOn: [] },
+  ]);
+  const before = await identityIndex(project);
+  await assert.rejects(
+    () =>
+      materializeScopeDecompositionResult(basis, {
+        outcome: 'proposal',
+        candidates: [candidate('CANDIDATE-00000001', sourceNodeId)],
+        recomposition: {
+          effects: [
+            {
+              kind: 'replace',
+              from: [{ kind: 'candidate', id: selected[0]! }],
+              to: [{ kind: 'candidate', id: 'CANDIDATE-00000001' }],
+            },
+          ],
+        },
+      }),
+    MaterializationError,
+  );
+  assert.deepEqual(await identityIndex(project), before);
+});
