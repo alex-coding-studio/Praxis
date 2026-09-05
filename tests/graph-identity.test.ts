@@ -13,27 +13,21 @@ import {
   type GraphIdentityIndex,
 } from '../lib/graph/identity.ts';
 import {
+  allocateCandidateAliases,
   ensureGraphIdentities,
-  identifyCandidates,
+  identitiesFingerprint,
   readIdentifiedEntities,
   reserveNodeIdentity,
   reservedCandidateAliases,
-  parseIdentifiedResult,
 } from '../lib/graph/identity-store.ts';
+import { resolveProposalCandidates } from '../lib/graph/proposal/resolve.ts';
+import { validateGraphProposal } from '../lib/graph/proposal/validate.ts';
+import type { GraphProposalCandidate } from '../lib/graph/proposal/contract.ts';
+import type { GraphReference } from '../lib/graph/proposal/reference.ts';
 import { buildTaskGraphLayout } from '../lib/graph/task/layout.ts';
 import type { TaskGraphNode } from '../lib/graph/task/model.ts';
-import {
-  parseWhatsNextHarnessResult,
-  WHATS_NEXT_HARNESS_ID,
-  WHATS_NEXT_HARNESS_REVISION,
-  type WhatsNextValidationContext,
-} from '../lib/modules/product-discovery/harness.ts';
-import {
-  parseTaskDecompositionHarnessResult,
-  TASK_DECOMPOSITION_HARNESS_ID,
-  TASK_DECOMPOSITION_HARNESS_REVISION,
-  type HarnessValidationContext,
-} from '../lib/modules/scope-decomposition/harness.ts';
+import {} from '../lib/modules/product-discovery/harness.ts';
+import {} from '../lib/modules/scope-decomposition/harness.ts';
 import { buildWhatsNextContinuationPrompt } from '../lib/modules/product-discovery/prompt.ts';
 import { buildTaskDecompositionContinuationPrompt } from '../lib/modules/scope-decomposition/prompt.ts';
 
@@ -96,225 +90,180 @@ void test('UUID suffix collisions extend only the new alias and promotion retain
   assert.equal(uuidAlias(index, 'NODE', second), 'NODE-2222abcdef12');
 });
 
+function proposalCandidate(
+  localKey: string,
+  derivedFrom: string[],
+  dependsOn: GraphReference[] = [],
+): GraphProposalCandidate {
+  return {
+    localKey,
+    type: 'module',
+    title: 'A useful next step',
+    summary: 'One bounded piece of product meaning.',
+    derivedFrom: derivedFrom.map((id) => ({ kind: 'node', id })),
+    dependsOn,
+    resources: [],
+    typeTemplateRef: null,
+    metadata: {},
+    presentation: {},
+    assumptions: [],
+  };
+}
+
 for (const scope of ['whats-next', 'task-graph'] as const) {
-  void test(`${scope}: run-local aliases cannot collide with existing nodes and all structured links survive promotion`, async () => {
+  void test(`${scope}: minted aliases avoid existing identities and structured links survive promotion`, async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'graph-alias-test-'));
     try {
       await save(root, `${scope}/nodes/NODE-00000002/node.json`, {
         id: 'NODE-00000002',
       });
-      const original = await identifyCandidates(root, scope, [
-        { candidateId: 'CANDIDATE-00000003' },
-        { candidateId: 'CANDIDATE-00000004' },
-      ]);
-      const request = {
-        sessionId: 'SESSION-test',
-        requestId: 'REQUEST-test',
-        inputFingerprint: 'test-fingerprint',
-      };
-      const context: HarnessValidationContext & WhatsNextValidationContext = {
-        request,
-        knownNodeIds: ['NODE-00000002'],
-        availableNodeContentIds: ['NODE-00000002'],
-        knownResourcePaths: [],
-        reservedCandidateIds: ['CANDIDATE-00000003', 'CANDIDATE-00000004'],
-        knownCandidates: original.map((c) => ({
-          candidateId: c.candidateId,
-          revision: 1,
-          dependsOn: [],
-        })),
-      };
-      const makeCandidate = (
-        candidateId: string,
-        dependsOn: string[] = [],
-      ) => ({
-        candidateId,
-        revision: 1,
-        type: 'module',
-        title: 'A useful next step',
-        summary: 'One bounded piece of product meaning.',
-        derivedFrom: ['NODE-00000002'],
-        dependsOn,
-        resources: [],
-        typeTemplateRef: null,
-        metadata: {},
-        presentation: {},
-        assumptions: [],
-        ...(scope === 'whats-next'
-          ? {
-              layer: 'discovery',
-              artifactKind: 'mvp',
-              outputMarkdown:
-                '# A useful next step\n\nOne bounded piece of product meaning.\n\n## Why this direction\n\n- Explore one useful direction.\n- Keep the scope understandable.\n\n## Assumptions\n\n- None',
-            }
-          : {}),
-      });
-      const payload = {
-        schemaVersion: 1,
-        harness:
-          scope === 'whats-next'
-            ? {
-                id: WHATS_NEXT_HARNESS_ID,
-                revision: WHATS_NEXT_HARNESS_REVISION,
-              }
-            : {
-                id: TASK_DECOMPOSITION_HARNESS_ID,
-                revision: TASK_DECOMPOSITION_HARNESS_REVISION,
-              },
-        request,
-        outcome: 'proposal',
-        ...(scope === 'whats-next'
-          ? {
-              reflection: {
-                markdown: '# Reflection\n\nExplore the next step.',
-                continuationAdvice: {
-                  action: 'continue',
-                  recommendedFocus: 'expand',
-                  reason: 'There is another useful direction.',
-                },
-              },
-              exploration: { consideredNodeIds: ['NODE-00000002'], notes: [] },
-            }
-          : {
-              impactReview: {
-                reviewedNodeIds: ['NODE-00000002'],
-                affectedNodeIds: [],
-                notes: [],
-              },
-            }),
-        candidates: [
-          makeCandidate('CANDIDATE-00000003'),
-          makeCandidate('CANDIDATE-00000004', ['CANDIDATE-00000003']),
-        ],
-      };
-      const parse = (text: string, ctx: typeof context) =>
-        scope === 'whats-next'
-          ? parseWhatsNextHarnessResult(text, ctx)
-          : parseTaskDecompositionHarnessResult(text, ctx);
-      const ingest = (value: unknown) =>
-        parseIdentifiedResult(
+      const materialize = async (
+        candidates: GraphProposalCandidate[],
+        revisionTarget?: { candidateId: string; revision: number; uid: string },
+      ) => {
+        const fingerprint = await identitiesFingerprint(root, scope);
+        const { aliases, index } = await allocateCandidateAliases(
           root,
           scope,
-          JSON.stringify(value),
-          context,
-          parse,
+          {
+            localKeys: candidates.map((candidate) => candidate.localKey),
+            revisionTarget,
+          },
+          fingerprint,
         );
-      const first = await ingest(payload);
-      assert.equal(first.outcome, 'proposal');
-      if (first.outcome !== 'proposal') throw new Error('Expected proposal');
+        return {
+          aliases: Object.fromEntries(aliases),
+          candidates: resolveProposalCandidates(candidates, {
+            aliases,
+            index,
+            revision: revisionTarget ? revisionTarget.revision + 1 : 1,
+          }),
+        };
+      };
+
+      const first = await materialize([
+        proposalCandidate('first-step', ['NODE-00000002']),
+        proposalCandidate(
+          'second-step',
+          ['NODE-00000002'],
+          [{ kind: 'proposal', localKey: 'first-step' }],
+        ),
+      ]);
       const [a, b] = first.candidates;
-      assert.equal(a!.candidateId, `CANDIDATE-${a!.uid!.slice(-8)}`);
-      assert.deepEqual(b!.dependsOn, [a!.candidateId]);
-      assert.deepEqual(b!.relations!.dependsOn, [a!.uid]);
-      assert.deepEqual(first.candidateAliases, {
-        'CANDIDATE-00000003': a!.candidateId,
-        'CANDIDATE-00000004': b!.candidateId,
+      assert.ok(a && b);
+      assert.equal(a.candidateId, `CANDIDATE-${a.uid.slice(-8)}`);
+      assert.notEqual(a.candidateId, 'NODE-00000002');
+      assert.deepEqual(b.dependsOn, [a.candidateId]);
+      assert.deepEqual(b.relations.dependsOn, [a.uid]);
+      assert.deepEqual(first.aliases, {
+        'first-step': a.candidateId,
+        'second-step': b.candidateId,
       });
       const index = await json(root, `${scope}/identities.json`);
-      assert.equal(index.aliases['CANDIDATE-00000003'], original[0]!.uid);
-      assert.equal(index.aliases['CANDIDATE-00000004'], original[1]!.uid);
+      assert.equal(index.aliases[a.candidateId], a.uid);
       assert.equal(index.nextNodeNumber, undefined);
-      const concurrent = await Promise.all([ingest(payload), ingest(payload)]);
-      const ids = [first, ...concurrent].flatMap((r) =>
-        r.outcome === 'proposal' ? r.candidates.map((c) => c.candidateId) : [],
-      );
-      assert.equal(new Set(ids).size, 6);
-      const external = await ingest({
-        ...payload,
-        candidates: [
-          makeCandidate('CANDIDATE-00000001', [
-            'CANDIDATE-00000004',
-            'NODE-00000002',
-          ]),
-          makeCandidate('CANDIDATE-00000002'),
-        ],
-      });
-      if (external.outcome !== 'proposal') throw new Error('Expected proposal');
-      assert.deepEqual(external.candidates[0]!.relations!.dependsOn, [
-        original[1]!.uid,
+
+      const later = await materialize([
+        proposalCandidate(
+          'third-step',
+          ['NODE-00000002'],
+          [
+            { kind: 'candidate', id: b.candidateId },
+            { kind: 'node', id: 'NODE-00000002' },
+          ],
+        ),
+      ]);
+      assert.deepEqual(later.candidates[0]!.relations.dependsOn, [
+        b.uid,
         index.aliases['NODE-00000002'],
       ]);
+      assert.equal(
+        new Set(
+          [...first.candidates, ...later.candidates].map(
+            (candidate) => candidate.candidateId,
+          ),
+        ).size,
+        3,
+      );
 
       const beforeFailure = await readFile(
         path.join(root, scope, 'identities.json'),
         'utf8',
       );
-      for (const candidates of [
-        [
-          makeCandidate('CANDIDATE-00000001'),
-          makeCandidate('CANDIDATE-00000001'),
-        ],
-        [makeCandidate('CANDIDATE-00000001', ['CANDIDATE-00009999'])],
-        [makeCandidate('CANDIDATE-00000001', ['CANDIDATE-00000001'])],
-        [
-          makeCandidate('CANDIDATE-00000001', ['CANDIDATE-00000002']),
-          makeCandidate('CANDIDATE-00000002', ['CANDIDATE-00000001']),
-        ],
-        [makeCandidate('../invalid')],
-        [{ ...makeCandidate('CANDIDATE-00000001'), uid: randomUUID() }],
+      for (const localKeys of [
+        ['duplicate-key', 'duplicate-key'],
+        ['../invalid'],
       ]) {
-        await assert.rejects(() => ingest({ ...payload, candidates }));
+        await assert.rejects(() =>
+          materialize(
+            localKeys.map((key) => proposalCandidate(key, ['NODE-00000002'])),
+          ),
+        );
         assert.equal(
           await readFile(path.join(root, scope, 'identities.json'), 'utf8'),
           beforeFailure,
         );
       }
-      const refined = await parseIdentifiedResult(
-        root,
-        scope,
-        JSON.stringify({
-          ...payload,
-          candidates: [{ ...makeCandidate(a!.candidateId), revision: 2 }],
-        }),
-        {
-          ...context,
-          previousCandidateRevisions: { [a!.candidateId]: 1 },
-          ...(scope === 'whats-next'
-            ? {
-                operation: 'refine-candidate' as const,
-                revisionCandidateId: a!.candidateId,
-                revisionTarget:
-                  a as import('../lib/modules/product-discovery/harness.ts').WhatsNextCandidate,
-              }
-            : {}),
-        },
-        parse,
-        a,
+      assert.throws(
+        () =>
+          validateGraphProposal(
+            {
+              knownNodeIds: ['NODE-00000002'],
+              acceptedCandidateIds: [],
+              knownResourcePaths: [],
+              reservedCandidateIds: [],
+              currentCandidates: [],
+              revisionTarget: null,
+            },
+            [
+              proposalCandidate(
+                'dangling',
+                ['NODE-00000002'],
+                [{ kind: 'proposal', localKey: 'absent-sibling' }],
+              ),
+            ],
+          ),
+        /unknown proposal key/,
       );
-      if (refined.outcome !== 'proposal') throw new Error('Expected proposal');
-      assert.equal(refined.candidates[0]!.uid, a!.uid);
-      assert.equal(refined.candidates[0]!.candidateId, a!.candidateId);
-      const formal = await reserveNodeIdentity(root, scope, a!.uid);
-      assert.equal(formal.id, a!.candidateId.replace('CANDIDATE-', 'NODE-'));
-      assert.equal(formal.uid, a!.uid);
-      const [child] = await readIdentifiedEntities(root, scope, [b!]);
-      assert.deepEqual(child!.relations!.dependsOn, [formal.uid]);
+      assert.equal(
+        await readFile(path.join(root, scope, 'identities.json'), 'utf8'),
+        beforeFailure,
+      );
+
+      const refined = await materialize(
+        [proposalCandidate(a.candidateId, ['NODE-00000002'])],
+        { candidateId: a.candidateId, revision: 1, uid: a.uid },
+      );
+      assert.equal(refined.candidates[0]!.uid, a.uid);
+      assert.equal(refined.candidates[0]!.candidateId, a.candidateId);
+      assert.equal(refined.candidates[0]!.revision, 2);
+
+      const formal = await reserveNodeIdentity(root, scope, a.uid);
+      assert.equal(formal.id, a.candidateId.replace('CANDIDATE-', 'NODE-'));
+      assert.equal(formal.uid, a.uid);
+      const [child] = await readIdentifiedEntities(root, scope, [b]);
+      assert.deepEqual(child!.relations.dependsOn, [formal.uid]);
       await save(root, `${scope}/nodes/${formal.id}/node.json`, {
         ...formal,
         derivedFrom: ['NODE-00000002'],
       });
       await ensureGraphIdentities(root, scope, true);
-      const [promoted] = await readIdentifiedEntities(root, scope, [b!]);
+      const [promoted] = await readIdentifiedEntities(root, scope, [b]);
       assert.deepEqual(promoted!.dependsOn, [formal.id]);
-      context.knownNodeIds = ['NODE-00000002', formal.id];
-      context.availableNodeContentIds = ['NODE-00000002', formal.id];
-      const next = await ingest({
-        ...payload,
-        candidates: [
-          { ...makeCandidate('CANDIDATE-00000001'), derivedFrom: [formal.id] },
-          { ...makeCandidate('CANDIDATE-00000002'), derivedFrom: [formal.id] },
-        ],
-      });
-      if (next.outcome !== 'proposal') throw new Error('Expected descendants');
-      assert.deepEqual(next.candidates[0]!.relations!.derivedFrom, [
+
+      const descendant = await materialize([
+        proposalCandidate('after-promotion', [formal.id]),
+      ]);
+      assert.deepEqual(descendant.candidates[0]!.relations.derivedFrom, [
         formal.uid,
       ]);
+
       const prompt = (
         scope === 'whats-next'
           ? buildWhatsNextContinuationPrompt
           : buildTaskDecompositionContinuationPrompt
-      )({ previousProposalAliases: first.candidateAliases });
-      assert.ok(prompt.includes(a!.candidateId));
+      )({ previousProposalAliases: first.aliases });
+      assert.ok(prompt.includes(a.candidateId));
       assert.match(prompt, /previousProposalAliases/);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -401,23 +350,53 @@ for (const scope of ['whats-next', 'task-graph'] as const) {
         '# Preserve this Markdown\n',
       );
 
-      const [child] = await identifyCandidates(root, scope, [
+      const childFingerprint = await identitiesFingerprint(root, scope);
+      const childAllocation = await allocateCandidateAliases(
+        root,
+        scope,
+        { localKeys: ['descendant'] },
+        childFingerprint,
+      );
+      const [child] = resolveProposalCandidates(
+        [
+          proposalCandidate(
+            'descendant',
+            ['NODE-00000002'],
+            [{ kind: 'candidate', id: 'CANDIDATE-00000002' }],
+          ),
+        ],
         {
-          candidateId: 'CANDIDATE-00000003',
-          derivedFrom: ['NODE-00000002'],
-          dependsOn: ['CANDIDATE-00000002'],
+          aliases: childAllocation.aliases,
+          index: childAllocation.index,
+          revision: 1,
         },
-      ]);
+      );
       assert.notEqual(child!.uid, promoted.uid);
       assert.deepEqual(child!.relations.derivedFrom, [promoted.uid]);
       assert.deepEqual(child!.relations.dependsOn, [
         first.result.candidates[1].uid,
       ]);
-      const [refined] = await identifyCandidates(
+      const revisionFingerprint = await identitiesFingerprint(root, scope);
+      const revisionAllocation = await allocateCandidateAliases(
         root,
         scope,
-        [{ ...candidate, revision: 3 }],
-        second.result.candidates[0],
+        {
+          localKeys: [candidate.candidateId],
+          revisionTarget: {
+            candidateId: candidate.candidateId,
+            revision: 2,
+            uid: second.result.candidates[0].uid,
+          },
+        },
+        revisionFingerprint,
+      );
+      const [refined] = resolveProposalCandidates(
+        [proposalCandidate(candidate.candidateId, [source.id])],
+        {
+          aliases: revisionAllocation.aliases,
+          index: revisionAllocation.index,
+          revision: 3,
+        },
       );
       assert.equal(refined!.uid, promoted.uid);
       assert.deepEqual(await reserveNodeIdentity(root, scope, promoted.uid), {
@@ -446,12 +425,25 @@ for (const scope of ['whats-next', 'task-graph'] as const) {
       assert.deepEqual(child!.relations.derivedFrom, [promoted.uid]);
       assert.ok(
         (await reservedCandidateAliases(root, scope)).includes(
-          'CANDIDATE-00000003',
+          child!.candidateId,
         ),
       );
       await assert.rejects(
-        () => identifyCandidates(root, scope, [candidate]),
-        /already been allocated/,
+        async () =>
+          allocateCandidateAliases(
+            root,
+            scope,
+            {
+              localKeys: [candidate.candidateId],
+              revisionTarget: {
+                candidateId: candidate.candidateId,
+                revision: 2,
+                uid: randomUUID(),
+              },
+            },
+            await identitiesFingerprint(root, scope),
+          ),
+        /does not hold the stable identity/,
       );
     } finally {
       await rm(root, { recursive: true, force: true });
