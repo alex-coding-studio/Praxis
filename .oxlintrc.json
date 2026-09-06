@@ -54,13 +54,5 @@
     "typescript/no-require-imports": "error",
     "typescript/no-unnecessary-type-constraint": "error",
     "typescript/no-unsafe-function-type": "error"
-  },
-  "overrides": [
-    {
-      "files": ["lib/mcp/server.ts"],
-      "rules": {
-        "typescript/no-deprecated": "off"
-      }
-    }
-  ]
+  }
 }

@@ -94,6 +94,7 @@ export const MATERIALIZATION_REQUIRED_FILES = [
   'lib/mcp/errors.ts',
   'lib/mcp/modules.ts',
   'lib/mcp/pagination.ts',
+  'lib/mcp/schema-adapter.ts',
   'lib/mcp/server.ts',
   'lib/mcp/tool-schemas.ts',
   'lib/mcp/uri.ts',
