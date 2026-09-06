@@ -10,7 +10,7 @@ process.env.PRAXIS_HOME = REGISTRY_HOME;
 
 const registry = await import('../lib/project-registry.ts');
 const { createStartNode } = await import('../lib/graph/task/model.ts');
-const { prepareProductExplorationOperation } =
+const { prepareProductExplorationOperation, preparedOperationProjection } =
   await import('../lib/mcp/prepare.ts');
 const { submitProductExplorationResult } = await import('../lib/mcp/submit.ts');
 const { findMcpOperation, writeMcpOperation } =
@@ -628,6 +628,33 @@ void test('an admission held by this live Host still reads as running', async (t
     (await catalog.readOperationResource(project.id, record.operationId)).text,
   ) as Record<string, unknown>;
   assert.equal(projection.status, 'running');
+});
+
+void test('the prepared projection exposes readable references, not filesystem paths', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const { record } = await prepared(project as never, sourceNodeId);
+  const projection = preparedOperationProjection(record);
+  const serialized = JSON.stringify(projection);
+  assert.equal(
+    serialized.includes(record.basisPath),
+    false,
+    'the stored Basis path must stay server-side',
+  );
+  assert.equal(
+    serialized.includes(record.userInputPath),
+    false,
+    'the stored User Input path must stay server-side',
+  );
+  assert.equal(serialized.includes(project.planningPath), false);
+  assert.equal(serialized.includes(project.rootPath), false);
+  assert.equal(projection.submitTool, 'praxis_submit_product_exploration');
+  assert.match(projection.operationUri, /^praxis:\/\/projects\//u);
+  for (const resource of projection.context.resources) {
+    assert.match(resource.sha256, /^[0-9a-f]{64}$/);
+    if (resource.uri === null) continue;
+    const read = await catalog.resolveMcpResource(resource.uri);
+    assert.ok(read.text.length > 0, `${resource.logicalPath} must be readable`);
+  }
 });
 
 void test('preparation refuses to guess when a layer allows more than one intention', async (t) => {

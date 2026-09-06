@@ -2,9 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { sha256Hex } from '../materialization/hash.ts';
 import {
+  isAcceptedPlanningShape,
   resolvePlanningPath,
   TASK_GRAPH_MARKDOWN_SHAPES,
 } from '../planning-paths.ts';
+import { encodeArtifactId } from './artifacts.ts';
 import {
   collectLatestUnacceptedCandidateStates,
   collectReservedCandidateIds,
@@ -36,7 +38,7 @@ import {
   type McpOperationRecord,
   type McpOperationSource,
 } from './operations.ts';
-import { contractUri, moduleUri } from './uri.ts';
+import { artifactUri, contractUri, moduleUri } from './uri.ts';
 
 export const MAX_USER_INPUT_LENGTH = 20_000;
 
@@ -264,10 +266,19 @@ export function preparedOperationProjection(record: McpOperationRecord) {
     contract: record.contract,
     basis: record.basis,
     request: record.request,
-    evidence: {
-      userInputPath: record.userInputPath,
-      basisPath: record.basisPath,
-      sources: record.sources,
+    context: {
+      summary: `${record.sources.length} frozen source document${record.sources.length === 1 ? '' : 's'}; the User Input is stored as submitted evidence.`,
+      resources: record.sources.map((source) => ({
+        logicalPath: source.logicalPath,
+        sha256: source.sha256,
+        byteLength: source.byteLength,
+        uri: isAcceptedPlanningShape(
+          source.logicalPath,
+          TASK_GRAPH_MARKDOWN_SHAPES,
+        )
+          ? artifactUri(record.projectId, encodeArtifactId(source.logicalPath))
+          : null,
+      })),
     },
     contractUri: contractUri(record.contract.id, record.contract.version),
     moduleUri: moduleUri(record.projectId, record.module),
