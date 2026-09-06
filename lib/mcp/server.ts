@@ -271,6 +271,21 @@ export function createPraxisMcpServer() {
   );
 
   server.registerResource(
+    'operation-source',
+    new ResourceTemplate(
+      'praxis://projects/{projectId}/operations/{operationId}/sources/{sourceId}',
+      { list: undefined },
+    ),
+    {
+      title: 'Frozen source document',
+      description:
+        'A source document as it stood when the operation was prepared, paged and bound to the hash the prepared context advertises.',
+      mimeType: 'text/markdown',
+    },
+    (uri) => resourceContents(uri.href),
+  );
+
+  server.registerResource(
     'artifact',
     new ResourceTemplate(
       'praxis://projects/{projectId}/artifacts/{artifactId}',

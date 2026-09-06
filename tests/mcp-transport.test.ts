@@ -183,6 +183,59 @@ void test(
 );
 
 void test(
+  'every URI the catalog serves is reachable through the SDK resource route',
+  { timeout: 20_000 },
+  async (t) => {
+    const project = await fixture(t);
+    const url = await listen(t);
+    const client = await connect(t, url);
+    const templates = (
+      await client.listResourceTemplates()
+    ).resourceTemplates.map((template) => template.uriTemplate);
+    for (const expected of [
+      'praxis://projects/{projectId}/modules/{module}',
+      'praxis://projects/{projectId}/modules/{module}/latest-response',
+      'praxis://projects/{projectId}/artifacts/{artifactId}',
+      'praxis://projects/{projectId}/operations/{operationId}',
+      'praxis://projects/{projectId}/operations/{operationId}/log',
+      'praxis://projects/{projectId}/operations/{operationId}/sources/{sourceId}',
+      'praxis://contracts/{contractId}/{version}',
+    ])
+      assert.equal(
+        templates.includes(expected),
+        true,
+        `${expected} must be registered as a resource template`,
+      );
+
+    const prepare = await client.callTool({
+      name: 'praxis_prepare',
+      arguments: {
+        projectId: project.id,
+        module: 'product-exploration',
+        request: { userInput: 'Explore one bounded MVP.', layer: 'discovery' },
+      },
+    });
+    assert.notEqual(prepare.isError, true);
+    const prepared = prepare.structuredContent as {
+      operationUri: string;
+      context: { resources: Array<{ uri: string }> };
+    };
+    for (const uri of [
+      prepared.operationUri,
+      `${prepared.operationUri}/log`,
+      ...prepared.context.resources.map((resource) => resource.uri),
+    ]) {
+      const read = await client.readResource({ uri });
+      assert.equal(
+        read.contents[0]?.uri,
+        uri,
+        `${uri} must be readable through resources/read`,
+      );
+    }
+  },
+);
+
+void test(
   'an unknown resource and an unknown tool are refused with a readable envelope',
   { timeout: 20_000 },
   async (t) => {
