@@ -525,3 +525,12 @@ export const DELIVERY_MAP_MINIMAL_EXAMPLE: DeliveryMapResult = {
     },
   ],
 };
+
+export type WhatToDoMapProposal = {
+  outcome: 'map-proposal';
+  candidates: WhatToDoContractCandidate[];
+  sourceClaims: WhatToDoSourceClaim[];
+  sourceClaimUpdates?: WhatToDoSourceClaimUpdate[];
+  contractDependencyUpdates?: WhatToDoContractDependencyUpdate[];
+  recomposition?: { effects: AgentGraphRecomposeEffect[] };
+};
