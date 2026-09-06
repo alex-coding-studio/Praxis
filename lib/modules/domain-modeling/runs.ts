@@ -39,6 +39,11 @@ import {
   assertDomainModelSelection,
   prepareDomainModelBasis,
 } from './basis.ts';
+import { materializationLogEntry } from '../../materialization/log.ts';
+import {
+  rejectionReceipt,
+  type MaterializationReceipt,
+} from '../../materialization/receipt.ts';
 import {
   publishDomainModelResult,
   DOMAIN_MODEL_UNCHANGED_REASON,
@@ -93,6 +98,7 @@ export type DomainModelRunRecord = {
   activity: Array<{ at: string; summary: string }>;
   result: DomainModelAgentResult | null;
   change: DomainChange | null;
+  materialization?: MaterializationReceipt;
   error: string | null;
   logRef?: string;
   hostPid?: number;
@@ -462,11 +468,32 @@ async function settle(
     model: request.model,
     selectedIds: request.selectedIds,
   });
+  if (active.reservation)
+    active.reservation.record(
+      materializationLogEntry(
+        'materialization.basis.prepared',
+        `Prepared the Domain Model Basis at fingerprint ${basis.fingerprint.slice(0, 12)}.`,
+      ),
+    );
   const semantic = toDomainModelSemanticResult(envelope);
-  const published = await publishDomainModelResult(project, basis, semantic, {
-    runId: original.id,
-    userInputPath: original.userInputPath ?? null,
-  });
+  const published = await publishDomainModelResult(
+    project,
+    basis,
+    semantic,
+    {
+      kind: 'agent-run',
+      runId: original.id,
+      userInputPath: original.userInputPath ?? null,
+      harness: {
+        id: 'praxis.domain-model',
+        revision: envelope.harnessVersion,
+      },
+    },
+    undefined,
+    active.reservation
+      ? (entry) => active.reservation?.record(entry)
+      : () => undefined,
+  );
   const change = published.change;
   const result = settledDomainModelResult(envelope, published);
   const classification = classifyModuleRun(
@@ -496,6 +523,7 @@ async function settle(
     activity: [...active.activity],
     result,
     change,
+    materialization: published.receipt,
     error: null,
     response: classification,
   };
@@ -546,11 +574,13 @@ async function fail(
       message,
     },
   });
+  const receipt = rejectionReceipt(error);
   const run: DomainModelRunRecord = {
     ...original,
     status: 'failed',
     endedAt: new Date().toISOString(),
     activity: [...active.activity],
+    ...(receipt && { materialization: receipt }),
     error: `${classification.detail} ${DOMAIN_MODEL_RETAINED}`,
     response: classification,
   };

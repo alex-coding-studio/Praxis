@@ -107,8 +107,8 @@
       "requestId": "RUN-U5",
       "baseVersion": 0,
       "inputFingerprint": "H1",
-      "outcome": "applied",
       "summary": "Created Item and Container.",
+      "outcome": "applied",
       "model": {
         "entities": [
           {
@@ -216,12 +216,130 @@
     "error": null,
     "logRef": "domain-model/runs/RUN-U5/run.log",
     "hostPid": 0,
+    "materialization": {
+      "schemaVersion": 1,
+      "contract": {
+        "id": "praxis.domain-model.result",
+        "version": 1,
+        "hash": "H2"
+      },
+      "producer": {
+        "kind": "agent-run",
+        "runId": "RUN-U5",
+        "harness": {
+          "id": "praxis.domain-model",
+          "revision": 2
+        }
+      },
+      "basis": {
+        "fingerprint": "H3",
+        "preparedAt": "T"
+      },
+      "semanticResultHash": "H4",
+      "outcome": "canonical",
+      "affected": {
+        "candidateIds": [],
+        "nodeIds": [],
+        "contractIds": [],
+        "domainIds": [
+          "ENTITY-U0",
+          "ENTITY-U2",
+          "FIELD-U1",
+          "RELATIONSHIP-U3",
+          "CONSTRAINT-U4"
+        ]
+      },
+      "publication": {
+        "target": "domain-state",
+        "at": "T",
+        "revision": 1
+      },
+      "failure": null
+    },
     "response": {
       "status": "completed",
       "title": "Applied",
       "detail": "Created Item and Container.",
       "supplementaryWarnings": [],
       "recovery": ["log", "continue"]
+    }
+  },
+  "domain-model/runs/RUN-U5/semantic-result.json": {
+    "schemaVersion": 1,
+    "contract": {
+      "id": "praxis.domain-model.result",
+      "version": 1,
+      "hash": "H2"
+    },
+    "producer": {
+      "kind": "agent-run",
+      "runId": "RUN-U5",
+      "harness": {
+        "id": "praxis.domain-model",
+        "revision": 2
+      }
+    },
+    "semanticResultHash": "H4",
+    "result": {
+      "outcome": "model-change",
+      "summary": "Created Item and Container.",
+      "change": {
+        "kind": "model",
+        "model": {
+          "entities": [
+            {
+              "id": "NEW_ENTITY_ITEM",
+              "name": "Item",
+              "meaning": "A physical thing the user wants to locate.",
+              "provenance": "explicit",
+              "fields": [
+                {
+                  "id": "NEW_FIELD_TITLE",
+                  "name": "title",
+                  "meaning": "The name shown to the user.",
+                  "valueType": "text",
+                  "required": true,
+                  "multiple": false,
+                  "display": "primary",
+                  "provenance": "explicit"
+                }
+              ]
+            },
+            {
+              "id": "NEW_ENTITY_CONTAINER",
+              "name": "Container",
+              "meaning": "An Item that can manage child Items.",
+              "provenance": "explicit",
+              "fields": []
+            }
+          ],
+          "relationships": [
+            {
+              "id": "NEW_RELATIONSHIP_CONTAINS",
+              "sourceEntityId": "NEW_ENTITY_CONTAINER",
+              "targetEntityId": "NEW_ENTITY_ITEM",
+              "label": "contains",
+              "meaning": "A Container manages zero or more Items.",
+              "semanticRole": "containment",
+              "direction": "directed",
+              "sourceCardinality": "1",
+              "targetCardinality": "0..*",
+              "provenance": "explicit"
+            }
+          ],
+          "constraints": [
+            {
+              "id": "NEW_CONSTRAINT_PARENT",
+              "target": {
+                "kind": "model",
+                "id": null
+              },
+              "text": "An Item has at most one parent Container.",
+              "provenance": "inferred"
+            }
+          ]
+        }
+      }
     }
   },
   "domain-model/runs/RUN-U5/summary.md": "# Applied\n\nCreated Item and Container.\n\n## Change summary\n\n- Added: 2 Cards · 5 model entries · Item, Container\n- Updated: 0 Cards · 0 model entries\n- Removed: 0 Cards · 0 model entries\n",
@@ -236,7 +354,7 @@
         "kind": "user-input",
         "logicalPath": "domain-model/runs/RUN-U6/context/input/user-input.md",
         "workspacePath": "input/user-input.md",
-        "sha256": "H2"
+        "sha256": "H5"
       },
       "references": [],
       "external": []
@@ -302,7 +420,7 @@
     },
     "previousSummary": "# Applied\n\nCreated Item and Container.\n\n## Change summary\n\n- Added: 2 Cards · 5 model entries · Item, Container\n- Updated: 0 Cards · 0 model entries\n- Removed: 0 Cards · 0 model entries\n",
     "contextRoot": ".praxis/domain-model/runs/RUN-U6/context",
-    "inputFingerprint": "H3"
+    "inputFingerprint": "H6"
   },
   "domain-model/runs/RUN-U6/run.json": {
     "schemaVersion": 1,
@@ -333,21 +451,73 @@
       "harnessVersion": 2,
       "requestId": "RUN-U6",
       "baseVersion": 1,
-      "inputFingerprint": "H3",
-      "outcome": "no-change",
+      "inputFingerprint": "H6",
       "summary": "The model already contains this meaning.",
+      "outcome": "no-change",
       "reason": "No model change is required."
     },
     "change": null,
     "error": null,
     "logRef": "domain-model/runs/RUN-U6/run.log",
     "hostPid": 0,
+    "materialization": {
+      "schemaVersion": 1,
+      "contract": {
+        "id": "praxis.domain-model.result",
+        "version": 1,
+        "hash": "H2"
+      },
+      "producer": {
+        "kind": "agent-run",
+        "runId": "RUN-U6",
+        "harness": {
+          "id": "praxis.domain-model",
+          "revision": 2
+        }
+      },
+      "basis": {
+        "fingerprint": "H7",
+        "preparedAt": "T"
+      },
+      "semanticResultHash": "H8",
+      "outcome": "no-change",
+      "affected": {
+        "candidateIds": [],
+        "nodeIds": [],
+        "contractIds": [],
+        "domainIds": []
+      },
+      "publication": null,
+      "failure": null
+    },
     "response": {
       "status": "completed",
       "title": "No change",
       "detail": "The model already contains this meaning.",
       "supplementaryWarnings": [],
       "recovery": ["log", "continue"]
+    }
+  },
+  "domain-model/runs/RUN-U6/semantic-result.json": {
+    "schemaVersion": 1,
+    "contract": {
+      "id": "praxis.domain-model.result",
+      "version": 1,
+      "hash": "H2"
+    },
+    "producer": {
+      "kind": "agent-run",
+      "runId": "RUN-U6",
+      "harness": {
+        "id": "praxis.domain-model",
+        "revision": 2
+      }
+    },
+    "semanticResultHash": "H8",
+    "result": {
+      "outcome": "no-change",
+      "summary": "The model already contains this meaning.",
+      "reason": "No model change is required."
     }
   },
   "domain-model/runs/RUN-U6/summary.md": "# No change\n\nThe model already contains this meaning.\n\n## Reason\n\nNo model change is required.\n",

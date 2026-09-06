@@ -79,10 +79,8 @@ import {
 } from './validation-context.ts';
 import { MaterializationError } from '../../materialization/receipt.ts';
 import { prepareProductExplorationMaterializationBasis } from './basis.ts';
-import {
-  publishProductExplorationResult,
-  type MaterializationLog,
-} from './publish.ts';
+import { publishProductExplorationResult } from './publish.ts';
+import type { MaterializationLog } from '../../materialization/publication.ts';
 import { materializationLogEntry } from '../../materialization/log.ts';
 import {
   rejectionReceipt,

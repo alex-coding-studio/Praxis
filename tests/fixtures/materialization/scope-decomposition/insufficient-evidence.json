@@ -70,6 +70,61 @@
       "detail": "Missing: The source does not state the intended audience.",
       "supplementaryWarnings": [],
       "recovery": ["log", "answer"]
+    },
+    "materialization": {
+      "schemaVersion": 1,
+      "contract": {
+        "id": "praxis.scope-decomposition.result",
+        "version": 1,
+        "hash": "H1"
+      },
+      "producer": {
+        "kind": "agent-run",
+        "runId": "RUN-U1",
+        "harness": {
+          "id": "praxis.task-decomposition",
+          "revision": 8
+        }
+      },
+      "basis": {
+        "fingerprint": "H2",
+        "preparedAt": "T"
+      },
+      "semanticResultHash": "H3",
+      "outcome": "insufficient-evidence",
+      "affected": {
+        "candidateIds": [],
+        "nodeIds": [],
+        "contractIds": [],
+        "domainIds": []
+      },
+      "publication": {
+        "target": "run-record",
+        "at": "T",
+        "revision": null
+      },
+      "failure": null
+    }
+  },
+  "task-decomposition/runs/RUN-U1/semantic-result.json": {
+    "schemaVersion": 1,
+    "contract": {
+      "id": "praxis.scope-decomposition.result",
+      "version": 1,
+      "hash": "H1"
+    },
+    "producer": {
+      "kind": "agent-run",
+      "runId": "RUN-U1",
+      "harness": {
+        "id": "praxis.task-decomposition",
+        "revision": 8
+      }
+    },
+    "semanticResultHash": "H3",
+    "result": {
+      "outcome": "insufficient-evidence",
+      "missingEvidence": ["The source does not state the intended audience."]
     }
   },
   "task-graph/identities.json": {

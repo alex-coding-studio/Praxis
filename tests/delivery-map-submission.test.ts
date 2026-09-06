@@ -12,9 +12,14 @@ import { deliveryPublicationHost } from '../lib/modules/delivery-planning/public
 import { readWhatToDoCurrentMapWithFingerprint } from '../lib/modules/delivery-planning/storage.ts';
 import {
   DELIVERY_MAP_MINIMAL_EXAMPLE,
+  DELIVERY_MAP_RESULT_CONTRACT,
   type DeliveryMapResult,
 } from '../lib/modules/delivery-planning/contract.ts';
-import { MaterializationError } from '../lib/materialization/receipt.ts';
+import { semanticResultHash } from '../lib/materialization/hash.ts';
+import {
+  MaterializationError,
+  rejectionReceipt,
+} from '../lib/materialization/receipt.ts';
 import type { RegisteredProject } from '../lib/project-registry.ts';
 
 const RUN_ID = 'RUN-11111111-1111-4111-8111-111111111111';
@@ -152,7 +157,7 @@ void test('a structurally invalid result fails at the validation boundary', asyn
   assert.equal(canonical.fingerprint, 'absent');
 });
 
-void test('a self-dependent Contract is rejected before anything is published', async (t) => {
+void test('a self-dependent Contract is rejected without touching canonical state', async (t) => {
   const project = await fixture(t);
   await assert.rejects(
     submitDeliveryMapResult(
@@ -177,9 +182,12 @@ void test('a self-dependent Contract is rejected before anything is published', 
   );
   const canonical = await readWhatToDoCurrentMapWithFingerprint(project);
   assert.equal(canonical.fingerprint, 'absent');
-  await assert.rejects(
-    readdir(path.join(project.planningPath, 'what-to-do', 'runs')),
-    (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT',
+  assert.deepEqual(
+    await readdir(
+      path.join(project.planningPath, 'what-to-do', 'runs', RUN_ID),
+    ),
+    ['materialization.json', 'semantic-result.json'],
+    'a rejected submission keeps its evidence and creates nothing else',
   );
 });
 
@@ -540,4 +548,104 @@ void test('a Contract citing unknown evidence is rejected', async (t) => {
       error instanceof MaterializationError &&
       error.message === 'The What to Do result references unknown evidence.',
   );
+});
+
+void test('a direct publication records a Receipt and its semantic result', async (t) => {
+  const project = await fixture(t);
+  const basis = await emptyBasis(project);
+  const events: string[] = [];
+  const published = await submitDeliveryMapResult(
+    project,
+    basis,
+    example,
+    { runId: RUN_ID, updatedAt: '2026-09-06T00:00:00.000Z', ...evidence },
+    store,
+    (entry) => {
+      assert.equal(entry.actor, 'HOST');
+      events.push(entry.event);
+    },
+  );
+
+  assert.deepEqual(events, [
+    'materialization.validated',
+    'materialization.staged',
+    'materialization.published',
+  ]);
+  const receipt = published.receipt;
+  assert.deepEqual(receipt.contract, {
+    id: DELIVERY_MAP_RESULT_CONTRACT.id,
+    version: DELIVERY_MAP_RESULT_CONTRACT.version,
+    hash: DELIVERY_MAP_RESULT_CONTRACT.hash,
+  });
+  assert.deepEqual(receipt.producer, { kind: 'direct', runId: RUN_ID });
+  assert.equal(receipt.semanticResultHash, semanticResultHash(example));
+  assert.equal(receipt.outcome, 'canonical');
+  assert.deepEqual(receipt.affected.contractIds, [
+    published.map!.contracts[0]!.id,
+  ]);
+  assert.deepEqual(receipt.publication, {
+    target: 'current-map',
+    at: '2026-09-06T00:00:00.000Z',
+    revision: RUN_ID,
+  });
+
+  const semantic = JSON.parse(
+    await readFile(
+      path.join(
+        project.planningPath,
+        'what-to-do',
+        'runs',
+        RUN_ID,
+        'semantic-result.json',
+      ),
+      'utf8',
+    ),
+  ) as { semanticResultHash: string; result: DeliveryMapResult };
+  assert.equal(semantic.semanticResultHash, receipt.semanticResultHash);
+  assert.deepEqual(semantic.result, example);
+
+  const stored = JSON.parse(
+    await readFile(
+      path.join(
+        project.planningPath,
+        'what-to-do',
+        'runs',
+        RUN_ID,
+        'materialization.json',
+      ),
+      'utf8',
+    ),
+  ) as typeof receipt;
+  assert.deepEqual(stored, receipt);
+});
+
+void test('a rejected submission carries its boundary on the Receipt', async (t) => {
+  const project = await fixture(t);
+  const events: string[] = [];
+  await assert.rejects(
+    submitDeliveryMapResult(
+      project,
+      await emptyBasis(project),
+      {
+        ...example,
+        contracts: [
+          {
+            ...example.contracts[0]!,
+            dependsOn: [{ kind: 'proposal', localKey: 'example-contract' }],
+          },
+        ],
+      },
+      { runId: RUN_ID, ...evidence },
+      store,
+      (entry) => events.push(entry.event),
+    ),
+    (error: unknown) =>
+      error instanceof MaterializationError &&
+      rejectionReceipt(error)?.outcome === 'rejected' &&
+      rejectionReceipt(error)?.publication === null &&
+      rejectionReceipt(error)?.failure?.boundary === 'validation',
+  );
+  assert.deepEqual(events, ['materialization.rejected']);
+  const canonical = await readWhatToDoCurrentMapWithFingerprint(project);
+  assert.equal(canonical.fingerprint, 'absent');
 });

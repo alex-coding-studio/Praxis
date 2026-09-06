@@ -55,6 +55,11 @@ import {
 } from './basis.ts';
 import { MaterializationError } from '../../materialization/receipt.ts';
 import { publishScopeDecompositionResult } from './publish.ts';
+import { materializationLogEntry } from '../../materialization/log.ts';
+import {
+  rejectionReceipt,
+  type MaterializationReceipt,
+} from '../../materialization/receipt.ts';
 import { toScopeDecompositionSemanticResult } from './producer-adapter.ts';
 import {
   buildTaskDecompositionContinuationPrompt,
@@ -173,6 +178,7 @@ export type TaskDecompositionRunRecord = {
   sessionUsage?: LocalAgentUsage | null;
   activity: AgentGraphActivity[];
   result: TaskDecompositionHarnessResult | null;
+  materialization?: MaterializationReceipt;
   error: string | null;
   logRef?: string;
   hostPid?: number;
@@ -1056,6 +1062,12 @@ async function finishTaskDecompositionRun(
       revisionTarget,
       subject,
     );
+    reservation.record(
+      materializationLogEntry(
+        'materialization.basis.prepared',
+        `Prepared the ${basis.operation} Basis at fingerprint ${basis.fingerprint.slice(0, 12)}.`,
+      ),
+    );
     await writeAgentGraphRunEvidence(
       taskDecompositionRunPath(project, record.runId),
       {
@@ -1093,7 +1105,16 @@ async function finishTaskDecompositionRun(
     const published = await publishScopeDecompositionResult(
       basis,
       toScopeDecompositionSemanticResult(envelope),
-      { record, resultBase: envelope },
+      {
+        record,
+        resultBase: envelope,
+        harness: {
+          id: envelope.harness.id,
+          revision: envelope.harness.revision,
+        },
+      },
+      undefined,
+      reservation.record,
     );
     const result = published.record.result as TaskDecompositionHarnessResult;
     if (
@@ -1132,6 +1153,8 @@ async function finishTaskDecompositionRun(
     record.status = 'failed';
     record.error = original;
     record.response = classification;
+    const receipt = rejectionReceipt(error);
+    if (receipt) record.materialization = receipt;
     const active = activeRuns.get(runKey(project, record.runId));
     await active?.activityRecorder.flush();
     await writeAgentGraphRunEvidence(

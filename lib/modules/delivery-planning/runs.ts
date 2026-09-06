@@ -71,9 +71,23 @@ import { prepareDeliveryMapBasis, type DeliveryMapBasis } from './basis.ts';
 import { deliveryPublicationHost } from './publication-host.ts';
 import {
   computeDeliveryMap,
+  deliveryMapReceipt,
   publishDeliveryMap,
   stageDeliveryContractArtifacts,
 } from './publish.ts';
+import { semanticResultHash } from '../../materialization/hash.ts';
+import { materializationLogEntry } from '../../materialization/log.ts';
+import {
+  materializationGuard,
+  receiptIdentity,
+  semanticResultDocument,
+} from '../../materialization/publication.ts';
+import {
+  rejectionReceipt,
+  type MaterializationReceipt,
+} from '../../materialization/receipt.ts';
+import { DELIVERY_MAP_RESULT_CONTRACT } from './contract.ts';
+import type { RunLogInput } from '../../execution-observability/log-types.ts';
 
 export type WhatToDoRunRecord = {
   schemaVersion: 1;
@@ -95,6 +109,7 @@ export type WhatToDoRunRecord = {
   request: WhatToDoHarnessRequest;
   result: WhatToDoHarnessResult | null;
   map: WhatToDoDeliveryMap | null;
+  materialization?: MaterializationReceipt;
   error: string | null;
   logRef?: string;
   hostPid?: number;
@@ -465,6 +480,38 @@ function settleLater(
           'publication',
           'The Delivery Map Basis was not prepared for this Run.',
         );
+      const resultHash = semanticResultHash(semantic);
+      const identity = receiptIdentity(DELIVERY_MAP_RESULT_CONTRACT, {
+        kind: 'agent-run',
+        runId: run.id,
+        harness: {
+          id: result.harness.id,
+          revision: result.harness.revision,
+        },
+      });
+      const log = (entry: RunLogInput) => active.reservation?.record(entry);
+      const guard = materializationGuard({
+        log,
+        identity,
+        basis: {
+          fingerprint: basis.fingerprint,
+          preparedAt: basis.preparedAt,
+        },
+        semanticResultHash: resultHash,
+      });
+      const settlementPath = await whatToDoRunDirectory(project, run.id, true);
+      await guard('publication', () =>
+        atomicWhatToDoText(
+          path.join(settlementPath, 'semantic-result.json'),
+          semanticResultDocument(identity, resultHash, semantic),
+        ),
+      );
+      log(
+        materializationLogEntry(
+          'materialization.validated',
+          `The ${semantic.outcome} result satisfies ${DELIVERY_MAP_RESULT_CONTRACT.id} v${DELIVERY_MAP_RESULT_CONTRACT.version}.`,
+        ),
+      );
       const map = computeDeliveryMap(
         basis,
         semantic,
@@ -496,6 +543,15 @@ function settleLater(
                   reason: result.reason,
                 },
       );
+      const receipt = deliveryMapReceipt({
+        identity,
+        basis,
+        semanticResultHash: resultHash,
+        outcome:
+          semantic.outcome === 'map-proposal' ? 'canonical' : semantic.outcome,
+        map,
+        publishedAt: endedAt,
+      });
       const terminal: WhatToDoRunRecord = {
         ...run,
         status: 'succeeded',
@@ -506,6 +562,7 @@ function settleLater(
         activity: [...active.activity],
         result,
         map,
+        materialization: receipt,
         error: null,
         response: classification,
       };
@@ -518,11 +575,33 @@ function settleLater(
         response: result.responseMarkdown,
       });
       if (map) {
-        await stageDeliveryContractArtifacts(project, run.id, map);
+        const contractPaths = await guard('staging', () =>
+          stageDeliveryContractArtifacts(project, run.id, map),
+        );
+        log(
+          materializationLogEntry(
+            'materialization.staged',
+            `Staged ${Object.keys(contractPaths).length} Contract documents.`,
+          ),
+        );
         await stageTerminalRunRecord(project, terminal);
-        await publishDeliveryMap(project, map, deliveryPublicationHost, basis);
+        await guard('publication', () =>
+          publishDeliveryMap(project, map, deliveryPublicationHost, basis),
+        );
+        log(
+          materializationLogEntry(
+            'materialization.published',
+            `Published the Delivery Map from Run ${map.runId}.`,
+          ),
+        );
         await publishTerminalRunRecord(project, run.id).catch(() => undefined);
       } else {
+        log(
+          materializationLogEntry(
+            'materialization.published',
+            `Published the ${semantic.outcome} outcome without a Delivery Map change.`,
+          ),
+        );
         await writeRunRecord(project, terminal);
       }
       await writeWhatToDoRepositorySummary(
@@ -563,6 +642,9 @@ function settleLater(
         activity: [...active.activity],
         result: null,
         map: null,
+        ...(rejectionReceipt(error) && {
+          materialization: rejectionReceipt(error)!,
+        }),
         error: message,
         response: classification,
       };

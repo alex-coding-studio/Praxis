@@ -47,13 +47,13 @@
     "sourceClaims": [
       {
         "claimId": "CLAIM-1",
-        "sourcePath": "whats-next/nodes/NODE-X0/output.md",
-        "sourceSha256": "H0",
         "anchor": "## Behavior",
         "summary": "The accepted behavior must be delivered.",
         "disposition": "in-scope",
         "exclusionReason": null,
         "exclusionAuthority": null,
+        "sourcePath": "whats-next/nodes/NODE-X0/output.md",
+        "sourceSha256": "H0",
         "contractIds": ["NODE-U2"]
       }
     ],
@@ -65,5 +65,79 @@
       }
     ]
   },
-  "what-to-do/runs/RUN-U0/contracts/NODE-U2/output.md": "# Deliver accepted behavior\n\nOne independently deliverable behavior.\n\n## Outcome\n\nThe behavior is available.\n\n## Included scope\n\n- Accepted behavior\n\n## Excluded scope\n\n- None\n\n## Product rules\n\n- Preserve the accepted behavior.\n\n## Domain impact\n\n- Kind: none\n- Reason: No Domain change is needed.\n- Evidence: what-to-do/repository-context/facts.json\n\n## Required experience states\n\n- Ready\n- Error\n\n## Repository constraints\n\n- Use project-owned checks.\n\n## Acceptance\n\n- **AC-1** The user reaches the behavior.\n  - Pass: The behavior works.\n  - Evidence: Focused behavior evidence.\n\n## Validation expectations\n\n- Run project checks.\n\n## Dependencies\n\n- None\n\n## Source claims\n\n- None\n\n## Delivery strategy\n\n- Kind: vertical-slice\n- Reason: The outcome is independently usable.\n"
+  "what-to-do/runs/RUN-U0/contracts/NODE-U2/output.md": "# Deliver accepted behavior\n\nOne independently deliverable behavior.\n\n## Outcome\n\nThe behavior is available.\n\n## Included scope\n\n- Accepted behavior\n\n## Excluded scope\n\n- None\n\n## Product rules\n\n- Preserve the accepted behavior.\n\n## Domain impact\n\n- Kind: none\n- Reason: No Domain change is needed.\n- Evidence: what-to-do/repository-context/facts.json\n\n## Required experience states\n\n- Ready\n- Error\n\n## Repository constraints\n\n- Use project-owned checks.\n\n## Acceptance\n\n- **AC-1** The user reaches the behavior.\n  - Pass: The behavior works.\n  - Evidence: Focused behavior evidence.\n\n## Validation expectations\n\n- Run project checks.\n\n## Dependencies\n\n- None\n\n## Source claims\n\n- None\n\n## Delivery strategy\n\n- Kind: vertical-slice\n- Reason: The outcome is independently usable.\n",
+  "what-to-do/runs/RUN-U0/semantic-result.json": {
+    "schemaVersion": 1,
+    "contract": {
+      "id": "praxis.delivery-map.result",
+      "version": 1,
+      "hash": "H1"
+    },
+    "producer": {
+      "kind": "agent-run",
+      "runId": "RUN-U0",
+      "harness": {
+        "id": "praxis.what-to-do",
+        "revision": 3
+      }
+    },
+    "semanticResultHash": "H2",
+    "result": {
+      "outcome": "map-proposal",
+      "contracts": [
+        {
+          "title": "Deliver accepted behavior",
+          "summary": "One independently deliverable behavior.",
+          "outcome": "The behavior is available.",
+          "includedScope": ["Accepted behavior"],
+          "excludedScope": [],
+          "productRules": ["Preserve the accepted behavior."],
+          "domainImpact": {
+            "kind": "none",
+            "reason": "No Domain change is needed.",
+            "evidencePaths": ["what-to-do/repository-context/facts.json"]
+          },
+          "requiredExperienceStates": ["Ready", "Error"],
+          "repositoryConstraints": ["Use project-owned checks."],
+          "acceptanceCriteria": [
+            {
+              "id": "AC-1",
+              "condition": "The user reaches the behavior.",
+              "passCondition": "The behavior works.",
+              "evidence": "Focused behavior evidence."
+            }
+          ],
+          "validationExpectations": ["Run project checks."],
+          "sourceClaimIds": ["CLAIM-1"],
+          "openDecisions": [],
+          "deliveryStrategy": {
+            "kind": "vertical-slice",
+            "reason": "The outcome is independently usable."
+          },
+          "localKey": "CANDIDATE-0001",
+          "dependsOn": []
+        }
+      ],
+      "sourceClaims": [
+        {
+          "claimId": "CLAIM-1",
+          "source": {
+            "kind": "source",
+            "path": "whats-next/nodes/NODE-X0/output.md"
+          },
+          "anchor": "## Behavior",
+          "summary": "The accepted behavior must be delivered.",
+          "disposition": "in-scope",
+          "contracts": [
+            {
+              "kind": "proposal",
+              "localKey": "CANDIDATE-0001"
+            }
+          ],
+          "exclusionReason": null,
+          "exclusionAuthority": null
+        }
+      ]
+    }
+  }
 }

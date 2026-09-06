@@ -3,15 +3,19 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { writeFileAtomically } from '../../atomic-json-store.ts';
 import { stageCandidateDocuments } from '../../graph/proposal/stage.ts';
-import { contractIdentity } from '../../materialization/contract.ts';
 import { semanticResultHash } from '../../materialization/hash.ts';
 import { materializationLogEntry } from '../../materialization/log.ts';
 import {
+  materializationGuard,
+  receiptIdentity,
+  semanticResultDocument,
+  NO_AFFECTED_IDENTITIES,
+  type MaterializationLog,
+} from '../../materialization/publication.ts';
+import {
   MaterializationError,
-  type MaterializationFailureBoundary,
   type MaterializationReceipt,
 } from '../../materialization/receipt.ts';
-import type { RunLogInput } from '../../execution-observability/log-types.ts';
 import type { ProductExplorationMaterializationBasis } from './basis.ts';
 import {
   PRODUCT_EXPLORATION_RESULT_CONTRACT,
@@ -50,8 +54,6 @@ export type ProductExplorationProducer<
     }
   | { kind: 'direct'; runId?: string; sourceNodeIds: readonly string[] };
 
-export type MaterializationLog = (entry: RunLogInput) => void;
-
 function receiptOutcome(
   outcome: ProductExplorationResult['outcome'],
 ): MaterializationReceipt['outcome'] {
@@ -68,98 +70,6 @@ export type PublishedProductExploration<
   candidatePaths: Record<string, string>;
   record: T;
 };
-
-function boundaryEvent(boundary: MaterializationFailureBoundary) {
-  if (boundary === 'stale-basis') return 'materialization.stale' as const;
-  return boundary === 'validation' || boundary === 'identity'
-    ? ('materialization.rejected' as const)
-    : ('materialization.publication.failed' as const);
-}
-
-async function report<T>(
-  log: MaterializationLog,
-  boundary: MaterializationFailureBoundary,
-  step: () => Promise<T>,
-) {
-  try {
-    return await step();
-  } catch (error) {
-    const failure =
-      error instanceof MaterializationError
-        ? error
-        : new MaterializationError(
-            boundary,
-            error instanceof Error ? error.message : String(error),
-          );
-    log(
-      materializationLogEntry(
-        boundaryEvent(failure.boundary),
-        `${failure.boundary}: ${failure.message}`,
-        'ERROR',
-      ),
-    );
-    throw failure;
-  }
-}
-
-type ReceiptIdentity = Pick<MaterializationReceipt, 'contract' | 'producer'>;
-
-function failureGuard(context: {
-  log: MaterializationLog;
-  basis: ProductExplorationMaterializationBasis;
-  identity: ReceiptIdentity;
-  semanticResultHash: string;
-  directory: string;
-  base: ProductExplorationPublicationRecord;
-  timestamp: string;
-}) {
-  return async <T>(
-    boundary: MaterializationFailureBoundary,
-    step: () => Promise<T>,
-  ): Promise<T> => {
-    try {
-      return await report(context.log, boundary, step);
-    } catch (error) {
-      const failure = error as MaterializationError;
-      const receipt: MaterializationReceipt = {
-        schemaVersion: 1,
-        ...context.identity,
-        basis: {
-          fingerprint: context.basis.fingerprint,
-          preparedAt: context.basis.preparedAt,
-        },
-        semanticResultHash: context.semanticResultHash,
-        outcome: 'rejected',
-        affected: {
-          candidateIds: [],
-          nodeIds: [],
-          contractIds: [],
-          domainIds: [],
-        },
-        publication: null,
-        failure: { boundary: failure.boundary, message: failure.message },
-      };
-      if (context.identity.producer.kind === 'direct')
-        await writeFileAtomically(
-          path.join(context.directory, 'run.json'),
-          `${JSON.stringify(
-            {
-              ...context.base,
-              status: 'failed',
-              result: null,
-              materialization: receipt,
-              error: failure.message,
-              updatedAt: context.timestamp,
-              endedAt: context.timestamp,
-            },
-            null,
-            2,
-          )}\n`,
-        ).catch(() => undefined);
-      throw failure.withReceipt(receipt);
-    }
-  };
-}
 
 function assertRunId(runId: string) {
   if (!RUN_ID.test(runId))
@@ -222,38 +132,42 @@ export async function publishProductExplorationResult<
   assertRunId(base.runId);
   const resultHash = semanticResultHash(result);
   const directory = runDirectory(basis, base.runId);
-  const identity = {
-    contract: contractIdentity(PRODUCT_EXPLORATION_RESULT_CONTRACT),
-    producer: {
-      kind: producer.kind,
-      runId: base.runId,
-      ...(producer.kind === 'agent-run' &&
-        producer.harness && { harness: producer.harness }),
-    },
-  };
-  const guard = failureGuard({
+  const identity = receiptIdentity(PRODUCT_EXPLORATION_RESULT_CONTRACT, {
+    kind: producer.kind,
+    runId: base.runId,
+    ...(producer.kind === 'agent-run' &&
+      producer.harness && { harness: producer.harness }),
+  });
+  const guard = materializationGuard({
     log,
-    basis,
     identity,
+    basis: { fingerprint: basis.fingerprint, preparedAt: basis.preparedAt },
     semanticResultHash: resultHash,
-    directory,
-    base,
-    timestamp,
+    ...(producer.kind === 'direct' && {
+      onReject: (receipt) =>
+        writeFileAtomically(
+          path.join(directory, 'run.json'),
+          `${JSON.stringify(
+            {
+              ...base,
+              status: 'failed',
+              result: null,
+              materialization: receipt,
+              error: receipt.failure?.message ?? null,
+              updatedAt: timestamp,
+              endedAt: timestamp,
+            },
+            null,
+            2,
+          )}\n`,
+        ),
+    }),
   });
   await guard('publication', async () => {
     await mkdir(directory, { recursive: true });
     await writeFileAtomically(
       path.join(directory, 'semantic-result.json'),
-      `${JSON.stringify(
-        {
-          schemaVersion: 1,
-          ...identity,
-          semanticResultHash: resultHash,
-          result,
-        },
-        null,
-        2,
-      )}\n`,
+      semanticResultDocument(identity, resultHash, result),
     );
   });
   const materialized = await guard('validation', () =>
@@ -298,10 +212,8 @@ export async function publishProductExplorationResult<
     semanticResultHash: resultHash,
     outcome: receiptOutcome(result.outcome),
     affected: {
+      ...NO_AFFECTED_IDENTITIES,
       candidateIds: candidates.map((candidate) => candidate.candidateId),
-      nodeIds: [],
-      contractIds: [],
-      domainIds: [],
     },
     publication: { target: 'run-record', at: timestamp, revision: null },
     failure: null,

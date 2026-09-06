@@ -242,7 +242,7 @@ function withSortedIdentitySet(value: unknown) {
 }
 
 const DOMAIN_CAPTURED =
-  /(?:^|\/)(?:state\.json|run\.json|request\.json|change\.json|summary\.md)$/;
+  /(?:^|\/)(?:state\.json|run\.json|semantic-result\.json|request\.json|change\.json|summary\.md)$/;
 
 export async function captureDomainModelState(
   project: RegisteredProject,

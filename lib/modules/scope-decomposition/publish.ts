@@ -2,11 +2,24 @@ import { randomUUID } from 'node:crypto';
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { writeFileAtomically } from '../../atomic-json-store.ts';
-import { MaterializationError } from '../../materialization/receipt.ts';
+import { semanticResultHash } from '../../materialization/hash.ts';
+import { materializationLogEntry } from '../../materialization/log.ts';
+import {
+  materializationGuard,
+  receiptIdentity,
+  semanticResultDocument,
+  NO_AFFECTED_IDENTITIES,
+  type MaterializationLog,
+} from '../../materialization/publication.ts';
+import {
+  MaterializationError,
+  type MaterializationReceipt,
+} from '../../materialization/receipt.ts';
 import type { ScopeDecompositionMaterializationBasis } from './basis.ts';
-import type {
-  ScopeDecompositionCandidateRecord,
-  ScopeDecompositionResult,
+import {
+  SCOPE_DECOMPOSITION_RESULT_CONTRACT,
+  type ScopeDecompositionCandidateRecord,
+  type ScopeDecompositionResult,
 } from './contract.ts';
 import {
   materializeScopeDecompositionResult,
@@ -27,6 +40,7 @@ export type ScopeDecompositionPublicationRecord = {
   endedAt: string | null;
   activity: unknown[];
   result: unknown;
+  materialization?: MaterializationReceipt;
   error: string | null;
 };
 
@@ -89,21 +103,104 @@ async function stageCandidateMarkdown(
   );
 }
 
+function receiptOutcome(
+  outcome: ScopeDecompositionResult['outcome'],
+): MaterializationReceipt['outcome'] {
+  return outcome === 'proposal' ? 'candidates' : outcome;
+}
+
 async function publish<T extends ScopeDecompositionPublicationRecord>(
   basis: ScopeDecompositionMaterializationBasis,
   result: ScopeDecompositionResult,
   base: T,
   resultBase: object,
   timestamp: string,
+  producerKind: 'agent-run' | 'direct',
+  log: MaterializationLog,
+  harness?: { id: string; revision: number },
 ): Promise<PublishedScopeDecomposition<T>> {
   assertRunId(base.runId);
-  const materialized = await materializeScopeDecompositionResult(basis, result);
+  const resultHash = semanticResultHash(result);
   const directory = runDirectory(basis, base.runId);
+  const identity = receiptIdentity(SCOPE_DECOMPOSITION_RESULT_CONTRACT, {
+    kind: producerKind,
+    runId: base.runId,
+    ...(harness && { harness }),
+  });
+  const guard = materializationGuard({
+    log,
+    identity,
+    basis: { fingerprint: basis.fingerprint, preparedAt: basis.preparedAt },
+    semanticResultHash: resultHash,
+    ...(producerKind === 'direct' && {
+      onReject: (receipt: MaterializationReceipt) =>
+        writeFileAtomically(
+          path.join(directory, 'run.json'),
+          `${JSON.stringify(
+            {
+              ...base,
+              status: 'failed',
+              result: null,
+              materialization: receipt,
+              error: receipt.failure?.message ?? null,
+              updatedAt: timestamp,
+              endedAt: timestamp,
+            },
+            null,
+            2,
+          )}\n`,
+        ),
+    }),
+  });
+  await guard('publication', async () => {
+    await mkdir(directory, { recursive: true });
+    await writeFileAtomically(
+      path.join(directory, 'semantic-result.json'),
+      semanticResultDocument(identity, resultHash, result),
+    );
+  });
+  const materialized = await guard('validation', () =>
+    materializeScopeDecompositionResult(basis, result),
+  );
+  log(
+    materializationLogEntry(
+      'materialization.validated',
+      `The ${result.outcome} result satisfies ${SCOPE_DECOMPOSITION_RESULT_CONTRACT.id} v${SCOPE_DECOMPOSITION_RESULT_CONTRACT.version}.`,
+    ),
+  );
   const candidates = materialized?.candidates ?? [];
   if (materialized) {
-    await mkdir(directory, { recursive: true });
-    await stageCandidateMarkdown(directory, candidates);
+    if (materialized.candidateAliases)
+      log(
+        materializationLogEntry(
+          'materialization.identities.allocated',
+          `Allocated ${Object.keys(materialized.candidateAliases).length} Candidate identities.`,
+        ),
+      );
+    await guard('staging', async () => {
+      await mkdir(directory, { recursive: true });
+      await stageCandidateMarkdown(directory, candidates);
+    });
+    log(
+      materializationLogEntry(
+        'materialization.staged',
+        `Staged ${candidates.length} Candidate documents.`,
+      ),
+    );
   }
+  const receipt: MaterializationReceipt = {
+    schemaVersion: 1,
+    ...identity,
+    basis: { fingerprint: basis.fingerprint, preparedAt: basis.preparedAt },
+    semanticResultHash: resultHash,
+    outcome: receiptOutcome(result.outcome),
+    affected: {
+      ...NO_AFFECTED_IDENTITIES,
+      candidateIds: candidates.map((candidate) => candidate.candidateId),
+    },
+    publication: { target: 'run-record', at: timestamp, revision: null },
+    failure: null,
+  };
   const record: T = {
     ...base,
     status: result.outcome,
@@ -119,14 +216,22 @@ async function publish<T extends ScopeDecompositionPublicationRecord>(
           }),
         }
       : resultBase,
+    materialization: receipt,
     error: null,
     updatedAt: timestamp,
     endedAt: base.endedAt ?? timestamp,
   };
-  await mkdir(directory, { recursive: true });
-  await writeFileAtomically(
-    path.join(directory, 'run.json'),
-    `${JSON.stringify(record, null, 2)}\n`,
+  await guard('publication', () =>
+    writeFileAtomically(
+      path.join(directory, 'run.json'),
+      `${JSON.stringify(record, null, 2)}\n`,
+    ),
+  );
+  log(
+    materializationLogEntry(
+      'materialization.published',
+      `Published the ${receipt.outcome} outcome to the Run record.`,
+    ),
   );
   return {
     runId: record.runId,
@@ -156,10 +261,24 @@ export async function publishScopeDecompositionResult<
 >(
   basis: ScopeDecompositionMaterializationBasis,
   result: ScopeDecompositionResult,
-  producer: { record: T; resultBase: object },
+  producer: {
+    record: T;
+    resultBase: object;
+    harness?: { id: string; revision: number };
+  },
   now: () => string = () => new Date().toISOString(),
+  log: MaterializationLog = () => undefined,
 ) {
-  return publish(basis, result, producer.record, producer.resultBase, now());
+  return publish(
+    basis,
+    result,
+    producer.record,
+    producer.resultBase,
+    now(),
+    'agent-run',
+    log,
+    producer.harness,
+  );
 }
 
 export async function submitScopeDecompositionResult(
@@ -167,30 +286,26 @@ export async function submitScopeDecompositionResult(
   result: ScopeDecompositionResult,
   submission: { runId?: string; sourceNodeId: string },
   now: () => string = () => new Date().toISOString(),
+  log: MaterializationLog = () => undefined,
 ) {
   const timestamp = now();
-  return publish(
-    basis,
-    result,
-    {
-      schemaVersion: 1 as const,
-      runId: assertRunId(submission.runId ?? `RUN-${randomUUID()}`),
-      sourceNodeId: submission.sourceNodeId,
-      operation: basis.operation,
-      ...(basis.recomposeCandidateIds.length && {
-        recomposeCandidateIds: [...basis.recomposeCandidateIds],
-      }),
-      status: 'proposal',
-      startedAt: timestamp,
-      updatedAt: timestamp,
-      endedAt: timestamp,
-      activity: [] as unknown[],
-      result: null as unknown,
-      error: null as string | null,
-    },
-    result,
-    timestamp,
-  );
+  const base: ScopeDecompositionPublicationRecord = {
+    schemaVersion: 1,
+    runId: assertRunId(submission.runId ?? `RUN-${randomUUID()}`),
+    sourceNodeId: submission.sourceNodeId,
+    operation: basis.operation,
+    ...(basis.recomposeCandidateIds.length && {
+      recomposeCandidateIds: [...basis.recomposeCandidateIds],
+    }),
+    status: 'proposal',
+    startedAt: timestamp,
+    updatedAt: timestamp,
+    endedAt: timestamp,
+    activity: [],
+    result: null,
+    error: null,
+  };
+  return publish(basis, result, base, result, timestamp, 'direct', log);
 }
 
 function renderCandidateMarkdown(candidate: ScopeDecompositionCandidateRecord) {
