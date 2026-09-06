@@ -5,6 +5,7 @@ export function isUiLanguage(value: unknown): value is UiLanguage {
 }
 
 export const chineseUi: Record<string, string> = {
+  'Undelivered targets: {count}': '未交付节点：{count}',
   Models: '模型',
   You: '你',
   'Independent review not needed': '无需独立审查',

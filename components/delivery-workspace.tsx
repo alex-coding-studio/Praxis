@@ -394,15 +394,33 @@ export function DeliveryWorkspace({
       {!uid ? (
         <>
           <nav className="flex gap-2 border-b border-border px-5 py-3">
-            {layers.map((item) => (
-              <Button
-                key={item.id}
-                variant={layer === item.id ? 'secondary' : 'ghost'}
-                onClick={() => setLayer(item.id)}
-              >
-                {t(item.label)}
-              </Button>
-            ))}
+            {layers.map((item) => {
+              const remaining = workspace.targets.filter(
+                (target) =>
+                  target.sourceKind === item.id &&
+                  target.status !== 'completed',
+              ).length;
+              return (
+                <Button
+                  key={item.id}
+                  variant={layer === item.id ? 'secondary' : 'ghost'}
+                  onClick={() => setLayer(item.id)}
+                >
+                  {t(item.label)}
+                  <span
+                    className="rounded-full bg-muted px-1.5 text-xs tabular-nums text-muted-foreground"
+                    title={t('Undelivered targets: {count}', {
+                      count: remaining,
+                    })}
+                    aria-label={t('Undelivered targets: {count}', {
+                      count: remaining,
+                    })}
+                  >
+                    {remaining}
+                  </span>
+                </Button>
+              );
+            })}
           </nav>
           <div className="relative min-h-0 flex-1">
             <ReactFlow
