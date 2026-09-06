@@ -157,6 +157,25 @@ export async function writeDeliveryInstructions(
   );
 }
 
+export async function readDeliveryModels(
+  project: RegisteredProject,
+): Promise<DeliveryModels | null> {
+  return createJsonStore<DeliveryModels | null>(
+    path.join(await deliveryDirectory(project), 'models.json'),
+    () => null,
+  ).read();
+}
+
+export async function writeDeliveryModels(
+  project: RegisteredProject,
+  models: DeliveryModels,
+) {
+  await writeFileAtomically(
+    path.join(await deliveryDirectory(project, undefined, true), 'models.json'),
+    `${JSON.stringify(models, null, 2)}\n`,
+  );
+}
+
 export function deliveryMessage(
   actor: DeliveryRecord['messages'][number]['actor'],
   content: string,

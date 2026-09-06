@@ -5,7 +5,9 @@ export const LOG_ACTORS = [
   'HOST',
   'AGENT',
   'COORDINATOR',
+  'ORCHESTRATOR',
   'WORKER',
+  'REVIEWER',
   'JOB',
 ] as const;
 export type LogActor = (typeof LOG_ACTORS)[number];

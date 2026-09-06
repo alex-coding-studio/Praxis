@@ -70,7 +70,9 @@ const actorLabels: Record<LogActor, string> = {
   HOST: 'Host',
   AGENT: 'Agent',
   COORDINATOR: 'Coordinator',
+  ORCHESTRATOR: 'Orchestrator',
   WORKER: 'Worker',
+  REVIEWER: 'Reviewer',
   JOB: 'Job',
 };
 

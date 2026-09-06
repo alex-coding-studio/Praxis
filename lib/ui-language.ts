@@ -5,6 +5,29 @@ export function isUiLanguage(value: unknown): value is UiLanguage {
 }
 
 export const chineseUi: Record<string, string> = {
+  'Development Delivery': '开发交付',
+  'Delivery Contracts': '交付 Contract',
+  'Ready to deliver': '可准备交付',
+  'Preparing delivery brief': '正在准备交付简报',
+  'In review': '审查中',
+  'Waiting for feedback': '等待反馈',
+  'Delivery settings': '交付设置',
+  'Worker models': 'Worker 模型池',
+  'Reviewer models': 'Reviewer 模型池',
+  'Add model': '添加模型',
+  'Delivery brief': '交付简报',
+  'Confirm delivery brief': '确认交付简报',
+  'Delivery feedback': '交付反馈',
+  'Discuss delivery': '讨论交付目标',
+  'Accepted executable targets appear here automatically.':
+    '正式接受的可执行目标会自动出现在这里。',
+  'Prepare this target with your selected models.':
+    '使用所选模型准备这个交付目标。',
+  'Describe the outcome or your feedback.': '描述交付目标或你的反馈。',
+  'Accept this delivery and merge its pull request?':
+    '确认验收本次交付并合并对应 PR？',
+  'Accept and merge': '验收并合并',
+  'Target is no longer available.': '此目标已不再可用。',
   'Product Discovery & Design': '产品探索与设计',
   'Product Discovery & Design instructions': '产品探索与设计指令',
   'Delivery Planning instructions': '交付规划指令',
