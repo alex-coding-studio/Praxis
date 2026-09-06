@@ -1,5 +1,5 @@
 import Ajv2020 from 'ajv/dist/2020.js';
-import { validateDeliveryMapMaterialization } from './validation.ts';
+import { materializeDeliveryMapProposal } from './validation.ts';
 import { createHash } from 'node:crypto';
 import type { AgentGraphContentPacket } from '../../graph/agent/context-workspace.ts';
 import {
@@ -341,7 +341,7 @@ export function validateWhatToDoHarnessResult(
   if (result.outcome !== 'map-proposal') return result;
 
   try {
-    validateDeliveryMapMaterialization(result, context, knownEvidence);
+    return materializeDeliveryMapProposal(result, context, knownEvidence);
   } catch (error) {
     fail(
       error instanceof Error
@@ -349,7 +349,6 @@ export function validateWhatToDoHarnessResult(
         : 'The What to Do result is invalid.',
     );
   }
-  return result;
 }
 
 function normalizeEvidencePaths(

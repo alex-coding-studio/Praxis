@@ -24,11 +24,12 @@ export type DeliveryMapValidationState = {
   reservedCandidateIds?: Iterable<string>;
 };
 
-export function validateDeliveryMapMaterialization(
-  result: WhatToDoMapProposal,
+export function materializeDeliveryMapProposal<T extends WhatToDoMapProposal>(
+  proposal: T,
   context: DeliveryMapValidationState,
   knownEvidence: Set<string>,
-) {
+): T {
+  const result = structuredClone(proposal);
   if (context.operation === 'create-map' && result.candidates.length === 0)
     fail('A new Delivery Map requires at least one Contract Candidate.');
   if (context.operation === 'create-map' && result.sourceClaimUpdates?.length)
@@ -127,6 +128,7 @@ export function validateDeliveryMapMaterialization(
         .map((claim) => claim.claimId);
   validateCompleteMap(completeMap);
   validateClaims(result.sourceClaims, completeMap, context);
+  return result;
 }
 
 function applyContractDependencyUpdates(
