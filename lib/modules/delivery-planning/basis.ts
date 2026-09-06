@@ -2,21 +2,38 @@ import type { MaterializationBasisCore } from '../../materialization/basis.ts';
 import { contractIdentity } from '../../materialization/contract.ts';
 import { semanticResultHash } from '../../materialization/hash.ts';
 import { DELIVERY_MAP_RESULT_CONTRACT } from './contract.ts';
+import type { WhatToDoDeliveryMap } from './map.ts';
 import type { RegisteredProject } from '../../project-registry.ts';
 
 export type DeliveryMapOperation = 'create-map' | 'adjust-map';
 
 export type DeliveryMapBasis = MaterializationBasisCore & {
   operation: DeliveryMapOperation;
+  currentMap: WhatToDoDeliveryMap | null;
   currentMapFingerprint: string;
 };
 
+function deepFreeze<T>(value: T): T {
+  if (Array.isArray(value)) {
+    for (const entry of value) deepFreeze(entry);
+    return Object.freeze(value);
+  }
+  if (value && typeof value === 'object') {
+    for (const entry of Object.values(value)) deepFreeze(entry);
+    return Object.freeze(value);
+  }
+  return value;
+}
+
 export function prepareDeliveryMapBasis(
   project: RegisteredProject,
-  input: { currentMapFingerprint: string },
+  input: {
+    currentMap: WhatToDoDeliveryMap | null;
+    currentMapFingerprint: string;
+  },
   now: () => string = () => new Date().toISOString(),
 ): DeliveryMapBasis {
-  return Object.freeze({
+  return deepFreeze({
     project: { id: project.id, planningPath: project.planningPath },
     module: 'what-to-do' as const,
     operation:
@@ -28,6 +45,7 @@ export function prepareDeliveryMapBasis(
       currentMapFingerprint: input.currentMapFingerprint,
     }),
     preparedAt: now(),
+    currentMap: input.currentMap ? structuredClone(input.currentMap) : null,
     currentMapFingerprint: input.currentMapFingerprint,
   });
 }

@@ -1,3 +1,4 @@
+import type { WhatToDoHarnessResult } from '../../lib/modules/delivery-planning/harness.ts';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -132,7 +133,9 @@ export function input() {
   };
 }
 
-export function result(run: Awaited<ReturnType<typeof startWhatToDoRun>>) {
+export function result(
+  run: Awaited<ReturnType<typeof startWhatToDoRun>>,
+): Extract<WhatToDoHarnessResult, { outcome: 'map-proposal' }> {
   const candidateId = 'CANDIDATE-0001';
   const source = run.request.sourceFeatures[0]!;
   const factsPath = 'what-to-do/repository-context/facts.json';
@@ -270,7 +273,7 @@ export function retainedResult(
 export function replacementResult(
   run: Awaited<ReturnType<typeof startWhatToDoRun>>,
   map: NonNullable<Awaited<ReturnType<typeof readWhatToDoCurrentMap>>>,
-  original: ReturnType<typeof result>,
+  original: Extract<WhatToDoHarnessResult, { outcome: 'map-proposal' }>,
 ) {
   const priorContract = map.contracts[0]!;
   const priorCandidateId = `CANDIDATE-${priorContract.id.slice(5)}`;

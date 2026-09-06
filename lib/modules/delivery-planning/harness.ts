@@ -1,11 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020.js';
+import { materializeDeliveryMapProposal } from './validation.ts';
 import { createHash } from 'node:crypto';
 import type { AgentGraphContentPacket } from '../../graph/agent/context-workspace.ts';
-import {
-  validateAgentGraphRecomposeDependencies,
-  validateAgentGraphRecomposePlan,
-  type AgentGraphRecomposeEffect,
-} from '../../graph/agent/recompose.ts';
 import {
   whatToDoClarification as clarification,
   whatToDoContractCandidate as contractCandidate,
@@ -18,6 +14,7 @@ import {
   whatToDoText as text,
   type WhatToDoAcceptanceCriterion,
   type WhatToDoContractCandidate,
+  type WhatToDoMapProposal,
   type WhatToDoContractDependencyUpdate,
   type WhatToDoDeliveryStrategy,
   type WhatToDoDomainImpact,
@@ -152,14 +149,7 @@ type WhatToDoResultBase = {
 
 export type WhatToDoHarnessResult = WhatToDoResultBase &
   (
-    | {
-        outcome: 'map-proposal';
-        candidates: WhatToDoContractCandidate[];
-        sourceClaims: WhatToDoSourceClaim[];
-        sourceClaimUpdates?: WhatToDoSourceClaimUpdate[];
-        contractDependencyUpdates?: WhatToDoContractDependencyUpdate[];
-        recomposition?: { effects: AgentGraphRecomposeEffect[] };
-      }
+    | WhatToDoMapProposal
     | {
         outcome: 'clarification';
         clarification: {
@@ -291,6 +281,11 @@ export function parseWhatToDoHarnessResult(
   return validateWhatToDoHarnessResult(value, context);
 }
 
+function requireKnownPaths(values: string[], known: Set<string>) {
+  if (values.some((value) => !known.has(value)))
+    fail('The What to Do result references unknown evidence.');
+}
+
 export function validateWhatToDoHarnessResult(
   value: unknown,
   context: WhatToDoValidationContext,
@@ -345,185 +340,15 @@ export function validateWhatToDoHarnessResult(
   }
   if (result.outcome !== 'map-proposal') return result;
 
-  if (context.operation === 'create-map' && result.candidates.length === 0)
-    fail('A new Delivery Map requires at least one Contract Candidate.');
-  if (context.operation === 'create-map' && result.sourceClaimUpdates?.length)
-    fail('A new Delivery Map cannot update an existing Source Claim.');
-  if (
-    context.operation === 'create-map' &&
-    result.contractDependencyUpdates?.length
-  )
-    fail('A new Delivery Map cannot update an existing Contract dependency.');
-  if (context.operation === 'adjust-map' && result.recomposition) {
-    const retainedIds = new Set(
-      result.recomposition.effects
-        .filter((effect) => effect.kind === 'retain')
-        .flatMap((effect) =>
-          effect.from.filter((candidateId) => effect.to.includes(candidateId)),
-        ),
-    );
-    const knownIds = new Set(
-      (context.knownCandidates ?? []).map((candidate) => candidate.candidateId),
-    );
-    result.candidates = result.candidates.filter(
-      (candidate) =>
-        !(
-          retainedIds.has(candidate.candidateId) &&
-          knownIds.has(candidate.candidateId)
-        ),
+  try {
+    return materializeDeliveryMapProposal(result, context, knownEvidence);
+  } catch (error) {
+    fail(
+      error instanceof Error
+        ? error.message
+        : 'The What to Do result is invalid.',
     );
   }
-  if (context.operation === 'adjust-map')
-    mergeAdjustedSourceClaims(result, context);
-  validateCandidates(result.candidates, context, knownEvidence);
-  if (context.operation === 'create-map' && result.recomposition) {
-    const candidateIds = new Set(
-      result.candidates.map((candidate) => candidate.candidateId),
-    );
-    const addedIds = result.recomposition.effects.flatMap((effect) => {
-      if (effect.kind !== 'add' || effect.from.length > 0)
-        fail('A new Delivery Map cannot include Recompose effects.');
-      return effect.to;
-    });
-    if (
-      new Set(addedIds).size !== candidateIds.size ||
-      addedIds.some((candidateId) => !candidateIds.has(candidateId))
-    )
-      fail('A new Delivery Map cannot include Recompose effects.');
-    delete result.recomposition;
-  }
-  normalizeClaimAssignments(result.candidates, result.sourceClaims);
-  let retainedIds: string[] = [];
-  let retainedCandidates = context.knownCandidates ?? [];
-  if (context.operation === 'adjust-map') {
-    if (!result.recomposition)
-      fail('An adjusted Delivery Map requires Recompose effects.');
-    if ((context.knownSourceClaims ?? []).length === 0)
-      fail('An adjusted Delivery Map requires previous Source Claims.');
-    const selectedIds = (context.knownCandidates ?? []).map(
-      (candidate) => candidate.candidateId,
-    );
-    retainedIds = result.recomposition.effects
-      .filter((effect) => effect.kind === 'retain')
-      .flatMap((effect) => effect.from);
-    retainedCandidates = applyContractDependencyUpdates(
-      result.contractDependencyUpdates ?? [],
-      retainedIds,
-      [...retainedIds, ...result.candidates.map((item) => item.candidateId)],
-      context.knownCandidates ?? [],
-    );
-    validateAgentGraphRecomposePlan({
-      selectedIds,
-      outputIds: [
-        ...retainedIds,
-        ...result.candidates.map((candidate) => candidate.candidateId),
-      ],
-      effects: result.recomposition.effects,
-    });
-    validateAgentGraphRecomposeDependencies({
-      selectedIds,
-      retainedIds,
-      outputCandidates: result.candidates,
-      knownCandidates: retainedCandidates,
-    });
-  }
-  const completeMap = [
-    ...retainedCandidates.filter((candidate) =>
-      retainedIds.includes(candidate.candidateId),
-    ),
-    ...result.candidates,
-  ];
-  const retainedSet = new Set(retainedIds);
-  for (const candidate of completeMap)
-    if (retainedSet.has(candidate.candidateId))
-      candidate.sourceClaimIds = result.sourceClaims
-        .filter((claim) =>
-          claim.contractCandidateIds.includes(candidate.candidateId),
-        )
-        .map((claim) => claim.claimId);
-  validateCompleteMap(completeMap);
-  validateClaims(result.sourceClaims, completeMap, context);
-  return result;
-}
-
-function applyContractDependencyUpdates(
-  updates: WhatToDoContractDependencyUpdate[],
-  retainedIds: string[],
-  outputIds: string[],
-  knownCandidates: NonNullable<WhatToDoValidationContext['knownCandidates']>,
-) {
-  requireUnique(
-    updates.map((update) => update.candidateId),
-    'Contract dependency update identifiers must be unique.',
-  );
-  const retained = new Set(retainedIds);
-  const outputs = new Set(outputIds);
-  const updateById = new Map(
-    updates.map((update) => [update.candidateId, update]),
-  );
-  for (const update of updates) {
-    if (!retained.has(update.candidateId))
-      fail('A Contract dependency update must target a retained Contract.');
-    if (update.dependsOn.some((dependency) => !outputs.has(dependency)))
-      fail(
-        'A Contract dependency update references an unknown output Contract.',
-      );
-  }
-  return knownCandidates.map((candidate) => {
-    const update = updateById.get(candidate.candidateId);
-    return update
-      ? { ...candidate, dependsOn: [...update.dependsOn] }
-      : structuredClone(candidate);
-  });
-}
-
-function normalizeClaimAssignments(
-  candidates: WhatToDoContractCandidate[],
-  claims: WhatToDoSourceClaim[],
-) {
-  const candidateById = new Map(
-    candidates.map((candidate) => [candidate.candidateId, candidate]),
-  );
-  const claimById = new Map(claims.map((claim) => [claim.claimId, claim]));
-  for (const candidate of candidates)
-    for (const claimId of candidate.sourceClaimIds) {
-      const claim = claimById.get(claimId);
-      if (claim && !claim.contractCandidateIds.includes(candidate.candidateId))
-        claim.contractCandidateIds.push(candidate.candidateId);
-    }
-  for (const claim of claims)
-    for (const candidateId of claim.contractCandidateIds) {
-      const candidate = candidateById.get(candidateId);
-      if (candidate && !candidate.sourceClaimIds.includes(claim.claimId))
-        candidate.sourceClaimIds.push(claim.claimId);
-    }
-}
-
-function mergeAdjustedSourceClaims(
-  result: Extract<WhatToDoHarnessResult, { outcome: 'map-proposal' }>,
-  context: WhatToDoValidationContext,
-) {
-  const claims = new Map(
-    (context.knownSourceClaims ?? []).map((claim) => [
-      claim.claimId,
-      structuredClone(claim),
-    ]),
-  );
-  for (const claim of result.sourceClaims) claims.set(claim.claimId, claim);
-  const updates = result.sourceClaimUpdates ?? [];
-  requireUnique(
-    updates.map((update) => update.claimId),
-    'Source Claim update identifiers must be unique.',
-  );
-  for (const update of updates) {
-    if (result.sourceClaims.some((claim) => claim.claimId === update.claimId))
-      fail('A Source Claim cannot be replaced and updated together.');
-    const current = claims.get(update.claimId);
-    if (!current) fail(`Source Claim update ${update.claimId} does not exist.`);
-    claims.set(update.claimId, { ...current, ...update });
-  }
-  result.sourceClaims = [...claims.values()];
-  delete result.sourceClaimUpdates;
 }
 
 function normalizeEvidencePaths(
@@ -565,182 +390,6 @@ function normalizeEvidencePaths(
       : null,
   }));
   return result;
-}
-
-function validateCandidates(
-  candidates: WhatToDoContractCandidate[],
-  context: WhatToDoValidationContext,
-  knownEvidence: Set<string>,
-) {
-  requireUnique(
-    candidates.map((candidate) => candidate.candidateId),
-    'Contract Candidate identifiers must be unique.',
-  );
-  const unavailable = new Set([
-    ...(context.reservedCandidateIds ?? []),
-    ...(context.knownCandidates ?? []).map(
-      (candidate) => candidate.candidateId,
-    ),
-  ]);
-  for (const candidate of candidates) {
-    if (unavailable.has(candidate.candidateId))
-      fail(`Contract Candidate ${candidate.candidateId} already exists.`);
-    if (candidate.revision !== 1)
-      fail(`Contract Candidate ${candidate.candidateId} must use revision 1.`);
-    if (candidate.openDecisions.length > 0)
-      fail('A formal Delivery Map cannot contain an Open Decision.');
-    if (candidate.domainImpact.kind === 'uncertain')
-      fail('A formal Delivery Map cannot contain uncertain Domain Impact.');
-    requireKnownPaths(candidate.domainImpact.evidencePaths, knownEvidence);
-    requireUnique(
-      candidate.acceptanceCriteria.map((criterion) => criterion.id),
-      'Acceptance criterion identifiers must be unique within one Contract.',
-    );
-  }
-}
-
-function validateClaims(
-  claims: WhatToDoSourceClaim[],
-  candidates: Array<{ candidateId: string; sourceClaimIds: string[] }>,
-  context: WhatToDoValidationContext,
-) {
-  requireUnique(
-    claims.map((claim) => claim.claimId),
-    'Source Claim identifiers must be unique.',
-  );
-  const candidateById = new Map(
-    candidates.map((candidate) => [candidate.candidateId, candidate]),
-  );
-  const claimIds = new Set(claims.map((claim) => claim.claimId));
-  const claimById = new Map(claims.map((claim) => [claim.claimId, claim]));
-  const previousClaims = new Map(
-    (context.knownSourceClaims ?? []).map((claim) => [claim.claimId, claim]),
-  );
-  for (const candidate of candidates) {
-    if (candidate.sourceClaimIds.some((claimId) => !claimIds.has(claimId)))
-      fail('A Contract Candidate references an unknown Source Claim.');
-    for (const claimId of candidate.sourceClaimIds)
-      if (
-        !claimById
-          .get(claimId)
-          ?.contractCandidateIds.includes(candidate.candidateId)
-      )
-        fail('Source Claim assignment must be bidirectional.');
-  }
-  for (const claim of claims) {
-    const previous = previousClaims.get(claim.claimId);
-    if (
-      previous &&
-      (claim.sourcePath !== previous.sourcePath ||
-        claim.sourceSha256 !== previous.sourceSha256 ||
-        claim.anchor !== previous.anchor ||
-        claim.summary !== previous.summary)
-    )
-      fail(
-        `Previously acknowledged Source Claim ${claim.claimId} changed identity.`,
-      );
-    if (!previous) {
-      const source = context.knownSources[claim.sourcePath];
-      if (!source || source.sha256 !== claim.sourceSha256)
-        fail('A Source Claim does not match a frozen source.');
-      requireUniqueExcerpt(
-        source.content,
-        claim.anchor,
-        'A Source Claim anchor must occur exactly once in its frozen source.',
-      );
-    }
-    if (
-      claim.contractCandidateIds.some(
-        (candidate) => !candidateById.has(candidate),
-      )
-    )
-      fail('A Source Claim references an unknown Contract Candidate.');
-    if (claim.disposition === 'in-scope') {
-      if (
-        claim.contractCandidateIds.length === 0 ||
-        claim.exclusionReason ||
-        claim.exclusionAuthority
-      )
-        fail('An in-scope Source Claim must be assigned without an exclusion.');
-      for (const candidateId of claim.contractCandidateIds) {
-        const candidate = candidateById.get(candidateId);
-        if (!candidate?.sourceClaimIds.includes(claim.claimId))
-          fail('Source Claim assignment must be bidirectional.');
-      }
-    } else {
-      if (
-        claim.contractCandidateIds.length > 0 ||
-        !claim.exclusionReason ||
-        !claim.exclusionAuthority
-      )
-        fail(
-          'An out-of-scope Source Claim requires current User Input authority and no Contract.',
-        );
-      if (
-        claim.exclusionAuthority.userInputPath !== context.userInput.path ||
-        claim.exclusionAuthority.userInputSha256 !== context.userInput.sha256
-      )
-        fail('Source Claim exclusion does not match current User Input.');
-      requireUniqueExcerpt(
-        context.userInput.content,
-        claim.exclusionAuthority.anchor,
-        'Source Claim exclusion authority must occur exactly once in current User Input.',
-      );
-    }
-  }
-  for (const claimId of previousClaims.keys()) {
-    const current = claimById.get(claimId);
-    if (!current)
-      fail(`Previously acknowledged Source Claim ${claimId} is missing.`);
-  }
-  for (const sourcePath of context.requiredSourcePaths ??
-    Object.keys(context.knownSources))
-    if (!claims.some((claim) => claim.sourcePath === sourcePath))
-      fail('Every selected Product Design Feature needs a Source Claim.');
-}
-
-function validateCompleteMap(
-  candidates: Array<{ candidateId: string; dependsOn: string[] }>,
-) {
-  const candidateIds = candidates.map((candidate) => candidate.candidateId);
-  requireUnique(candidateIds, 'Contract Candidate identifiers must be unique.');
-  const ids = new Set(candidateIds);
-  for (const candidate of candidates) {
-    if (candidate.dependsOn.some((dependency) => !ids.has(dependency)))
-      fail('A Contract Candidate depends on an unknown Contract Candidate.');
-    if (candidate.dependsOn.includes(candidate.candidateId))
-      fail('A Contract Candidate cannot depend on itself.');
-  }
-  const dependencies = new Map(
-    candidates.map((candidate) => [candidate.candidateId, candidate.dependsOn]),
-  );
-  const visiting = new Set<string>();
-  const visited = new Set<string>();
-  function visit(candidateId: string) {
-    if (visiting.has(candidateId))
-      fail('Delivery Map dependencies contain a cycle.');
-    if (visited.has(candidateId)) return;
-    visiting.add(candidateId);
-    for (const dependency of dependencies.get(candidateId) ?? [])
-      visit(dependency);
-    visiting.delete(candidateId);
-    visited.add(candidateId);
-  }
-  for (const candidateId of dependencies.keys()) visit(candidateId);
-}
-
-function requireKnownPaths(values: string[], known: Set<string>) {
-  if (values.some((path) => !known.has(path)))
-    fail('The What to Do result references unknown evidence.');
-}
-
-function requireUniqueExcerpt(
-  content: string,
-  excerpt: string,
-  message: string,
-) {
-  const first = content.indexOf(excerpt);
-  if (first < 0 || content.indexOf(excerpt, first + 1) >= 0) fail(message);
 }
 
 function requireUnique(values: string[], message: string) {

@@ -112,6 +112,7 @@ void test('a validated Agent result becomes one formal terminal Delivery Map', (
       updatedAt: '2026-09-02T00:00:00.000Z',
       sourceUids: ['feature-1', 'feature-1'],
       result,
+      basis: { currentMap: null },
       sourceSnapshots: [
         {
           logicalPath: 'feature.md',
@@ -161,6 +162,7 @@ void test('a retained Contract preserves formal identity across terminal Map upd
       updatedAt: '2026-09-02T00:00:00.000Z',
       sourceUids: ['feature-1'],
       result,
+      basis: { currentMap: null },
       sourceSnapshots,
     },
     () => uids.shift()!,
@@ -171,7 +173,7 @@ void test('a retained Contract preserves formal identity across terminal Map upd
       runId: 'RUN-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
       updatedAt: '2026-09-02T01:00:00.000Z',
       sourceUids: ['feature-1'],
-      currentMap,
+      basis: { currentMap },
       sourceSnapshots,
       result: {
         ...result,
@@ -227,6 +229,7 @@ void test('a dependency-only update retains identity and republishes the Contrac
       updatedAt: '2026-09-02T00:00:00.000Z',
       sourceUids: ['feature-1'],
       result,
+      basis: { currentMap: null },
       sourceSnapshots,
     },
     () => uids.shift()!,
@@ -236,7 +239,7 @@ void test('a dependency-only update retains identity and republishes the Contrac
     runId: 'RUN-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     updatedAt: '2026-09-02T01:00:00.000Z',
     sourceUids: ['feature-1'],
-    currentMap,
+    basis: { currentMap },
     sourceSnapshots,
     result: {
       ...result,
@@ -283,6 +286,7 @@ void test('the current Map prompt keeps Claim assignments without repeating froz
       updatedAt: '2026-09-02T00:00:00.000Z',
       sourceUids: ['feature-1'],
       result,
+      basis: { currentMap: null },
       sourceSnapshots: [
         {
           logicalPath: 'feature.md',

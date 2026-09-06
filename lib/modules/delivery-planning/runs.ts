@@ -164,6 +164,7 @@ export async function startWhatToDoRun(
       const current = await readWhatToDoCurrentMapWithFingerprint(project);
       currentMap = current.map;
       basis = prepareDeliveryMapBasis(project, {
+        currentMap: current.map,
         currentMapFingerprint: current.fingerprint,
       });
       const clarificationRun = await resolveClarificationRun(
@@ -453,11 +454,11 @@ function settleLater(
               runId: run.id,
               updatedAt: endedAt,
               sourceUids: [
-                ...(currentMap?.sourceUids ?? []),
+                ...(basis?.currentMap?.sourceUids ?? []),
                 ...run.sourceUids,
               ],
               result,
-              currentMap,
+              basis: { currentMap: basis?.currentMap ?? null },
               sourceSnapshots: prepared.sourceSnapshots,
             })
           : null;
