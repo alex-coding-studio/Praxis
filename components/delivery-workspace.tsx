@@ -547,6 +547,11 @@ export function DeliveryWorkspace({
                   </span>
                 )}
               </div>
+              {record?.response?.status === 'completed' && (
+                <p className="mt-2 text-sm font-medium text-foreground">
+                  {t(record.response.title)}
+                </p>
+              )}
               {record?.response && record.response.status !== 'completed' && (
                 <p className="mt-2 line-clamp-3 text-xs text-muted-foreground">
                   <span className="font-medium">
