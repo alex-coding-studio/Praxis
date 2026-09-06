@@ -2,10 +2,7 @@ import { createHash } from 'node:crypto';
 import type { DomainModel, ProposedDomainModel } from './model.ts';
 import type { AgentGraphContentPacket } from '../../graph/agent/context-workspace.ts';
 import type { DomainModelPatch } from './contract.ts';
-import {
-  applyDomainModelPatch,
-  assertLegacyModelCoverage,
-} from './materializer.ts';
+import { applyDomainModelPatch } from './materializer.ts';
 
 export { applyDomainModelPatch };
 
@@ -202,30 +199,6 @@ export function parseDomainModelEnvelope(
   )
     throw new Error('A no-change response requires a reason.');
   return value;
-}
-
-export function composeDomainModelEnvelope(
-  envelope: DomainModelEnvelope,
-  current: DomainModel,
-): DomainModelAgentResult {
-  if (envelope.outcome !== 'applied') return envelope;
-  if (envelope.patch) {
-    const { patch, model: _model, ...content } = envelope;
-    return { ...content, model: applyDomainModelPatch(current, patch) };
-  }
-  assertLegacyModelCoverage(current, envelope.model);
-  const { patch: _patch, ...content } = envelope;
-  return { ...content, model: envelope.model };
-}
-
-export function parseDomainModelResult(
-  raw: string,
-  request: DomainModelRequest,
-): DomainModelAgentResult {
-  return composeDomainModelEnvelope(
-    parseDomainModelEnvelope(raw, request),
-    request.model,
-  );
 }
 
 function stripFence(value: string) {

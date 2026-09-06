@@ -240,3 +240,32 @@ function withSortedIdentitySet(value: unknown) {
     ) as string[];
   return value;
 }
+
+const DOMAIN_CAPTURED =
+  /(?:^|\/)(?:state\.json|run\.json|request\.json|change\.json|summary\.md)$/;
+
+export async function captureDomainModelState(
+  project: RegisteredProject,
+  canonicalize: GoldenCanonicalizer = createCanonicalizer(),
+) {
+  const root = path.join(project.planningPath, 'domain-model');
+  const files: CapturedFile[] = [];
+  for (const relative of await readTree(root)) {
+    if (!DOMAIN_CAPTURED.test(relative)) continue;
+    files.push({
+      key: `domain-model/${relative}`,
+      text: await readFile(path.join(root, relative), 'utf8'),
+    });
+  }
+  const stateFile = files.find((file) => file.key.endsWith('/state.json'));
+  if (stateFile) canonicalize(stateFile.text);
+  const captured: Record<string, unknown> = {};
+  for (const file of [...files].sort((left, right) =>
+    canonicalize(left.key).localeCompare(canonicalize(right.key), 'en'),
+  )) {
+    captured[canonicalize(file.key)] = file.key.endsWith('.json')
+      ? JSON.parse(canonicalize(file.text))
+      : canonicalize(file.text);
+  }
+  return captured;
+}

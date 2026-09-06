@@ -1,3 +1,5 @@
+import { PublicApiError } from '../api-errors.ts';
+import { isStaleBasisError } from '../materialization/receipt.ts';
 import path from 'node:path';
 import type { LocalAgentActivity } from '../agents/activity.ts';
 import type { AgentProfile } from '../agents/profile.ts';
@@ -243,4 +245,17 @@ async function recoverLostRun(
   }
   await options.onOwnershipLost?.(published).catch(() => undefined);
   return published;
+}
+
+export function moduleRunFailureKind(
+  error: unknown,
+  agentOutput: string | null,
+): 'persistence' | 'parse' | 'transport' {
+  if (
+    isStaleBasisError(error) ||
+    (error instanceof PublicApiError && error.status === 409)
+  ) {
+    return 'persistence';
+  }
+  return agentOutput ? 'parse' : 'transport';
 }

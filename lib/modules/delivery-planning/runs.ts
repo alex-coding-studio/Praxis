@@ -38,6 +38,7 @@ import {
   agentActivityEntry,
   beginModuleRun,
   classifyModuleRun,
+  moduleRunFailureKind,
   stopModuleRun,
 } from '../../execution-observability/module-run.ts';
 import type { ResponseClassification } from '../../execution-observability/types.ts';
@@ -63,6 +64,7 @@ import { readWhatToDoRunDraft } from './run-draft.ts';
 import {
   atomicWhatToDoText,
   readWhatToDoCurrentMap,
+  readWhatToDoCurrentMapWithFingerprint,
   whatToDoDirectory,
   whatToDoRunDirectory,
   writeWhatToDoCurrentMap,
@@ -74,6 +76,8 @@ import {
 } from '../implementation/planning-service.ts';
 import { deliveryContractPlanningSource } from '../implementation/planning-sources.ts';
 import { withDeliveryState } from '../../delivery-state-lock.ts';
+import { MaterializationError } from '../../materialization/receipt.ts';
+import { prepareDeliveryMapBasis, type DeliveryMapBasis } from './basis.ts';
 
 export type WhatToDoRunRecord = {
   schemaVersion: 1;
@@ -149,6 +153,7 @@ export async function startWhatToDoRun(
   let prepared!: Awaited<ReturnType<typeof prepareWhatToDoContext>>;
   let currentMap: WhatToDoDeliveryMap | null = null;
   let coordinatorRun = null as WhatToDoRunRecord | null;
+  let basis = null as DeliveryMapBasis | null;
   let effectiveInput: WhatToDoRunInput = input;
   const { reservation } = await beginModuleRun(project, 'what-to-do', {
     runId,
@@ -156,7 +161,11 @@ export async function startWhatToDoRun(
     agentProfile: input.profile,
     startMessage: `Delivery Planning Run started with ${input.profile.agent}`,
     validate: async () => {
-      currentMap = await readWhatToDoCurrentMap(project);
+      const current = await readWhatToDoCurrentMapWithFingerprint(project);
+      currentMap = current.map;
+      basis = prepareDeliveryMapBasis(project, {
+        currentMapFingerprint: current.fingerprint,
+      });
       const clarificationRun = await resolveClarificationRun(
         project,
         input.clarificationRunId,
@@ -311,7 +320,7 @@ export async function startWhatToDoRun(
   });
   active.cancel = agentRun.cancel;
   reservation.attach(agentRun);
-  settleLater(project, run, active, agentRun, prepared, currentMap);
+  settleLater(project, run, active, agentRun, prepared, currentMap, basis);
   return run;
 }
 
@@ -413,6 +422,7 @@ function settleLater(
   agentRun: LocalAgentRun,
   prepared: Awaited<ReturnType<typeof prepareWhatToDoContext>>,
   currentMap: WhatToDoDeliveryMap | null,
+  basis: DeliveryMapBasis | null,
 ) {
   void agentRun.completion
     .then(async (agent) => {
@@ -516,7 +526,7 @@ function settleLater(
         );
       if (map) {
         await stageTerminalRunRecord(project, terminal);
-        await publishDeliveryMap(project, map);
+        await publishDeliveryMap(project, map, planningService, basis);
         await publishTerminalRunRecord(project, run.id).catch(() => undefined);
       } else {
         await writeRunRecord(project, terminal);
@@ -544,17 +554,12 @@ function settleLater(
       const classification = classifyModuleRun({
         runState: 'settled',
         failure: {
-          kind:
-            error instanceof PublicApiError && error.status === 409
-              ? 'persistence'
-              : active.agentOutput
-                ? 'parse'
-                : 'transport',
+          kind: moduleRunFailureKind(error, active.agentOutput),
           message: original,
         },
       });
       const message =
-        error instanceof PublicApiError
+        error instanceof PublicApiError || error instanceof MaterializationError
           ? error.message
           : `${classification.detail} ${WHAT_TO_DO_RETAINED}`;
       const terminal: WhatToDoRunRecord = {
@@ -600,9 +605,20 @@ export async function publishDeliveryMap(
   project: RegisteredProject,
   map: WhatToDoDeliveryMap,
   store: DeliveryPlanningStore = planningService,
+  basis: DeliveryMapBasis | null = null,
 ) {
   await withDeliveryState(project, async () => {
     await assertDeliveryMapPreservesTargets(project, map);
+    if (basis) {
+      const { fingerprint } =
+        await readWhatToDoCurrentMapWithFingerprint(project);
+      if (fingerprint !== basis.currentMapFingerprint) {
+        throw new MaterializationError(
+          'stale-basis',
+          'The current Delivery Map changed after this Run was prepared.',
+        );
+      }
+    }
     const nextSources = new Map(
       map.contracts.map((contract) => {
         const source = deliveryContractPlanningSource(contract);

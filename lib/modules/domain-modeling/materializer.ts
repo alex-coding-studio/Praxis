@@ -1,4 +1,4 @@
-import type { DomainModelPatch } from './contract.ts';
+import type { DomainModelPatch, DomainModelResult } from './contract.ts';
 import type {
   DomainEntity,
   DomainModel,
@@ -147,4 +147,14 @@ function patchCollection<T extends { id: string }>(
       .map((item) => updates.get(item.id) ?? item),
     ...upserts.filter((item) => !currentIds.has(item.id)),
   ];
+}
+
+export function composeDomainModel(
+  current: DomainModel,
+  result: Extract<DomainModelResult, { outcome: 'model-change' }>,
+): ProposedDomainModel {
+  if (result.change.kind === 'patch')
+    return applyDomainModelPatch(current, result.change.patch);
+  assertLegacyModelCoverage(current, result.change.model);
+  return result.change.model;
 }
