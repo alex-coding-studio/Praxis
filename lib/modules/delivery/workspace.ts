@@ -84,3 +84,46 @@ export async function prepareDeliveryWorkspace(
   );
   return { path: workspace, branch, base };
 }
+
+export async function revealDeliveryWorkspace(
+  project: RegisteredProject,
+  record: DeliveryRecord,
+) {
+  if (!record.workspace)
+    throw new PublicApiError('This delivery has no workspace yet.');
+  await prepareDeliveryWorkspace(project, record);
+  const command =
+    process.platform === 'darwin'
+      ? 'open'
+      : process.platform === 'win32'
+        ? 'explorer.exe'
+        : process.platform === 'linux'
+          ? 'xdg-open'
+          : null;
+  if (!command)
+    throw new PublicApiError('Opening the system file manager is unsupported.');
+  await execute(command, [record.workspace.path], { timeout: 10000 });
+}
+
+export async function latestDeliveryMain(project: RegisteredProject) {
+  const repository = await realpath(project.codePath ?? project.rootPath);
+  const remote = await deliveryGit(
+    repository,
+    'remote',
+    'get-url',
+    'origin',
+  ).catch(() => null);
+  if (!remote) return deliveryGit(repository, 'rev-parse', 'refs/heads/main');
+  await deliveryGit(repository, 'fetch', 'origin');
+  const advertised = await deliveryGit(
+    repository,
+    'ls-remote',
+    '--symref',
+    'origin',
+    'HEAD',
+  );
+  const branch = advertised.match(/^ref: refs\/heads\/([^\s]+)\s+HEAD$/m)?.[1];
+  if (!branch)
+    throw new PublicApiError('The remote default branch is unavailable.');
+  return deliveryGit(repository, 'rev-parse', `refs/remotes/origin/${branch}`);
+}

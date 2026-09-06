@@ -1,4 +1,5 @@
 'use client';
+import { useDeliveryStates } from '@/hooks/use-delivery-states';
 import { useUiText } from '@/components/ui-language-provider';
 import { useRouter } from 'next/navigation';
 
@@ -156,6 +157,7 @@ function WhatsNextCanvas({
   developmentCompletionRun?: WhatsNextRunRecord;
 }) {
   const { t } = useUiText();
+  const deliveryStates = useDeliveryStates(projectId);
   const router = useRouter();
   const [nodes, setNodes] = useState(initialNodes);
   const [previews, setPreviews] = useState<TaskGraphPreview[]>(
@@ -1178,7 +1180,13 @@ function WhatsNextCanvas({
   return (
     <div className="relative h-full">
       <TaskGraphCanvas
-        nodes={visibleNodes}
+        nodes={visibleNodes.map((node) => ({
+          ...node,
+          metadata: {
+            ...node.metadata,
+            deliveryState: deliveryStates[node.uid ?? ''],
+          },
+        }))}
         previews={visiblePreviews}
         focusedNodeId={focusedNodeId}
         locateRequest={locateRequest}

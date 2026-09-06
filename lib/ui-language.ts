@@ -5,6 +5,10 @@ export function isUiLanguage(value: unknown): value is UiLanguage {
 }
 
 export const chineseUi: Record<string, string> = {
+  'Confirm existing delivery': '确认已有交付',
+  'Development Delivery instructions': '开发交付指令',
+  'Prepare delivery brief': '准备交付简报',
+  'Continue delivery': '继续交付',
   'Development Delivery': '开发交付',
   'Delivery Contracts': '交付 Contract',
   'Ready to deliver': '可准备交付',

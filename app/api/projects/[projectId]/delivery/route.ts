@@ -10,6 +10,7 @@ import {
 import { cancelDeliveryRun } from '@/lib/modules/delivery/runtime';
 import {
   updateDeliveryRecord,
+  readDeliveryRecord,
   writeDeliveryInstructions,
   writeDeliveryModels,
 } from '@/lib/modules/delivery/storage';
@@ -18,6 +19,8 @@ import { acceptDelivery } from '@/lib/modules/delivery/publication';
 import { saveDeliveryAttachments } from '@/lib/modules/delivery/attachments';
 import { resolvePlanningPath } from '@/lib/planning-paths';
 import { deliveryTargetBusy } from '@/lib/modules/delivery/ownership';
+import { revealDeliveryWorkspace } from '@/lib/modules/delivery/workspace';
+import { acceptExistingDelivery } from '@/lib/modules/delivery/existing-delivery';
 
 export const runtime = 'nodejs';
 type RouteContext = { params: Promise<{ projectId: string }> };
@@ -107,7 +110,13 @@ export async function POST(request: Request, context: RouteContext) {
         input.message,
         input.expectedRevision,
       );
-    } else if (input.action === 'accept')
+    } else if (input.action === 'open-workspace') {
+      const record = await readDeliveryRecord(project, input.uid);
+      if (!record) throw new PublicApiError('Delivery not found.', 404);
+      await revealDeliveryWorkspace(project, record);
+    } else if (input.action === 'accept-existing')
+      await acceptExistingDelivery(project, input.uid, input.expectedRevision);
+    else if (input.action === 'accept')
       await acceptDelivery(project, input.uid, input.expectedRevision);
     else if (input.action === 'cancel')
       await cancelDeliveryRun(project, input.uid);

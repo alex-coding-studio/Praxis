@@ -36,6 +36,7 @@ export type DeliveryAgent = {
   result: string | null;
 };
 export type DeliveryRun = {
+  moduleInstructions: string;
   usage?: LocalAgentUsage | null;
   hostPid: number;
   id: string;
@@ -77,16 +78,21 @@ export type DeliveryRecord = DeliverySummary & {
     detail: string;
   } | null;
   acceptedHead: string | null;
+  existingDelivery?: { head: string; reason: string } | null;
 };
 
 export function deliveryCandidateReady(record: DeliveryRecord, head: string) {
-  if (!record.brief?.confirmedAt || record.brief.openDecisions.length)
-    return false;
   if (
     !record.publication ||
     record.publication.state !== 'OPEN' ||
     record.publication.head !== head
   )
+    return false;
+  return deliveryEvidenceReady(record, head);
+}
+
+export function deliveryEvidenceReady(record: DeliveryRecord, head: string) {
+  if (!record.brief?.confirmedAt || record.brief.openDecisions.length)
     return false;
   if (
     !record.review ||

@@ -38,7 +38,7 @@ export function PullRequestChip({
   stale,
   className = '',
 }: {
-  pr: GitHubPullRequest;
+  pr: Pick<GitHubPullRequest, 'url' | 'title' | 'number' | 'isDraft' | 'state'>;
   stale: boolean;
   className?: string;
 }) {

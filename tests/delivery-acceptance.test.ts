@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { acceptDelivery } from '../lib/modules/delivery/publication.ts';
@@ -12,6 +12,11 @@ import {
 } from '../lib/modules/delivery/storage.ts';
 import type { RegisteredProject } from '../lib/project-registry.ts';
 import type { HostCommandRunner } from '../lib/card-host-operations.ts';
+import { deliveryGit } from '../lib/modules/delivery/workspace.ts';
+import {
+  recognizeExistingDelivery,
+  acceptExistingDelivery,
+} from '../lib/modules/delivery/existing-delivery.ts';
 
 async function fixture(t: test.TestContext) {
   const rootPath = await mkdtemp(path.join(os.tmpdir(), 'delivery-accept-'));
@@ -167,4 +172,47 @@ void test('a changed remote head does not merge or erase the existing candidate'
   const after = await readDeliveryRecord(project, uid);
   assert.deepEqual(after?.publication, record.publication);
   assert.deepEqual(after?.checks, record.checks);
+});
+
+void test('user can accept verified current-main work without a new commit or pull request', async (t) => {
+  const { project, uid } = await fixture(t);
+  await deliveryGit(project.rootPath, 'init', '--initial-branch=main');
+  await deliveryGit(
+    project.rootPath,
+    '-c',
+    'user.name=Fixture',
+    '-c',
+    'user.email=fixture@example.test',
+    'commit',
+    '--allow-empty',
+    '-m',
+    'Existing implementation',
+  );
+  const head = await deliveryGit(project.rootPath, 'rev-parse', 'HEAD');
+  await writeFile(
+    path.join(project.rootPath, '.git/info/exclude'),
+    'delivery/\n',
+  );
+  await updateDeliveryRecord(project, uid, (record) => {
+    record.publication = null;
+    record.workspace = { path: project.rootPath, branch: 'main', base: head };
+    record.checks[0].head = head;
+    record.review!.head = head;
+  });
+  await recognizeExistingDelivery(
+    project,
+    uid,
+    'Current main already implements the required behavior.',
+  );
+  const proposed = (await readDeliveryRecord(project, uid))!;
+  assert.notEqual(proposed.status, 'completed');
+  const accepted = await acceptExistingDelivery(
+    project,
+    uid,
+    proposed.revision,
+  );
+  assert.equal(accepted.status, 'completed');
+  assert.equal(accepted.publication, null);
+  assert.equal(accepted.acceptedHead, head);
+  assert.equal(await deliveryGit(project.rootPath, 'rev-parse', 'HEAD'), head);
 });

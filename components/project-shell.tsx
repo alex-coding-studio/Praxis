@@ -58,9 +58,9 @@ const navigation = [
     available: true,
   },
   {
-    label: 'Implementation',
+    label: 'Development Delivery',
     icon: Play,
-    path: '/implementation',
+    path: '/delivery',
     available: true,
     badge: undefined,
   },

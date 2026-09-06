@@ -34,6 +34,7 @@ import {
 } from './instructions.ts';
 import type { DeliveryRecord, DeliveryRun } from './record.ts';
 import { claimDeliveryTarget } from './ownership.ts';
+import { recognizeExistingDelivery } from './existing-delivery.ts';
 
 export type DeliveryDriverFactory = (
   project: RegisteredProject,
@@ -145,6 +146,7 @@ export async function startDeliveryRun(
         'Configure the Worker model pool before starting delivery.',
       );
     const run: DeliveryRun = {
+      moduleInstructions: await readDeliveryInstructions(project),
       hostPid: process.pid,
       id: randomUUID(),
       kind,
@@ -302,12 +304,77 @@ async function executeDelivery(
   }
   const tools: HostTool[] = [
     hostTool(
+      'submit_existing_delivery',
+      'When current main already satisfies the confirmed target, submit its verified existing implementation for user acceptance without creating a redundant PR.',
+      { reason: { type: 'string' } },
+      async (args) => {
+        assertActive();
+        return recognizeExistingDelivery(
+          project,
+          uid,
+          text(args.reason, 'Existing delivery reason'),
+        );
+      },
+    ),
+    hostTool(
+      'report_delivery',
+      'Save the concise user-facing outcome of this round. Use warning for a concrete unresolved decision or recoverable need; use fail for an execution failure. Completion of a round does not accept the target.',
+      {
+        status: { enum: ['completed', 'warning', 'fail'] },
+        title: { type: 'string' },
+        detail: { type: 'string' },
+      },
+      async (args) => {
+        assertActive();
+        if (!['completed', 'warning', 'fail'].includes(String(args.status)))
+          throw new PublicApiError('Invalid delivery response status.');
+        const response = {
+          status: args.status as 'completed' | 'warning' | 'fail',
+          title: text(args.title, 'Title'),
+          detail: text(args.detail, 'Detail'),
+        };
+        await updateDeliveryRecord(project, uid, (current) => {
+          current.response = response;
+        });
+        return response;
+      },
+    ),
+    hostTool(
+      'read_delivery_diff',
+      'Read the current target changes against its starting commit. Supply repository-relative paths to narrow the diff, or an empty list for all changes.',
+      { paths: { type: 'array', items: { type: 'string' } } },
+      async (args) => {
+        assertActive();
+        const current = await record();
+        if (!current.workspace)
+          throw new PublicApiError('No implementation workspace exists yet.');
+        const paths = strings(args.paths, 'Paths');
+        const head = await deliveryGit(
+          current.workspace.path,
+          'rev-parse',
+          'HEAD',
+        );
+        return {
+          head,
+          base: current.workspace.base,
+          diff: await deliveryGit(
+            current.workspace.path,
+            'diff',
+            current.workspace.base,
+            head,
+            '--',
+            ...paths,
+          ),
+        };
+      },
+    ),
+    hostTool(
       'publish_delivery',
       'Commit and publish the current target as its continuing Draft PR. Reuse this tool for corrections; publication does not imply user acceptance.',
       { title: { type: 'string' }, body: { type: 'string' } },
       async (args) => {
         assertActive();
-        if (run.kind === 'brief' || childBusy)
+        if (run.kind === 'brief')
           throw new PublicApiError(
             'Wait for implementation to finish before publishing.',
           );
@@ -479,6 +546,7 @@ async function executeDelivery(
           };
           current.checks = [];
           current.review = null;
+          current.existingDelivery = null;
         });
       },
     ),
@@ -585,7 +653,7 @@ async function executeDelivery(
               instruction,
               brief: current.brief,
               userInstructions: current.instructions,
-              moduleInstructions: await readDeliveryInstructions(project),
+              moduleInstructions: run.moduleInstructions,
               source: current.source,
               contextRoot: project.planningPath,
               head,
@@ -595,7 +663,13 @@ async function executeDelivery(
               previous.profile.model === profile.model
               ? previous.sessionId
               : null,
-            [],
+            tools.filter((tool) =>
+              role === 'reviewer'
+                ? tool.name === 'read_delivery_diff'
+                : ['read_delivery_diff', 'publish_delivery'].includes(
+                    tool.name,
+                  ),
+            ),
             async (thread) => {
               await updateDeliveryRecord(project, uid, (value) => {
                 const agent = {
@@ -672,12 +746,24 @@ async function executeDelivery(
         source: current.source,
         contextRoot: project.planningPath,
         brief: current.brief,
-        moduleInstructions: await readDeliveryInstructions(project),
+        moduleInstructions: run.moduleInstructions,
         instructions: current.instructions,
         models: current.models,
         progress: current.progress,
         recentMessages: current.messages.slice(-12),
-        priorAgents: current.agents,
+        priorAgents: current.agents.map(
+          ({ id, role, profile, sessionId, result }) => ({
+            id,
+            role,
+            profile,
+            sessionId,
+            summary: result?.slice(0, 600),
+          }),
+        ),
+        fullRecordPath: path.join(
+          await deliveryDirectory(project, uid),
+          'record.json',
+        ),
         review: current.review,
         workspace: current.workspace,
       }),
@@ -696,8 +782,9 @@ async function executeDelivery(
       storedRun.usage = result.usage;
       storedRun.endedAt = new Date().toISOString();
       value.messages.push(deliveryMessage('ORCHESTRATOR', result.finalOutput));
-      value.status = 'waiting-for-user';
-      value.response = {
+      value.status =
+        value.response?.status === 'fail' ? 'failed' : 'waiting-for-user';
+      value.response ??= {
         status: 'completed',
         title:
           run.kind === 'brief' ? 'Delivery brief prepared' : 'Delivery update',

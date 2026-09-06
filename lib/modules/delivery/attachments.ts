@@ -18,7 +18,7 @@ export async function saveDeliveryAttachments(
     if (typeof file.name !== 'string' || typeof file.base64 !== 'string')
       throw new PublicApiError('Invalid attachment.');
     const name = path.basename(file.name).replace(/[^\p{L}\p{N}._ -]/gu, '_');
-    if (!/\.(png|jpe?g|webp|gif|pdf|md|txt|html?)$/i.test(name))
+    if (!/\.(png|jpe?g|webp|gif|pdf|md|markdown|txt|html?)$/i.test(name))
       throw new PublicApiError(
         'Use an image, PDF, Markdown, text or HTML attachment.',
       );

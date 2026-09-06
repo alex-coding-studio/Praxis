@@ -13,7 +13,7 @@ import {
 } from '@xyflow/react';
 import dagre from '@dagrejs/dagre';
 import '@xyflow/react/dist/style.css';
-import { ArrowLeft, Check, Settings, Square } from 'lucide-react';
+import { ArrowLeft, Check, Settings, Square, FolderOpen } from 'lucide-react';
 import { AgentGraphComposerCard } from '@/components/agent-graph-composer-card';
 import {
   AgentComposerShell,
@@ -28,7 +28,10 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import type { ContextBrowserFolder } from '@/lib/modules/product-context/catalog';
 import { CanvasNodeCardFrame } from '@/components/canvas-node-card-frame';
-import { ExecutionStickyHeaderFrame } from '@/components/execution-sticky-header';
+import {
+  ExecutionStickyHeaderFrame,
+  PullRequestChip,
+} from '@/components/execution-sticky-header';
 import {
   CANVAS_NODE_CARD_WIDTH,
   canvasNodeCardMinHeight,
@@ -40,6 +43,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { ProjectModuleHeader } from '@/components/project-module-header';
+import { ModuleInstructionsDialog } from '@/components/module-instructions-dialog';
+import { LatestResponseCard } from '@/components/latest-response-card';
+import { deliveryResponse } from '@/lib/modules/delivery/response';
+import { useSurfacePreference } from '@/hooks/use-surface-preference';
 import { useUiText } from '@/components/ui-language-provider';
 import type {
   DeliveryModels,
@@ -48,6 +56,7 @@ import type {
 } from '@/lib/modules/delivery/types';
 import {
   deliveryCandidateReady,
+  deliveryEvidenceReady,
   type DeliveryRecord,
 } from '@/lib/modules/delivery/record';
 import { cn } from '@/lib/utils';
@@ -130,15 +139,20 @@ export function DeliveryWorkspace({
   projectId,
   initialWorkspace,
   folders,
+  initialTarget,
 }: {
   projectId: string;
   initialWorkspace: Workspace;
   folders: ContextBrowserFolder[];
+  initialTarget?: string;
 }) {
   const { t } = useUiText();
   const [workspace, setWorkspace] = useState<Workspace>(initialWorkspace);
-  const [layer, setLayer] = useState<DeliverySourceKind>('mvp');
-  const [uid, setUid] = useState<string | null>(null);
+  const [layer, setLayer] = useState<DeliverySourceKind>(
+    initialWorkspace.targets.find((entry) => entry.sourceUid === initialTarget)
+      ?.sourceKind ?? 'mvp',
+  );
+  const [uid, setUid] = useState<string | null>(initialTarget ?? null);
   const [input, setInput] = useState('');
   const [files, setFiles] = useState<Array<{ name: string; base64: string }>>(
     [],
@@ -151,7 +165,16 @@ export function DeliveryWorkspace({
   const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null);
   const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
   const [stuck, setStuck] = useState(false);
-  const [instructions, setInstructions] = useState('');
+  const [responseCollapsed, setResponseCollapsed] = useSurfacePreference(
+    projectId,
+    `delivery:${layer}`,
+    'latest-response',
+  );
+  const [composerCollapsed, setComposerCollapsed] = useSurfacePreference(
+    projectId,
+    `delivery:${uid ?? layer}`,
+    'composer',
+  );
   const [models, setModels] = useState<DeliveryModels>(
     initialWorkspace.models ?? {
       orchestrator: { agent: 'codex', model: '', effort: '' },
@@ -309,37 +332,51 @@ export function DeliveryWorkspace({
         ),
       )
     : 0;
+  const canvasRecord = workspace.records
+    .filter((entry) => entry.source.sourceKind === layer && entry.runs.length)
+    .sort((a, b) =>
+      b.runs.at(-1)!.startedAt.localeCompare(a.runs.at(-1)!.startedAt),
+    )[0];
+  const canvasResponse = deliveryResponse(projectId, canvasRecord);
   return (
     <main className="relative flex h-dvh min-w-0 flex-col overflow-hidden">
-      <header className="flex shrink-0 items-center justify-between gap-4 border-b border-border p-5">
-        <div className="flex min-w-0 items-center gap-3">
-          {uid && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setUid(null)}
-              aria-label={t('Back')}
-            >
-              <ArrowLeft />
-            </Button>
-          )}
-          <h1 className="truncate text-xl font-semibold">
+      <ProjectModuleHeader
+        title={
+          <span className="flex items-center gap-3">
+            {uid && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setUid(null)}
+                aria-label={t('Back')}
+              >
+                <ArrowLeft />
+              </Button>
+            )}
             {target?.title ?? t('Development Delivery')}
-          </h1>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setInstructions(workspace.instructions);
-            if (record) setModels(record.models);
-            setSettings(!settings);
-          }}
-        >
-          <Settings className="size-4" />
-          {t('Settings')}
-        </Button>
-      </header>
+          </span>
+        }
+        actions={
+          <>
+            <ModuleInstructionsDialog
+              endpoint={`/api/projects/${projectId}/delivery-context`}
+              title="Development Delivery instructions"
+              description="Applies to the next request, including continued sessions. Running requests keep their original instructions. Leave blank to use only the Harness defaults."
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (record) setModels(record.models);
+                setSettings(true);
+              }}
+            >
+              <Settings className="size-4" />
+              {t('Models')}
+            </Button>
+          </>
+        }
+      />
       {!uid ? (
         <>
           <nav className="flex gap-2 border-b border-border px-5 py-3">
@@ -374,6 +411,18 @@ export function DeliveryWorkspace({
               <p className="absolute left-5 top-5 text-sm text-muted-foreground">
                 {t('Accepted executable targets appear here automatically.')}
               </p>
+            )}
+            {canvasResponse && (
+              <LatestResponseCard
+                document={canvasResponse}
+                collapsed={responseCollapsed}
+                onCollapsedChange={setResponseCollapsed}
+                onCancel={() =>
+                  void command('cancel', { uid: canvasRecord.sourceUid })
+                }
+                cancelDisabled={pending}
+                className="w-[min(360px,calc(100%-2rem))]"
+              />
             )}
           </div>
         </>
@@ -413,22 +462,26 @@ export function DeliveryWorkspace({
                   </a>
                 )}
                 {record?.workspace && (
-                  <span className="text-xs text-muted-foreground">
-                    {record.workspace.path}
-                  </span>
+                  <Button
+                    variant="outline"
+                    disabled={pending}
+                    className="h-6 gap-1 rounded-md px-2 text-[11px]"
+                    onClick={() => void command('open-workspace')}
+                  >
+                    <FolderOpen className="size-3" />
+                    {t('Open workspace folder')}
+                  </Button>
                 )}
                 {record?.publication && (
-                  <a
-                    href={record.publication.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex h-6 items-center rounded-md border px-2 text-[11px]"
-                  >
-                    #{record.publication.number} ·{' '}
-                    {record.publication.draft
-                      ? 'Draft'
-                      : record.publication.state}
-                  </a>
+                  <PullRequestChip
+                    pr={{
+                      ...record.publication,
+                      title: record.source.title,
+                      isDraft: record.publication.draft,
+                    }}
+                    stale={false}
+                    className="h-6 rounded-md px-2 text-[11px]"
+                  />
                 )}
               </div>
             </div>
@@ -495,6 +548,19 @@ export function DeliveryWorkspace({
               {t('Accept and merge')}
             </Button>
           )}
+          {!running &&
+            record?.existingDelivery &&
+            record.status !== 'completed' && (
+              <Button
+                disabled={
+                  pending ||
+                  !deliveryEvidenceReady(record, record.existingDelivery.head)
+                }
+                onClick={() => void command('accept-existing')}
+              >
+                {t('Confirm existing delivery')}
+              </Button>
+            )}
           {record?.brief && (
             <section className="mb-5 rounded-2xl border border-border p-5">
               <h2 className="text-lg font-semibold">{t('Delivery brief')}</h2>
@@ -559,14 +625,6 @@ export function DeliveryWorkspace({
           <DialogHeader>
             <DialogTitle>{t('Delivery settings')}</DialogTitle>
           </DialogHeader>
-          <label className="block text-sm">
-            {t('Module instructions')}
-            <textarea
-              value={instructions}
-              onChange={(event) => setInstructions(event.target.value)}
-              className="mt-2 min-h-24 w-full rounded-lg border p-2"
-            />
-          </label>
           <AgentProfileSelector
             value={models.orchestrator}
             onChange={(profile) =>
@@ -625,10 +683,7 @@ export function DeliveryWorkspace({
           <Button
             disabled={pending}
             onClick={async () => {
-              if (await command('instructions', { instructions })) {
-                await command('models', { models });
-                setSettings(false);
-              }
+              if (await command('models', { models })) setSettings(false);
             }}
           >
             {t('Save')}
@@ -643,6 +698,8 @@ export function DeliveryWorkspace({
               : 'Discuss delivery',
           )}
           running={running}
+          collapsed={composerCollapsed}
+          onCollapsedChange={setComposerCollapsed}
         >
           <AgentComposerAttachments
             className="mb-3"

@@ -114,7 +114,14 @@ export async function acceptDelivery(
           'Current delivery verification or review is incomplete.',
           409,
         );
-      if (await git(record.workspace.path, 'status', '--porcelain'))
+      if (
+        await git(
+          record.workspace.path,
+          'status',
+          '--porcelain',
+          '--untracked-files=all',
+        )
+      )
         throw new PublicApiError(
           'The workspace changed after verification.',
           409,

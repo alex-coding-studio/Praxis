@@ -667,7 +667,7 @@ export function WhatToDoWorkspace({
             className="w-full"
             onClick={() =>
               router.push(
-                `/projects/${projectId}/implementation?source=${encodeURIComponent(preview.contractUid!)}`,
+                `/projects/${projectId}/delivery?target=${encodeURIComponent(preview.contractUid!)}`,
               )
             }
           >

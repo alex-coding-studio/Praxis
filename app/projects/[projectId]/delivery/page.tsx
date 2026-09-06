@@ -12,8 +12,10 @@ import {
 export const dynamic = 'force-dynamic';
 export default async function DeliveryPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ projectId: string }>;
+  searchParams: Promise<{ target?: string }>;
 }) {
   const project = await getProject((await params).projectId);
   if (!project) notFound();
@@ -27,6 +29,7 @@ export default async function DeliveryPage({
         projectId={project.id}
         initialWorkspace={await readDeliveryWorkspace(project)}
         folders={await readContextBrowser(project)}
+        initialTarget={(await searchParams).target}
       />
     </ProjectShell>
   );
