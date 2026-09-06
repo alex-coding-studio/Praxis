@@ -102,7 +102,7 @@ export class ClaudeSessionDriver implements AgentSessionDriver {
   private hostTools: Map<string, HostTool>;
   private bridge: ClaudeHostBridge;
   private pool: ClaudeSessionPool;
-  private leased = new Set<string>();
+  private leased = new Map<string, number>();
 
   constructor(options: ClaudeSessionDriverOptions) {
     this.options = options;
@@ -222,15 +222,21 @@ export class ClaudeSessionDriver implements AgentSessionDriver {
       workingDirectory: thread.workingDirectory,
       signature,
     });
-    this.leased.add(threadId);
+    this.leased.set(threadId, (this.leased.get(threadId) ?? 0) + 1);
     startedThreads.add(threadId);
 
     let stopped = false;
     const turnState: NonNullable<BridgeThread['turn']> = { stopped: false };
     bridgeThread.turn = turnState;
+    let cancelWait: (error: Error) => void = () => {};
+    const cancelled = new Promise<never>((_, reject) => {
+      cancelWait = reject;
+    });
+    cancelled.catch(() => {});
     const abort = (reason: string) => {
       stopped = true;
       turnState.stopped = true;
+      cancelWait(new Error('Agent turn interrupted.'));
       void this.pool.dispose(threadId, reason);
     };
     registerStop(() => abort('Agent turn interrupted.'));
@@ -283,6 +289,7 @@ export class ClaudeSessionDriver implements AgentSessionDriver {
           prompt,
           onActivity: (summary) => turnState.onActivity?.(summary),
         });
+        this.bridge.clearGrace(bridgeThread);
         usage = addUsage(usage, outcome.usage);
         emit({
           type: 'turn-completed',
@@ -305,8 +312,7 @@ export class ClaudeSessionDriver implements AgentSessionDriver {
             usage,
           };
         }
-        const result = await suspension.completion;
-        this.bridge.clearGrace(bridgeThread);
+        const result = await Promise.race([suspension.completion, cancelled]);
         turnState.pendingSuspension = undefined;
         if (stopped || turnState.stopped)
           throw new Error('Agent turn interrupted.');
@@ -338,12 +344,14 @@ export class ClaudeSessionDriver implements AgentSessionDriver {
   }
 
   async close() {
-    for (const threadId of this.leased) this.pool.release(threadId);
+    for (const [threadId, count] of this.leased)
+      for (let taken = 0; taken < count; taken += 1)
+        this.pool.release(threadId);
     this.leased.clear();
   }
 
   async dispose(reason?: string) {
-    for (const threadId of this.leased) {
+    for (const threadId of this.leased.keys()) {
       await this.pool.dispose(threadId, reason);
       this.bridge.unregister(threadId);
       startedThreads.delete(threadId);

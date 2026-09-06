@@ -259,3 +259,142 @@ void test('the process signature ignores the session flag and the loopback port'
     configurationArguments(['--tools', 'Read,Write', '--session-id', 'abc']),
   );
 });
+
+function specialistTool(continuation: Promise<{ prompt: string }>) {
+  return {
+    name: 'dispatch_worker',
+    description: 'dispatch a specialist',
+    inputSchema: {
+      type: 'object',
+      properties: { decision: { type: 'object' } },
+    },
+    call: async () => ({
+      suspend: true as const,
+      acknowledgement: 'Worker dispatched.',
+      continuation,
+    }),
+  };
+}
+
+void test('a Host operation that outlives the physical-turn grace deadline still completes the logical turn', async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'claude-grace-'));
+  const bridge = new ClaudeHostBridge();
+  const pool = new ClaudeSessionPool(60_000, 12);
+  t.after(async () => {
+    await pool.disposeAll('teardown');
+    await bridge.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  let release: (value: { prompt: string }) => void = () => {};
+  const continuation = new Promise<{ prompt: string }>((resolve) => {
+    release = resolve;
+  });
+  const driver = new ClaudeSessionDriver({
+    command: process.execPath,
+    arguments: [fakeClaude],
+    suspensionGraceMs: 100,
+    environment: { ...process.env, FAKE_CLAUDE_SCENARIO: 'dispatch' },
+    brokerFactory: (input) =>
+      new HostJobBroker(
+        input.workingDirectory,
+        path.join(root, 'jobs'),
+        () => {},
+      ),
+    hostTools: [specialistTool(continuation)],
+    bridge,
+    pool,
+  });
+  const thread = await driver.startThread({
+    profile,
+    workingDirectory: root,
+    access: 'read-only',
+    hostJobs: false,
+  });
+  const turn = driver.startTurn(thread, { prompt: 'plan' });
+  setTimeout(() => release({ prompt: 'WORKER_COMPLETED {}' }), 300);
+  const result = await turn.completion;
+  assert.ok(
+    result.finalOutput.startsWith('CONTINUED:WORKER_COMPLETED'),
+    'the grace deadline guards the physical turn, not the Host operation behind it',
+  );
+});
+
+void test('interrupting a turn that waits on a Host operation settles it without the operation resolving', async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'claude-cancel-'));
+  const bridge = new ClaudeHostBridge();
+  const pool = new ClaudeSessionPool(60_000, 12);
+  t.after(async () => {
+    await pool.disposeAll('teardown');
+    await bridge.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  const driver = new ClaudeSessionDriver({
+    command: process.execPath,
+    arguments: [fakeClaude],
+    suspensionGraceMs: 5000,
+    environment: { ...process.env, FAKE_CLAUDE_SCENARIO: 'dispatch' },
+    brokerFactory: (input) =>
+      new HostJobBroker(
+        input.workingDirectory,
+        path.join(root, 'jobs'),
+        () => {},
+      ),
+    hostTools: [specialistTool(new Promise<{ prompt: string }>(() => {}))],
+    bridge,
+    pool,
+  });
+  const thread = await driver.startThread({
+    profile,
+    workingDirectory: root,
+    access: 'read-only',
+    hostJobs: false,
+  });
+  const suspended = new Promise<void>((resolve) => {
+    const turn = driver.startTurn(thread, {
+      prompt: 'plan',
+      onEvent: (event) => {
+        if (event.type === 'turn-completed') resolve();
+      },
+    });
+    pending = turn;
+  });
+  await suspended;
+  pending!.interrupt();
+  await assert.rejects(
+    Promise.race([
+      pending!.completion,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('completion never settled')), 3000),
+      ),
+    ]),
+    /interrupted/,
+    'a cancelled turn may not wait for a Host operation that will never resolve',
+  );
+});
+let pending: ReturnType<ClaudeSessionDriver['startTurn']> | undefined;
+
+void test('repeated logical turns on one driver release every lease they took', async (t) => {
+  const pool = new ClaudeSessionPool(150, 12);
+  const b = await bench(t, 'echo', pool);
+  const driver = b.makeDriver();
+  const thread = await driver.startThread({
+    profile,
+    workingDirectory: b.root,
+    access: 'read-only',
+    hostJobs: false,
+  });
+  await driver.startTurn(thread, { prompt: 'one' }).completion;
+  await driver.startTurn(thread, { prompt: 'two' }).completion;
+  await driver.close();
+  assert.equal(
+    pool.leasesOf(thread.threadId),
+    0,
+    'a driver that ran two turns must not leave a lease behind',
+  );
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  assert.equal(
+    pool.has(thread.threadId),
+    false,
+    'an unbalanced lease would keep the session past its idle deadline forever',
+  );
+});
