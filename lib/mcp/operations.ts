@@ -21,10 +21,51 @@ export const MCP_OPERATION_STATUSES = [
 export type McpOperationStatus = (typeof MCP_OPERATION_STATUSES)[number];
 
 export type McpOperationSource = {
+  sourceId: string;
   logicalPath: string;
   sha256: string;
   byteLength: number;
 };
+
+export function encodeSourceId(logicalPath: string) {
+  return Buffer.from(logicalPath, 'utf8').toString('base64url');
+}
+
+export function decodeSourceId(sourceId: string) {
+  const decoded = Buffer.from(sourceId, 'base64url').toString('utf8');
+  if (decoded.length === 0 || encodeSourceId(decoded) !== sourceId) return null;
+  return decoded;
+}
+
+export async function writeMcpOperationSource(
+  project: RegisteredProject,
+  operationId: string,
+  sourceId: string,
+  content: string,
+) {
+  const paths = mcpOperationPaths(project, operationId);
+  await mkdir(paths.sources, { recursive: true });
+  await writeFileAtomically(path.join(paths.sources, sourceId), content);
+}
+
+export async function readMcpOperationSource(
+  project: RegisteredProject,
+  operationId: string,
+  sourceId: string,
+) {
+  if (decodeSourceId(sourceId) === null)
+    throw resourceNotFound(
+      'That source id is not a handle this operation issued.',
+    );
+  const paths = mcpOperationPaths(project, operationId);
+  try {
+    return await readFile(path.join(paths.sources, sourceId), 'utf8');
+  } catch {
+    throw resourceNotFound(
+      `Operation ${JSON.stringify(operationId)} froze no source with that id.`,
+    );
+  }
+}
 
 export type McpOperationRecord = {
   schemaVersion: 1;
@@ -74,6 +115,7 @@ export function mcpOperationPaths(
     directory,
     json: path.join(directory, 'operation.json'),
     basis: path.join(directory, 'basis.json'),
+    sources: path.join(directory, 'sources'),
     userInput: path.join(directory, 'user-input.md'),
     userInputRef: path.posix.join(
       'mcp',

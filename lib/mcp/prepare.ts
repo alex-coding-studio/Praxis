@@ -2,11 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { sha256Hex } from '../materialization/hash.ts';
 import {
-  isAcceptedPlanningShape,
   resolvePlanningPath,
   TASK_GRAPH_MARKDOWN_SHAPES,
 } from '../planning-paths.ts';
-import { encodeArtifactId } from './artifacts.ts';
 import {
   collectLatestUnacceptedCandidateStates,
   collectReservedCandidateIds,
@@ -31,14 +29,16 @@ import type { RegisteredProject } from '../project-registry.ts';
 import { invalidArgument } from './errors.ts';
 import { MCP_MODULE_DEFINITIONS } from './modules.ts';
 import {
+  encodeSourceId,
   newMcpOperationId,
   writeMcpOperation,
+  writeMcpOperationSource,
   writeMcpOperationBasis,
   writeMcpOperationUserInput,
   type McpOperationRecord,
   type McpOperationSource,
 } from './operations.ts';
-import { artifactUri, contractUri, moduleUri } from './uri.ts';
+import { contractUri, moduleUri, operationSourceUri } from './uri.ts';
 
 export const MAX_USER_INPUT_LENGTH = 20_000;
 
@@ -143,6 +143,7 @@ export async function assembleProductExplorationBasis(
 
 async function freezeSources(
   project: RegisteredProject,
+  operationId: string,
   logicalPaths: readonly string[],
 ): Promise<McpOperationSource[]> {
   const frozen: McpOperationSource[] = [];
@@ -154,13 +155,22 @@ async function freezeSources(
         require: 'file',
       });
     } catch {
-      continue;
+      throw invalidArgument(
+        `The source document ${JSON.stringify(logicalPath)} is not readable through this project's published documents, so it cannot be frozen as evidence.`,
+      );
     }
-    const content = await readFile(resolved.absolutePath, 'utf8').catch(
-      () => null,
-    );
-    if (content === null) continue;
+    let content: string;
+    try {
+      content = await readFile(resolved.absolutePath, 'utf8');
+    } catch {
+      throw invalidArgument(
+        `The source document ${JSON.stringify(logicalPath)} could not be read while freezing evidence.`,
+      );
+    }
+    const sourceId = encodeSourceId(logicalPath);
+    await writeMcpOperationSource(project, operationId, sourceId, content);
     frozen.push({
+      sourceId,
       logicalPath,
       sha256: sha256Hex(content),
       byteLength: Buffer.byteLength(content, 'utf8'),
@@ -213,7 +223,11 @@ export async function prepareProductExplorationOperation(
     userInput,
   );
   const basisPath = await writeMcpOperationBasis(project, operationId, basis);
-  const sources = await freezeSources(project, basis.knownResourcePaths);
+  const sources = await freezeSources(
+    project,
+    operationId,
+    basis.knownResourcePaths,
+  );
   const definition = MCP_MODULE_DEFINITIONS['product-exploration'];
   const record: McpOperationRecord = {
     schemaVersion: 1,
@@ -272,12 +286,11 @@ export function preparedOperationProjection(record: McpOperationRecord) {
         logicalPath: source.logicalPath,
         sha256: source.sha256,
         byteLength: source.byteLength,
-        uri: isAcceptedPlanningShape(
-          source.logicalPath,
-          TASK_GRAPH_MARKDOWN_SHAPES,
-        )
-          ? artifactUri(record.projectId, encodeArtifactId(source.logicalPath))
-          : null,
+        uri: operationSourceUri(
+          record.projectId,
+          record.operationId,
+          source.sourceId,
+        ),
       })),
     },
     contractUri: contractUri(record.contract.id, record.contract.version),

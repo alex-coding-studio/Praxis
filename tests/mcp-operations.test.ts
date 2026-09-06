@@ -24,6 +24,7 @@ const { moduleOwner } =
   await import('../lib/execution-observability/module-run.ts');
 const { listTaskGraphNodes } = await import('../lib/graph/task/nodes.ts');
 const { semanticResultHash } = await import('../lib/materialization/hash.ts');
+const { encodeArtifactId } = await import('../lib/mcp/artifacts.ts');
 
 test.after(() => rm(REGISTRY_HOME, { recursive: true, force: true }));
 
@@ -655,6 +656,58 @@ void test('the prepared projection exposes readable references, not filesystem p
     const read = await catalog.resolveMcpResource(resource.uri);
     assert.ok(read.text.length > 0, `${resource.logicalPath} must be readable`);
   }
+});
+
+void test('a frozen source reference keeps serving the prepared content after the live file changes', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const { record } = await prepared(project as never, sourceNodeId);
+  const source = record.sources[0];
+  assert.ok(source, 'the fixture must freeze a source document');
+  const uri = `praxis://projects/${project.id}/operations/${record.operationId}/sources/${source.sourceId}`;
+
+  const before = await catalog.resolveMcpResource(uri);
+  assert.equal(before.revision, source.sha256);
+  const frozenText = before.text;
+
+  await appendFile(
+    path.join(project.planningPath, source.logicalPath),
+    '\n\nAn edit made after preparation.\n',
+  );
+
+  const after = await catalog.resolveMcpResource(uri);
+  assert.equal(
+    after.text,
+    frozenText,
+    'the frozen reference must not follow the live document',
+  );
+  assert.equal(after.revision, source.sha256);
+  assert.equal(after.text.includes('An edit made after preparation'), false);
+
+  const live = await catalog.resolveMcpResource(
+    `praxis://projects/${project.id}/artifacts/${encodeArtifactId(source.logicalPath)}`,
+  );
+  assert.equal(
+    live.text.includes('An edit made after preparation'),
+    true,
+    'the live artifact reader must still show current content',
+  );
+});
+
+void test('a source that cannot be frozen fails preparation instead of being skipped', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const { record } = await prepared(project as never, sourceNodeId);
+  const source = record.sources[0];
+  assert.ok(source);
+  await rm(path.join(project.planningPath, source.logicalPath), {
+    force: true,
+  });
+  await assert.rejects(
+    () => prepared(project as never, sourceNodeId),
+    (error: unknown) =>
+      isMcpRequestError(error) &&
+      error.envelope.code === 'INVALID_ARGUMENT' &&
+      error.envelope.detail.includes(source.logicalPath),
+  );
 });
 
 void test('preparation refuses to guess when a layer allows more than one intention', async (t) => {

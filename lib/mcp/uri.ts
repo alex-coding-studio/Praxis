@@ -11,6 +11,12 @@ export type McpResourceRef =
   | { kind: 'artifact'; projectId: string; artifactId: string }
   | { kind: 'operation'; projectId: string; operationId: string }
   | { kind: 'operation-log'; projectId: string; operationId: string }
+  | {
+      kind: 'operation-source';
+      projectId: string;
+      operationId: string;
+      sourceId: string;
+    }
   | { kind: 'contract'; contractId: string; version: number };
 
 const SEGMENT = /^[A-Za-z0-9_.~-]+$/u;
@@ -92,6 +98,17 @@ export function parseMcpUri(uri: string): McpResourceRef {
         projectId,
         operationId: assertOperationId(parts[3]),
       };
+    if (
+      parts[2] === 'operations' &&
+      parts.length === 6 &&
+      parts[4] === 'sources'
+    )
+      return {
+        kind: 'operation-source',
+        projectId,
+        operationId: assertOperationId(parts[3]),
+        sourceId: parts[5],
+      };
     if (parts[2] === 'operations' && parts.length === 5 && parts[4] === 'log')
       return {
         kind: 'operation-log',
@@ -141,4 +158,12 @@ export function operationUri(projectId: string, operationId: string) {
 
 export function operationLogUri(projectId: string, operationId: string) {
   return `${operationUri(projectId, operationId)}/log`;
+}
+
+export function operationSourceUri(
+  projectId: string,
+  operationId: string,
+  sourceId: string,
+) {
+  return `${operationUri(projectId, operationId)}/sources/${sourceId}`;
 }

@@ -51,11 +51,16 @@ import {
   latestResponseUri,
   moduleUri,
   operationLogUri,
+  operationSourceUri,
   operationUri,
   parseMcpUri,
   projectsUri,
 } from './uri.ts';
-import { requireMcpOperation, type McpOperationRecord } from './operations.ts';
+import {
+  readMcpOperationSource,
+  requireMcpOperation,
+  type McpOperationRecord,
+} from './operations.ts';
 import { readRunLogTail } from '../execution-observability/run-log.ts';
 import type { MaterializationReceipt } from '../materialization/receipt.ts';
 import { readFile } from 'node:fs/promises';
@@ -632,6 +637,34 @@ export async function readOperationLog(
   } satisfies McpResourceContent;
 }
 
+export async function readOperationSource(
+  projectId: string,
+  operationId: string,
+  sourceId: string,
+  options: McpReadOptions = {},
+) {
+  const project = await requireProject(projectId);
+  const record = await requireMcpOperation(project, operationId);
+  const source = record.sources.find((entry) => entry.sourceId === sourceId);
+  if (!source)
+    throw resourceNotFound(
+      `Operation ${JSON.stringify(operationId)} froze no source with that id.`,
+    );
+  const content = await readMcpOperationSource(project, operationId, sourceId);
+  const limitBytes = boundedLimit(
+    options.limitBytes,
+    DEFAULT_READ_BYTES,
+    MAX_READ_BYTES,
+  );
+  const page = pageContent(content, source.sha256, options.cursor, limitBytes);
+  return {
+    uri: operationSourceUri(project.id, operationId, sourceId),
+    mimeType: 'text/markdown',
+    revision: source.sha256,
+    ...page,
+  } satisfies McpResourceContent;
+}
+
 export async function resolveMcpResource(
   uri: string,
   options: McpReadOptions = {},
@@ -659,6 +692,13 @@ export async function resolveMcpResource(
     return readOperationLog(
       reference.projectId,
       reference.operationId,
+      options,
+    );
+  if (reference.kind === 'operation-source')
+    return readOperationSource(
+      reference.projectId,
+      reference.operationId,
+      reference.sourceId,
       options,
     );
   return readArtifact(reference.projectId, reference.artifactId, options);
