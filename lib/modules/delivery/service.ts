@@ -11,7 +11,7 @@ import {
   readDeliveryModels,
 } from './storage.ts';
 import { validateDeliveryModels } from './models.ts';
-import { startDeliveryRun } from './runtime.ts';
+import { startDeliveryRun, isDeliveryRunActive } from './runtime.ts';
 import type { DeliveryModels } from './types.ts';
 import type { DeliverySource } from './types.ts';
 
@@ -58,7 +58,12 @@ export async function readDeliveryWorkspace(project: RegisteredProject) {
         alive = (error as NodeJS.ErrnoException).code === 'EPERM';
       }
     }
-    if (alive) continue;
+    if (
+      alive &&
+      (run.hostPid !== process.pid ||
+        isDeliveryRunActive(project, record.sourceUid))
+    )
+      continue;
     Object.assign(
       record,
       await updateDeliveryRecord(project, record.sourceUid, (current) => {

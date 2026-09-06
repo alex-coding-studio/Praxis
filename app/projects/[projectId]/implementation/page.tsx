@@ -1,40 +1,15 @@
-import { notFound } from 'next/navigation';
-import { ProjectShell } from '@/components/project-shell';
-import { JustDoItLiveWorkspace } from '@/components/just-do-it-live-workspace';
-import {
-  getGitHubRepositoryUrl,
-  getProject,
-  listProjects,
-} from '@/lib/project-registry';
+import { redirect } from 'next/navigation';
 
-export const dynamic = 'force-dynamic';
-
-export default async function ImplementationPage({
+export default async function RetiredImplementationPage({
   params,
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ preview?: string | string[] }>;
+  searchParams: Promise<{ source?: string }>;
 }) {
   const { projectId } = await params;
-  const project = await getProject(projectId);
-  if (!project) notFound();
-  const projects = await listProjects();
-  const preview = (await searchParams).preview === 'just-do-it';
-  const Workspace = preview
-    ? (await import('@/components/just-do-it-workspace')).JustDoItWorkspace
-    : JustDoItLiveWorkspace;
-  return (
-    <ProjectShell
-      project={project}
-      projects={projects}
-      repositoryUrl={getGitHubRepositoryUrl(project)}
-    >
-      <Workspace
-        key={project.id}
-        projectId={project.id}
-        projectPath={project.rootPath}
-      />
-    </ProjectShell>
+  const { source } = await searchParams;
+  redirect(
+    `/projects/${projectId}/delivery${source ? `?target=${encodeURIComponent(source)}` : ''}`,
   );
 }

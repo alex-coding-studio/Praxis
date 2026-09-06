@@ -8,12 +8,7 @@ export function deliveryResponse(
   const run = record?.runs.at(-1);
   if (!record || !run) return null;
   const running = run.status === 'running';
-  const actor =
-    record.status === 'reviewing'
-      ? 'REVIEWER'
-      : record.agents.at(-1)?.result === null
-        ? 'WORKER'
-        : 'ORCHESTRATOR';
+  const actor = record.actor ?? 'ORCHESTRATOR';
   return {
     schemaVersion: 1,
     owner: { kind: 'card', cardId: record.sourceUid },

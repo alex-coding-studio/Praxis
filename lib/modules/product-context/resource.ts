@@ -3,6 +3,7 @@ import path from 'node:path';
 import { PublicApiError } from '../../api-errors.ts';
 import { readDomainModel } from '../domain-modeling/model.ts';
 import type { PlanningCard } from '../implementation/planning-service.ts';
+import { readDeliveryRecord } from '../delivery/storage.ts';
 import { readPlanningFile } from '../implementation/planning-sources.ts';
 import {
   readCardWorkDocument,
@@ -101,6 +102,18 @@ async function currentProductContextSection(
 
   if (!isAcceptedPlanningShape(resourcePath, PRODUCT_CONTEXT_DOCUMENT_SHAPES))
     return null;
+  const delivery = resourcePath.match(
+    /^delivery\/targets\/([0-9a-f-]{36})\/(brief|output)\.md$/i,
+  );
+  if (delivery) {
+    const record = await readDeliveryRecord(project, delivery[1]);
+    return record &&
+      (delivery[2] === 'brief'
+        ? record.brief?.confirmedAt
+        : record.status === 'completed')
+      ? 'task-execution'
+      : null;
+  }
 
   const node = resourcePath.match(
     /^(whats-next|task-graph)\/nodes\/(NODE-[0-9a-f]{8,32})\/output\.md$/i,

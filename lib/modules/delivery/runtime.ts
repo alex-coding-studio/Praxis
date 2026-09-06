@@ -16,7 +16,7 @@ import {
   createRunLog,
   type RunLogWriter,
 } from '../../execution-observability/run-log.ts';
-import { PublicApiError } from '../../api-errors.ts';
+import { PublicApiError, recordUnexpectedApiError } from '../../api-errors.ts';
 import {
   deliveryDirectory,
   deliveryMessage,
@@ -188,6 +188,9 @@ export async function startDeliveryRun(
       activeRuns.delete(key);
       release();
     });
+    void active.completion.catch((error) =>
+      recordUnexpectedApiError(run.id, 'delivery settlement', error),
+    );
     return run;
   } catch (error) {
     activeRuns.delete(key);
@@ -213,6 +216,10 @@ export async function waitForDeliveryRun(
   uid: string,
 ) {
   await activeRuns.get(runtimeKey(project, uid))?.completion;
+}
+
+export function isDeliveryRunActive(project: RegisteredProject, uid: string) {
+  return activeRuns.has(runtimeKey(project, uid));
 }
 
 async function executeDelivery(
@@ -279,6 +286,9 @@ async function executeDelivery(
       }
     } else thread = await driver.startThread(threadInput);
     await onThread(thread);
+    await updateDeliveryRecord(project, uid, (value) => {
+      value.actor = role;
+    });
     assertActive();
     const turn = driver.startTurn(thread, {
       prompt,
@@ -724,6 +734,11 @@ async function executeDelivery(
           return { assignmentId, head, result: result.finalOutput };
         } finally {
           childBusy = false;
+          if (!active.canceled)
+            await updateDeliveryRecord(project, uid, (value) => {
+              value.actor = 'ORCHESTRATOR';
+              value.status = 'running';
+            });
         }
       },
     ),

@@ -43,6 +43,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { MarkdownReader } from '@/components/markdown-reader';
+import { renderDeliveryBrief } from '@/lib/modules/delivery/documents';
 import { ProjectModuleHeader } from '@/components/project-module-header';
 import { ModuleInstructionsDialog } from '@/components/module-instructions-dialog';
 import { LatestResponseCard } from '@/components/latest-response-card';
@@ -440,6 +442,7 @@ export function DeliveryWorkspace({
                 </span>
                 {run && (
                   <span className="font-mono text-xs text-muted-foreground">
+                    {running && record?.actor ? `${record.actor} · ` : ''}
                     {Math.floor(elapsed / 60)}:
                     {String(elapsed % 60).padStart(2, '0')}
                   </span>
@@ -522,6 +525,42 @@ export function DeliveryWorkspace({
                   </Button>
                 )
               )}
+              {!running &&
+                record?.publication &&
+                record.status !== 'completed' && (
+                  <Button
+                    disabled={
+                      pending ||
+                      !deliveryCandidateReady(record, record.publication.head)
+                    }
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          t('Accept this delivery and merge its pull request?'),
+                        )
+                      )
+                        void command('accept');
+                    }}
+                  >
+                    {t('Accept and merge')}
+                  </Button>
+                )}
+              {!running &&
+                record?.existingDelivery &&
+                record.status !== 'completed' && (
+                  <Button
+                    disabled={
+                      pending ||
+                      !deliveryEvidenceReady(
+                        record,
+                        record.existingDelivery.head,
+                      )
+                    }
+                    onClick={() => void command('accept-existing')}
+                  >
+                    {t('Confirm existing delivery')}
+                  </Button>
+                )}
             </div>
           </ExecutionStickyHeaderFrame>
           <details className="my-5 text-sm">
@@ -530,52 +569,76 @@ export function DeliveryWorkspace({
             </summary>
             <p className="mt-3 whitespace-pre-wrap">{target.summary}</p>
           </details>
-          {!running && record?.publication && record.status !== 'completed' && (
-            <Button
-              disabled={
-                pending ||
-                !deliveryCandidateReady(record, record.publication.head)
-              }
-              onClick={() => {
-                if (
-                  window.confirm(
-                    t('Accept this delivery and merge its pull request?'),
-                  )
-                )
-                  void command('accept');
-              }}
-            >
-              {t('Accept and merge')}
-            </Button>
-          )}
-          {!running &&
-            record?.existingDelivery &&
-            record.status !== 'completed' && (
-              <Button
-                disabled={
-                  pending ||
-                  !deliveryEvidenceReady(record, record.existingDelivery.head)
-                }
-                onClick={() => void command('accept-existing')}
-              >
-                {t('Confirm existing delivery')}
-              </Button>
-            )}
           {record?.brief && (
-            <section className="mb-5 rounded-2xl border border-border p-5">
-              <h2 className="text-lg font-semibold">{t('Delivery brief')}</h2>
-              <p className="mt-3 whitespace-pre-wrap">{record.brief.outcome}</p>
-              <ul className="mt-4 list-inside list-disc space-y-2 text-sm">
-                {record.brief.criteria.map((criterion) => (
-                  <li key={criterion.id}>{criterion.description}</li>
-                ))}
-              </ul>
+            <section className="mb-5">
+              <MarkdownReader
+                title={t('Delivery brief')}
+                filePath={`delivery/targets/${record.sourceUid}/record.json`}
+                markdown={renderDeliveryBrief(record)}
+                compact
+                onAddFeedback={
+                  running
+                    ? undefined
+                    : (selection) => {
+                        setInput(
+                          (current) =>
+                            `${current}\n\nDelivery Brief revision ${record.brief!.revision}, lines ${selection.startLine}-${selection.endLine}:\n> ${selection.excerpt}\n\n`,
+                        );
+                        setComposerCollapsed(false);
+                      }
+                }
+              />
               {record.brief.openDecisions.map((decision) => (
                 <p className="mt-2 text-amber-600" key={decision}>
                   {decision}
                 </p>
               ))}
             </section>
+          )}
+          {target.unmetDependencies.length > 0 && (
+            <section className="mb-5 space-y-2">
+              <h2 className="text-sm font-medium">
+                {t('Waiting for prerequisites')}
+              </h2>
+              {target.unmetDependencies.map((dependency) => {
+                const prerequisite = workspace.targets.find(
+                  (entry) => entry.sourceUid === dependency,
+                );
+                return prerequisite ? (
+                  <Button
+                    key={dependency}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setUid(prerequisite.sourceUid);
+                      setLayer(prerequisite.sourceKind);
+                    }}
+                  >
+                    {prerequisite.title}
+                  </Button>
+                ) : (
+                  <p key={dependency} className="text-xs text-muted-foreground">
+                    {dependency}
+                  </p>
+                );
+              })}
+            </section>
+          )}
+          {record?.review && (
+            <details className="mb-5 text-sm">
+              <summary>
+                {t(
+                  record.review.disposition === 'not-required'
+                    ? 'Independent review not needed'
+                    : record.review.approved
+                      ? 'Review approved'
+                      : 'Review pending',
+                )}
+              </summary>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {record.review.reason}
+              </p>
+            </details>
           )}
           {record?.progress.length ? (
             <ol className="mb-5 space-y-2 rounded-2xl border p-5">
@@ -595,17 +658,14 @@ export function DeliveryWorkspace({
           ) : null}
           <div className="space-y-4">
             {record?.messages.map((message) => (
-              <article
+              <MarkdownReader
                 key={message.id}
-                className="rounded-2xl border border-border p-4"
-              >
-                <span className="text-xs text-muted-foreground">
-                  {message.actor}
-                </span>
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-                  {message.content}
-                </p>
-              </article>
+                title={message.actor === 'USER' ? t('You') : message.actor}
+                filePath={`delivery/targets/${record.sourceUid}/record.json`}
+                markdown={message.content}
+                compact
+                showFocusButton={false}
+              />
             ))}
           </div>
         </div>

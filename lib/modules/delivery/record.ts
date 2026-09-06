@@ -49,6 +49,7 @@ export type DeliveryRun = {
   error: string | null;
 };
 export type DeliveryRecord = DeliverySummary & {
+  actor?: DeliveryActor;
   schemaVersion: 1;
   revision: number;
   source: DeliverySource;

@@ -5,6 +5,9 @@ export function isUiLanguage(value: unknown): value is UiLanguage {
 }
 
 export const chineseUi: Record<string, string> = {
+  'Independent review not needed': '无需独立审查',
+  'Review approved': '审查已通过',
+  'Review pending': '等待审查',
   'Confirm existing delivery': '确认已有交付',
   'Development Delivery instructions': '开发交付指令',
   'Prepare delivery brief': '准备交付简报',

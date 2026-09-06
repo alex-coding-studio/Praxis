@@ -67,6 +67,13 @@ export const CONTEXT_LIBRARY_MARKDOWN: PlanningPathShape = {
 };
 
 export const PRODUCT_CONTEXT_DOCUMENT_SHAPES: readonly PlanningPathShape[] = [
+  {
+    name: 'Delivery target artifacts',
+    pattern: new RegExp(
+      String.raw`^delivery\/targets\/${CARD_ID}\/(?:brief|output)\.md$`,
+      'i',
+    ),
+  },
   CONTEXT_LIBRARY_MARKDOWN,
   {
     name: 'Accepted Task Graph or Product Design output',
