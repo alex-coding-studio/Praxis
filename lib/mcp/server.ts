@@ -24,6 +24,7 @@ import {
   READ_LOG_INPUT_SCHEMA,
   READ_RESOURCE_INPUT_SCHEMA,
   SUBMIT_PRODUCT_EXPLORATION_INPUT_SCHEMA,
+  SUBMIT_SCOPE_DECOMPOSITION_INPUT_SCHEMA,
 } from './tool-schemas.ts';
 import {
   operationProjection,
@@ -36,6 +37,8 @@ import {
   preparedOperationProjection,
 } from './prepare.ts';
 import { submitProductExplorationResult } from './submit.ts';
+import { prepareScopeDecompositionOperation } from './prepare-scope-decomposition.ts';
+import { submitScopeDecompositionOperation } from './submit-scope-decomposition.ts';
 import { requireMcpOperation } from './operations.ts';
 import { operationLogUri, operationUri } from './uri.ts';
 import { capabilitiesUri, contractUri, projectsUri } from './uri.ts';
@@ -361,7 +364,7 @@ export function createPraxisMcpServer() {
         'Freeze a module Basis and User Input, and return the operation identity and Result Contract to write against. Starts no Agent Run and calls no model.',
       inputSchema: toToolInputSchema<{
         projectId: string;
-        module: 'product-exploration';
+        module: 'product-exploration' | 'scope-decomposition';
         request: {
           userInput: string;
           layer: 'discovery' | 'product-design';
@@ -380,11 +383,19 @@ export function createPraxisMcpServer() {
     async (input, extra) =>
       runStructured(async () => {
         const project = await requireProject(input.projectId);
-        const { record } = await prepareProductExplorationOperation(
-          project,
-          input.request as never,
-          clientInfoOf(extra),
-        );
+        const client = clientInfoOf(extra);
+        const { record } =
+          input.module === 'scope-decomposition'
+            ? await prepareScopeDecompositionOperation(
+                project,
+                input.request as never,
+                client,
+              )
+            : await prepareProductExplorationOperation(
+                project,
+                input.request as never,
+                client,
+              );
         return preparedOperationProjection(record);
       }),
   );
@@ -414,6 +425,48 @@ export function createPraxisMcpServer() {
       runStructured(async () => {
         const project = await projectForOperation(input.operationId);
         const outcome = await submitProductExplorationResult(
+          project,
+          input.operationId,
+          input.contract,
+          input.result,
+        );
+        return {
+          operationId: outcome.record.operationId,
+          status: outcome.record.status,
+          replayed: outcome.replayed,
+          outcome: outcome.record.outcome,
+          operationUri: operationUri(project.id, outcome.record.operationId),
+          logUri: operationLogUri(project.id, outcome.record.operationId),
+          logUrlPath: outcome.record.logUrlPath,
+        };
+      }),
+  );
+
+  server.registerTool(
+    'praxis_submit_scope_decomposition',
+    {
+      title: 'Submit a Scope Decomposition result',
+      description:
+        'Publish a typed Scope Decomposition result for a prepared operation. Candidates become visible for acceptance in the existing interface; this tool does not accept them.',
+      inputSchema: toToolInputSchema<{
+        operationId: string;
+        contract: { id: string; version: number; hash: string };
+        result: unknown;
+      }>(
+        SUBMIT_SCOPE_DECOMPOSITION_INPUT_SCHEMA,
+        'praxis_submit_scope_decomposition',
+      ),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (input) =>
+      runStructured(async () => {
+        const project = await projectForOperation(input.operationId);
+        const outcome = await submitScopeDecompositionOperation(
           project,
           input.operationId,
           input.contract,

@@ -10,23 +10,19 @@ import {
   moduleRunLogPaths,
 } from '../execution-observability/module-run.ts';
 import { ownerLogUrlPath } from '../execution-observability/types.ts';
-import { readFile } from 'node:fs/promises';
-import { semanticResultHash, sha256Hex } from '../materialization/hash.ts';
-import {
-  resolvePlanningPath,
-  TASK_GRAPH_MARKDOWN_SHAPES,
-} from '../planning-paths.ts';
-import { reconcileMcpOperation } from './catalog.ts';
+import { semanticResultHash } from '../materialization/hash.ts';
 import {
   MaterializationError,
   type MaterializationReceipt,
 } from '../materialization/receipt.ts';
+import type { ScopeDecompositionMaterializationBasis } from '../modules/scope-decomposition/basis.ts';
 import {
-  PRODUCT_EXPLORATION_RESULT_CONTRACT,
-  type ProductExplorationResult,
-} from '../modules/product-discovery/contract.ts';
-import { publishProductExplorationResult } from '../modules/product-discovery/publish.ts';
+  SCOPE_DECOMPOSITION_RESULT_CONTRACT,
+  type ScopeDecompositionResult,
+} from '../modules/scope-decomposition/contract.ts';
+import { submitScopeDecompositionResult as publishScopeDecomposition } from '../modules/scope-decomposition/publish.ts';
 import type { RegisteredProject } from '../project-registry.ts';
+import { reconcileMcpOperation } from './catalog.ts';
 import {
   activeRunConflict,
   contractMismatch,
@@ -35,9 +31,8 @@ import {
   staleBasis,
   submissionConflict,
 } from './errors.ts';
-import type { ProductExplorationMaterializationBasis } from '../modules/product-discovery/basis.ts';
-import { assembleProductExplorationBasis } from './prepare.ts';
-import type { McpOperationSource } from './operations.ts';
+import { assembleScopeDecompositionBasis } from './prepare-scope-decomposition.ts';
+import { driftedSources } from './submit.ts';
 import {
   readMcpOperationBasis,
   requireMcpOperation,
@@ -46,51 +41,7 @@ import {
   type McpOperationRecord,
 } from './operations.ts';
 
-export async function driftedSources(
-  project: RegisteredProject,
-  sources: readonly McpOperationSource[],
-) {
-  const drifted: string[] = [];
-  for (const source of sources) {
-    let resolved;
-    try {
-      resolved = await resolvePlanningPath(project, source.logicalPath, {
-        shapes: TASK_GRAPH_MARKDOWN_SHAPES,
-        require: 'file',
-      });
-    } catch {
-      drifted.push(source.logicalPath);
-      continue;
-    }
-    const content = await readFile(resolved.absolutePath, 'utf8').catch(
-      () => null,
-    );
-    if (content === null || sha256Hex(content) !== source.sha256)
-      drifted.push(source.logicalPath);
-  }
-  return drifted;
-}
-
-export type McpSubmissionOutcome = {
-  record: McpOperationRecord;
-  replayed: boolean;
-};
-
-function assertContractIdentity(
-  record: McpOperationRecord,
-  supplied: { id: string; version: number; hash: string },
-) {
-  if (
-    supplied.id !== record.contract.id ||
-    supplied.version !== record.contract.version ||
-    supplied.hash !== record.contract.hash
-  )
-    throw contractMismatch(
-      `This operation was prepared against ${record.contract.id} version ${record.contract.version} (${record.contract.hash}). Reload that contract and submit against it.`,
-    );
-}
-
-function outcomeSummary(result: ProductExplorationResult, count: number) {
+function outcomeSummary(result: ScopeDecompositionResult, count: number) {
   if (result.outcome === 'proposal')
     return {
       kind: 'proposal',
@@ -104,18 +55,29 @@ function outcomeSummary(result: ProductExplorationResult, count: number) {
   return { kind: result.outcome, summary: 'The module reported no change.' };
 }
 
-export async function submitProductExplorationResult(
+export async function submitScopeDecompositionOperation(
   project: RegisteredProject,
   operationId: string,
   contract: { id: string; version: number; hash: string },
   result: unknown,
-): Promise<McpSubmissionOutcome> {
+) {
   return withMcpOperationLock(operationId, async () => {
     const record = await requireMcpOperation(project, operationId);
-    assertContractIdentity(record, contract);
+    if (record.module !== 'scope-decomposition')
+      throw contractMismatch(
+        `Operation ${operationId} was prepared for ${record.module}; submit it with that module's tool.`,
+      );
+    if (
+      contract.id !== record.contract.id ||
+      contract.version !== record.contract.version ||
+      contract.hash !== record.contract.hash
+    )
+      throw contractMismatch(
+        `This operation was prepared against ${record.contract.id} version ${record.contract.version} (${record.contract.hash}). Reload that contract and submit against it.`,
+      );
 
     try {
-      PRODUCT_EXPLORATION_RESULT_CONTRACT.validateStructure(result);
+      SCOPE_DECOMPOSITION_RESULT_CONTRACT.validateStructure(result);
     } catch (error) {
       throw invalidResult(
         error instanceof Error
@@ -123,7 +85,7 @@ export async function submitProductExplorationResult(
           : 'The result did not satisfy the Result Contract.',
       );
     }
-    const typed = result as ProductExplorationResult;
+    const typed = result as ScopeDecompositionResult;
     const resultHash = semanticResultHash(typed);
 
     if (record.semanticResultHash !== null) {
@@ -140,20 +102,28 @@ export async function submitProductExplorationResult(
       return { record: reconciled, replayed: true };
     }
 
-    const owner = moduleOwner(project, 'whats-next');
+    const owner = moduleOwner(project, 'task-decomposition');
     const active = getActiveRun(owner);
     if (active)
       throw activeRunConflict(
-        `Run ${active.runId} owns Product Exploration for this project. Retry after it ends; its log is at ${ownerLogUrlPath(owner, active.runId)}.`,
+        `Run ${active.runId} owns Scope Decomposition for this project. Retry after it ends; its log is at ${ownerLogUrlPath(owner, active.runId)}.`,
       );
 
-    const current = await assembleProductExplorationBasis(
+    const request = record.request as {
+      operation: never;
+      intention: string;
+      motion: string;
+      candidateIds: string[];
+      sourceNodeId: string;
+      revisionTarget: {
+        candidateId: string;
+        revision: number;
+        uid: string;
+      } | null;
+    };
+    const current = await assembleScopeDecompositionBasis(
       project,
-      {
-        intention: record.request.intention as never,
-        motion: record.request.motion as never,
-        sourceNodeIds: record.request.sourceNodeIds as string[],
-      },
+      request,
       record.basis.preparedAt,
     );
     if (current.fingerprint !== record.basis.fingerprint)
@@ -161,7 +131,7 @@ export async function submitProductExplorationResult(
         'Read the module resource again, prepare a new operation with the current state, then reapply the requested change.',
       );
     const basis =
-      await readMcpOperationBasis<ProductExplorationMaterializationBasis>(
+      await readMcpOperationBasis<ScopeDecompositionMaterializationBasis>(
         project,
         operationId,
       );
@@ -175,7 +145,11 @@ export async function submitProductExplorationResult(
         `These source documents changed after this operation was prepared: ${drifted.join(', ')}. Read them again and prepare a new operation.`,
       );
 
-    const paths = moduleRunLogPaths(project, 'whats-next', record.runId);
+    const paths = moduleRunLogPaths(
+      project,
+      'task-decomposition',
+      record.runId,
+    );
     const admitted: McpOperationRecord = {
       ...record,
       status: 'running',
@@ -194,24 +168,23 @@ export async function submitProductExplorationResult(
         runId: record.runId,
         logFile: paths.logFile,
         logRef: paths.logRef,
-        subject: { kind: 'module', label: 'Product Exploration and Design' },
-        layer: record.request.layer as 'discovery' | 'product-design',
-        startMessage: `Publishing an external Product Exploration result for operation ${operationId}`,
+        subject: { kind: 'module', label: 'Scope Decomposition' },
+        startMessage: `Publishing an external Scope Decomposition result for operation ${operationId}`,
         phase: 'publishing',
         actor: 'HOST',
         validate: async () => null,
         persist: async () => async () => undefined,
       }));
     } catch (error) {
-      const rolledBack: McpOperationRecord = {
+      await writeMcpOperation(project, {
         ...record,
         status: 'prepared',
         admittedAt: null,
+        admittedHostPid: null,
         semanticResultHash: null,
         logRef: null,
         logUrlPath: null,
-      };
-      await writeMcpOperation(project, rolledBack);
+      }).catch(() => undefined);
       if (error instanceof ActiveRunConflictError)
         throw activeRunConflict(error.message);
       throw error;
@@ -219,14 +192,10 @@ export async function submitProductExplorationResult(
 
     let published;
     try {
-      published = await publishProductExplorationResult(
+      published = await publishScopeDecomposition(
         basis,
         typed,
-        {
-          kind: 'direct',
-          runId: record.runId,
-          sourceNodeIds: record.request.sourceNodeIds as string[],
-        },
+        { runId: record.runId, sourceNodeId: request.sourceNodeId },
         () => new Date().toISOString(),
         (entry) => reservation.record(entry),
       );
@@ -235,7 +204,7 @@ export async function submitProductExplorationResult(
         error instanceof MaterializationError ? error.boundary : 'publication';
       const message =
         error instanceof Error ? error.message : 'The publication failed.';
-      const failed: McpOperationRecord = {
+      await writeMcpOperation(project, {
         ...admitted,
         status: 'rejected',
         settledAt: new Date().toISOString(),
@@ -248,8 +217,7 @@ export async function submitProductExplorationResult(
           retryAction:
             boundary === 'stale-basis' ? 'prepare-again' : 'inspect-operation',
         },
-      };
-      await writeMcpOperation(project, failed).catch(() => undefined);
+      }).catch(() => undefined);
       try {
         await settleRun(reservation, {
           classification: {
@@ -278,19 +246,16 @@ export async function submitProductExplorationResult(
       receipt:
         (published.record.materialization as MaterializationReceipt) ?? null,
     };
-    let statusWriteFailed: string | null = null;
     try {
       await writeMcpOperation(project, settled);
     } catch (error) {
-      statusWriteFailed =
-        error instanceof Error ? error.message : 'unknown failure';
       try {
         reservation.record({
           level: 'WARN',
           actor: 'HOST',
           phase: 'RUN',
           event: 'operation.status-write-failed',
-          message: `The result is published and its receipt is committed, but the operation status could not be written: ${statusWriteFailed}. Recover the outcome from the Run receipt.`,
+          message: `The result is published and its receipt is committed, but the operation status could not be written: ${error instanceof Error ? error.message : 'unknown failure'}. Recover the outcome from the Run receipt.`,
         });
       } catch {}
     }
