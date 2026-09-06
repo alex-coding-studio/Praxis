@@ -1,8 +1,6 @@
-import { readdir, readFile, stat } from 'node:fs/promises';
-import path from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { sha256Hex } from '../materialization/hash.ts';
 import {
-  isAcceptedPlanningShape,
   isPlanningPathRejection,
   resolvePlanningPath,
   TASK_GRAPH_MARKDOWN_SHAPES,
@@ -10,27 +8,7 @@ import {
 import type { RegisteredProject } from '../project-registry.ts';
 import { resourceNotFound } from './errors.ts';
 
-export const MCP_ARTIFACT_ROOTS = [
-  'context',
-  'delivery',
-  'domain-model',
-  'implementation',
-  'task-decomposition',
-  'task-graph',
-  'what-to-do',
-  'whats-next',
-] as const;
-
-export const MCP_ARTIFACT_WALK_DEPTH = 8;
 export const MCP_ARTIFACT_MEDIA_TYPE = 'text/markdown';
-
-export type McpArtifactEntry = {
-  artifactId: string;
-  relativePath: string;
-  kind: string;
-  byteLength: number;
-  mimeType: string;
-};
 
 export function encodeArtifactId(relativePath: string) {
   return Buffer.from(relativePath, 'utf8').toString('base64url');
@@ -50,59 +28,12 @@ function artifactKind(relativePath: string) {
   return shape?.name ?? 'planning document';
 }
 
-async function walk(
-  root: string,
-  base: string,
-  depth: number,
-  found: string[],
-) {
-  if (depth > MCP_ARTIFACT_WALK_DEPTH) return;
-  let entries;
-  try {
-    entries = await readdir(path.join(root, base), { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (entry.name.startsWith('.')) continue;
-    const relativePath = base ? `${base}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) await walk(root, relativePath, depth + 1, found);
-    else if (
-      entry.isFile() &&
-      isAcceptedPlanningShape(relativePath, TASK_GRAPH_MARKDOWN_SHAPES)
-    )
-      found.push(relativePath);
-  }
-}
-
-export async function listProjectArtifacts(
-  project: RegisteredProject,
-): Promise<McpArtifactEntry[]> {
-  const found: string[] = [];
-  for (const root of MCP_ARTIFACT_ROOTS)
-    await walk(project.planningPath, root, 0, found);
-  found.sort();
-  const entries: McpArtifactEntry[] = [];
-  for (const relativePath of found) {
-    let byteLength: number;
-    try {
-      byteLength = (await stat(path.join(project.planningPath, relativePath)))
-        .size;
-    } catch {
-      continue;
-    }
-    entries.push({
-      artifactId: encodeArtifactId(relativePath),
-      relativePath,
-      kind: artifactKind(relativePath),
-      byteLength,
-      mimeType: MCP_ARTIFACT_MEDIA_TYPE,
-    });
-  }
-  return entries;
-}
-
-export type McpArtifactDocument = McpArtifactEntry & {
+export type McpArtifactDocument = {
+  artifactId: string;
+  relativePath: string;
+  kind: string;
+  byteLength: number;
+  mimeType: string;
   content: string;
   revision: string;
 };
