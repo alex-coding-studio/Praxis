@@ -85,6 +85,10 @@ import {
 } from './publish.ts';
 import { materializationLogEntry } from '../../materialization/log.ts';
 import {
+  rejectionReceipt,
+  type MaterializationReceipt,
+} from '../../materialization/receipt.ts';
+import {
   toProductExplorationCandidate,
   toProductExplorationSemanticResult,
 } from './producer-adapter.ts';
@@ -181,6 +185,7 @@ export type WhatsNextRunRecord = {
   sessionUsage?: LocalAgentUsage | null;
   activity: AgentGraphActivity[];
   result: WhatsNextHarnessResult | null;
+  materialization?: MaterializationReceipt;
   error: string | null;
   logRef?: string;
   hostPid?: number;
@@ -1142,6 +1147,8 @@ async function finishWhatsNextRun(
     record.status = 'failed';
     record.error = original;
     record.response = classification;
+    const receipt = rejectionReceipt(error);
+    if (receipt) record.materialization = receipt;
     const active = activeRuns.get(runKey(project, record.runId));
     await active?.activityRecorder.flush();
     await writeAgentGraphRunEvidence(whatsNextRunPath(project, record.runId), {

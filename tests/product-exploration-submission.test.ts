@@ -15,7 +15,10 @@ import {
   type ProductExplorationResult,
 } from '../lib/modules/product-discovery/contract.ts';
 import { semanticResultHash } from '../lib/materialization/hash.ts';
-import { MaterializationError } from '../lib/materialization/receipt.ts';
+import {
+  MaterializationError,
+  type MaterializationReceipt,
+} from '../lib/materialization/receipt.ts';
 import type { RegisteredProject } from '../lib/project-registry.ts';
 
 async function fixture(t: test.TestContext) {
@@ -260,24 +263,97 @@ void test('a direct publication records a Receipt and its semantic result', asyn
   assert.deepEqual(semantic.result, result);
 });
 
-void test('a rejected direct submission reports the failing boundary', async (t) => {
+void test('a rejected direct submission persists its rejection Receipt', async (t) => {
   const { project, sourceNodeId } = await fixture(t);
   const basis = await basisFor(project, sourceNodeId);
   const events: Array<{ event: string; level: string }> = [];
+  const runId = 'RUN-11111111-1111-4111-8111-111111111111';
+  const result: ProductExplorationResult = {
+    outcome: 'proposal',
+    candidates: [candidate('capture', 'NODE-deadbeef')],
+  };
   await assert.rejects(
     publishProductExplorationResult(
       basis,
-      {
-        outcome: 'proposal',
-        candidates: [candidate('capture', 'NODE-deadbeef')],
-      },
-      { kind: 'direct', sourceNodeIds: [sourceNodeId] },
-      undefined,
+      result,
+      { kind: 'direct', runId, sourceNodeIds: [sourceNodeId] },
+      () => '2026-09-06T00:00:00.000Z',
       (entry) => events.push({ event: entry.event, level: entry.level }),
     ),
-    (error: unknown) => error instanceof MaterializationError,
+    (error: unknown) => {
+      assert.ok(error instanceof MaterializationError);
+      assert.equal(error.boundary, 'validation');
+      assert.equal(error.receipt?.outcome, 'rejected');
+      assert.equal(error.receipt?.failure?.boundary, 'validation');
+      return true;
+    },
   );
   assert.deepEqual(events, [
     { event: 'materialization.rejected', level: 'ERROR' },
   ]);
+
+  const directory = path.join(
+    project.planningPath,
+    'whats-next',
+    'runs',
+    runId,
+  );
+  const semantic = JSON.parse(
+    await readFile(path.join(directory, 'semantic-result.json'), 'utf8'),
+  ) as { semanticResultHash: string; result: ProductExplorationResult };
+  assert.equal(semantic.semanticResultHash, semanticResultHash(result));
+  assert.deepEqual(semantic.result, result);
+
+  const stored = JSON.parse(
+    await readFile(path.join(directory, 'run.json'), 'utf8'),
+  ) as {
+    status: string;
+    result: unknown;
+    error: string;
+    materialization: MaterializationReceipt;
+  };
+  assert.equal(stored.status, 'failed');
+  assert.equal(stored.result, null);
+  assert.equal(stored.materialization.outcome, 'rejected');
+  assert.equal(stored.materialization.publication, null);
+  assert.deepEqual(stored.materialization.affected, {
+    candidateIds: [],
+    nodeIds: [],
+    contractIds: [],
+    domainIds: [],
+  });
+  assert.equal(stored.materialization.failure?.boundary, 'validation');
+  assert.equal(stored.materialization.failure?.message, stored.error);
+});
+
+void test('a filesystem failure is reported at the operation that failed', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const basis = await basisFor(project, sourceNodeId);
+  const runId = 'RUN-22222222-2222-4222-8222-222222222222';
+  const directory = path.join(
+    project.planningPath,
+    'whats-next',
+    'runs',
+    runId,
+  );
+  await mkdir(path.join(directory, 'run.json'), { recursive: true });
+  const events: Array<{ event: string; message: string }> = [];
+  await assert.rejects(
+    publishProductExplorationResult(
+      basis,
+      { outcome: 'no-change', reason: 'The direction already covers this.' },
+      { kind: 'direct', runId, sourceNodeIds: [sourceNodeId] },
+      undefined,
+      (entry) => events.push({ event: entry.event, message: entry.message }),
+    ),
+    (error: unknown) =>
+      error instanceof MaterializationError &&
+      error.boundary === 'publication' &&
+      error.receipt?.failure?.boundary === 'publication',
+  );
+  assert.deepEqual(
+    events.map((entry) => entry.event),
+    ['materialization.validated', 'materialization.publication.failed'],
+  );
+  assert.match(events[1]!.message, /^publication: /);
 });

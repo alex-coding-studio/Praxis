@@ -1,11 +1,12 @@
 import './helpers/register-redo-hooks.mjs';
 import assert from 'node:assert/strict';
+import type { MaterializationReceipt } from '../lib/materialization/receipt.ts';
 import {
   isReadableActivity,
   parseRunLogText,
 } from '../lib/execution-observability/run-log-format.ts';
 import test from 'node:test';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -445,4 +446,53 @@ void test('a redone proposal supersedes the unaccepted Candidates and publishes 
   const settled = await settledRun(project, replaced.runId);
   assert.equal(settled.status, 'proposal', settled.error ?? undefined);
   await assertGolden('redo', await captureGraphState(project));
+});
+
+void test('a rejected Agent Run keeps its rejection Receipt on the Run record', async (t) => {
+  const { project, source } = await createGoldenProject(t);
+  const agent = deferredLaunch();
+  const started = await startWhatsNextRun(
+    project,
+    request(source.id),
+    agent.launch,
+  );
+  await mkdir(
+    path.join(
+      project.planningPath,
+      'whats-next',
+      'runs',
+      started.runId,
+      'semantic-result.json',
+    ),
+    { recursive: true },
+  );
+  agent.respond(
+    JSON.stringify(
+      envelope(started, source.id, [
+        candidate('CANDIDATE-0001', 'Capture the item', source.id),
+      ]),
+    ),
+  );
+  const settled = await settledRun(project, started.runId);
+  assert.equal(settled.status, 'failed');
+
+  const stored = JSON.parse(
+    await readFile(
+      path.join(
+        project.planningPath,
+        'whats-next',
+        'runs',
+        started.runId,
+        'run.json',
+      ),
+      'utf8',
+    ),
+  ) as { materialization?: MaterializationReceipt };
+  assert.ok(stored.materialization);
+  assert.equal(stored.materialization.outcome, 'rejected');
+  assert.equal(stored.materialization.publication, null);
+  assert.equal(stored.materialization.producer.kind, 'agent-run');
+  assert.ok(stored.materialization.failure);
+  assert.equal(stored.materialization.failure.boundary, 'publication');
+  assert.equal(stored.materialization.failure.message, settled.error);
 });

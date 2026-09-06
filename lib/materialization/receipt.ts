@@ -45,6 +45,7 @@ export type MaterializationReceipt = {
 export class MaterializationError extends Error {
   readonly boundary: MaterializationFailureBoundary;
   readonly status: 409 | 400;
+  receipt: MaterializationReceipt | null = null;
 
   constructor(boundary: MaterializationFailureBoundary, message: string) {
     super(message);
@@ -52,6 +53,15 @@ export class MaterializationError extends Error {
     this.boundary = boundary;
     this.status = boundary === 'stale-basis' ? 409 : 400;
   }
+
+  withReceipt(receipt: MaterializationReceipt) {
+    this.receipt = receipt;
+    return this;
+  }
+}
+
+export function rejectionReceipt(error: unknown) {
+  return error instanceof MaterializationError ? error.receipt : null;
 }
 
 export function isStaleBasisError(
