@@ -11,9 +11,13 @@ process.env.PRAXIS_HOME = REGISTRY_HOME;
 const registry = await import('../lib/project-registry.ts');
 const { prepareDomainModelOperation } =
   await import('../lib/mcp/prepare-domain-model.ts');
-const { submitDomainModelOperation } =
+const { submitDomainModelOperation, domainPublicationBoundary } =
   await import('../lib/mcp/submit-domain-model.ts');
-const { findMcpOperation } = await import('../lib/mcp/operations.ts');
+const { PublicApiError } = await import('../lib/api-errors.ts');
+const { MaterializationError } =
+  await import('../lib/materialization/receipt.ts');
+const { findMcpOperation, writeMcpOperation } =
+  await import('../lib/mcp/operations.ts');
 const { isMcpRequestError } = await import('../lib/mcp/errors.ts');
 const catalog = await import('../lib/mcp/catalog.ts');
 const { readDomainModelView } =
@@ -200,6 +204,79 @@ void test('a changed Domain result on an admitted operation conflicts', async (t
       ),
     (error: unknown) =>
       isMcpRequestError(error) && error.envelope.code === 'SUBMISSION_CONFLICT',
+  );
+});
+
+void test('a committed Domain receipt settles an operation whose status write was lost', async (t) => {
+  const project = await fixture(t);
+  const { record } = await prepareDomainModelOperation(project, {
+    userInput: 'Name the reading list.',
+  });
+  await submitDomainModelOperation(
+    project,
+    record.operationId,
+    record.contract,
+    modelChange('Reading list'),
+  );
+  const published = (await findMcpOperation(project, record.operationId))!;
+  assert.equal(published.status, 'completed');
+  await writeMcpOperation(project, {
+    ...published,
+    status: 'running',
+    settledAt: null,
+    outcome: null,
+    receipt: null,
+  });
+  const recovered = JSON.parse(
+    (await catalog.readOperationResource(project.id, record.operationId)).text,
+  ) as Record<string, unknown>;
+  assert.equal(
+    recovered.status,
+    'completed',
+    'recovery must read the Domain receipt document, not a graph Run record',
+  );
+  assert.equal((recovered.receipt as { outcome: string }).outcome, 'canonical');
+  const before = await readDomainModelView(project);
+  const retry = await submitDomainModelOperation(
+    project,
+    record.operationId,
+    record.contract,
+    modelChange('Reading list'),
+  );
+  assert.equal(retry.replayed, true);
+  assert.equal(retry.record.status, 'completed');
+  assert.equal(
+    (await readDomainModelView(project)).model.stateVersion,
+    before.model.stateVersion,
+    'recovery must not republish',
+  );
+});
+
+void test('a publication conflict is classified as a stale Basis, not a failure', () => {
+  assert.equal(
+    domainPublicationBoundary(new PublicApiError('conflict', 409)),
+    'stale-basis',
+    'the module preserves a 409 from applyProposedDomainModel and it must keep that meaning',
+  );
+  assert.equal(
+    domainPublicationBoundary(new PublicApiError('bad request', 400)),
+    'publication',
+  );
+  assert.equal(
+    domainPublicationBoundary(
+      new MaterializationError('stale-basis', 'changed'),
+    ),
+    'stale-basis',
+  );
+  assert.equal(
+    domainPublicationBoundary(
+      new MaterializationError('validation', 'invalid'),
+    ),
+    'validation',
+  );
+  assert.equal(
+    domainPublicationBoundary(new Error('anything else')),
+    'publication',
   );
 });
 

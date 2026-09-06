@@ -10,6 +10,7 @@ import {
   moduleRunLogPaths,
 } from '../execution-observability/module-run.ts';
 import { ownerLogUrlPath } from '../execution-observability/types.ts';
+import { PublicApiError } from '../api-errors.ts';
 import { semanticResultHash } from '../materialization/hash.ts';
 import {
   MaterializationError,
@@ -40,6 +41,28 @@ import {
 } from './operations.ts';
 import { assembleDomainModelBasis } from './prepare-domain-model.ts';
 import { driftedSources } from './submit.ts';
+
+export type DomainPublicationBoundary =
+  | 'stale-basis'
+  | 'validation'
+  | 'identity'
+  | 'publication';
+
+export function domainPublicationBoundary(
+  error: unknown,
+): DomainPublicationBoundary {
+  if (error instanceof PublicApiError && error.status === 409)
+    return 'stale-basis';
+  if (error instanceof MaterializationError) {
+    if (
+      error.boundary === 'stale-basis' ||
+      error.boundary === 'validation' ||
+      error.boundary === 'identity'
+    )
+      return error.boundary;
+  }
+  return 'publication';
+}
 
 function outcomeSummary(result: DomainModelResult) {
   if (result.outcome === 'model-change')
@@ -185,8 +208,12 @@ export async function submitDomainModelOperation(
         (entry) => reservation.record(entry),
       );
     } catch (error) {
-      const boundary =
-        error instanceof MaterializationError ? error.boundary : 'publication';
+      const conflict = error instanceof PublicApiError && error.status === 409;
+      const boundary = conflict
+        ? 'stale-basis'
+        : error instanceof MaterializationError
+          ? error.boundary
+          : 'publication';
       const message =
         error instanceof Error ? error.message : 'The publication failed.';
       await writeMcpOperation(project, {

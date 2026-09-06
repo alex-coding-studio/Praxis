@@ -494,11 +494,7 @@ export async function reconcileMcpOperation(
 ): Promise<McpOperationRecord> {
   if (record.status !== 'running' && record.status !== 'interrupted')
     return record;
-  const committed = await readCommittedRunReceipt(
-    project,
-    MCP_MODULE_DEFINITIONS[record.module].runsRoot,
-    record.runId,
-  );
+  const committed = await readCommittedRunReceipt(project, record);
   if (!committed) {
     if (
       record.status === 'running' &&
@@ -529,20 +525,8 @@ export async function reconcileMcpOperation(
   };
 }
 
-async function readCommittedRunReceipt(
-  project: RegisteredProject,
-  runsRoot: string,
-  runId: string,
-) {
-  const file = path.join(
-    project.planningPath,
-    runsRoot,
-    'runs',
-    runId,
-    'run.json',
-  );
+async function readGraphRunReceipt(project: RegisteredProject, file: string) {
   let stored: {
-    status?: string;
     endedAt?: string | null;
     materialization?: MaterializationReceipt;
     result?: { outcome?: string; candidates?: unknown[] } | null;
@@ -569,6 +553,46 @@ async function readCommittedRunReceipt(
           : 'The module reported no Candidates.',
     },
   };
+}
+
+async function readReceiptDocument(file: string) {
+  let receipt: MaterializationReceipt;
+  try {
+    receipt = JSON.parse(
+      await readFile(file, 'utf8'),
+    ) as MaterializationReceipt;
+  } catch {
+    return null;
+  }
+  if (!receipt || typeof receipt !== 'object' || receipt.outcome === 'rejected')
+    return null;
+  return {
+    settledAt: receipt.publication?.at ?? new Date().toISOString(),
+    receipt,
+    outcome: {
+      kind: receipt.outcome,
+      summary:
+        receipt.outcome === 'canonical'
+          ? 'The canonical state was updated.'
+          : 'The module reported no change.',
+    },
+  };
+}
+
+async function readCommittedRunReceipt(
+  project: RegisteredProject,
+  record: McpOperationRecord,
+) {
+  const runsRoot = MCP_MODULE_DEFINITIONS[record.module].runsRoot;
+  const directory = path.join(
+    project.planningPath,
+    runsRoot,
+    'runs',
+    record.runId,
+  );
+  if (record.module === 'domain-modeling')
+    return readReceiptDocument(path.join(directory, 'materialization.json'));
+  return readGraphRunReceipt(project, path.join(directory, 'run.json'));
 }
 
 export async function readOperationResource(
