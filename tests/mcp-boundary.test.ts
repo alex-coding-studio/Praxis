@@ -237,6 +237,27 @@ void test('the catalog URI shapes this release serves are parsed exactly', () =>
   );
   assert.throws(() => parseMcpUri('praxis://projects/p1/modules/task-graph'));
   assert.throws(() => parseMcpUri('praxis://projects/p1/operations/op-1'));
+  assert.throws(() => parseMcpUri('praxis://projects/p1/operations'));
+  assert.deepEqual(
+    parseMcpUri(
+      'praxis://projects/p1/operations/MCPOP-11111111-1111-4111-8111-111111111111',
+    ),
+    {
+      kind: 'operation',
+      projectId: 'p1',
+      operationId: 'MCPOP-11111111-1111-4111-8111-111111111111',
+    },
+  );
+  assert.deepEqual(
+    parseMcpUri(
+      'praxis://projects/p1/operations/MCPOP-11111111-1111-4111-8111-111111111111/log',
+    ),
+    {
+      kind: 'operation-log',
+      projectId: 'p1',
+      operationId: 'MCPOP-11111111-1111-4111-8111-111111111111',
+    },
+  );
 });
 
 void test('a list page returns a continuation cursor rather than dropping entries', () => {

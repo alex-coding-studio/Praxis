@@ -2,6 +2,7 @@ import { canonicalJson, sha256Hex } from '../materialization/hash.ts';
 import {
   activeRunRegistryOwnership,
   getActiveRun,
+  hostProcessAlive,
   type ActiveRunReservation,
 } from '../execution-observability/active-runs.ts';
 import { readLatestResponse } from '../execution-observability/latest-response-store.ts';
@@ -27,9 +28,13 @@ import {
 import {
   boundedLimit,
   DEFAULT_LIST_LIMIT,
+  DEFAULT_LOG_LINES,
   DEFAULT_READ_BYTES,
   MAX_LIST_LIMIT,
+  MAX_LOG_LINES,
   MAX_READ_BYTES,
+  decodeContentCursor,
+  encodeContentCursor,
   pageContent,
   pageList,
 } from './pagination.ts';
@@ -45,17 +50,34 @@ import {
   contractUri,
   latestResponseUri,
   moduleUri,
+  operationLogUri,
+  operationSourceUri,
+  operationUri,
   parseMcpUri,
   projectsUri,
 } from './uri.ts';
+import {
+  readMcpOperationSource,
+  requireMcpOperation,
+  type McpOperationRecord,
+} from './operations.ts';
+import { readRunLogTail } from '../execution-observability/run-log.ts';
+import type { MaterializationReceipt } from '../materialization/receipt.ts';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 
 export const MCP_API_VERSION = 1;
 export const MCP_SERVER_NAME = 'praxis';
 export const MCP_JSON_MEDIA_TYPE = 'application/json';
+export const MCP_LOG_MEDIA_TYPE = 'text/plain';
 
 export const MCP_IMPLEMENTED_TOOLS = [
   'praxis_list_projects',
   'praxis_read_resource',
+  'praxis_prepare',
+  'praxis_submit_product_exploration',
+  'praxis_get_operation',
+  'praxis_read_log',
 ] as const;
 
 export type McpResourceContent = {
@@ -92,7 +114,7 @@ export function readCapabilities(options: McpReadOptions = {}) {
     apiVersion: MCP_API_VERSION,
     server: MCP_SERVER_NAME,
     protocolBaseline: '2025-11-25',
-    release: 'reads',
+    release: 'product-exploration-submission',
     host: { activeRunRegistry: activeRunRegistryOwnership() },
     tools: MCP_IMPLEMENTED_TOOLS,
     resources: {
@@ -102,9 +124,15 @@ export function readCapabilities(options: McpReadOptions = {}) {
       latestResponseTemplate:
         'praxis://projects/{projectId}/modules/{module}/latest-response',
       artifactTemplate: 'praxis://projects/{projectId}/artifacts/{artifactId}',
+      operationTemplate:
+        'praxis://projects/{projectId}/operations/{operationId}',
+      operationLogTemplate:
+        'praxis://projects/{projectId}/operations/{operationId}/log',
       contractTemplate: 'praxis://contracts/{contractId}/{version}',
     },
     limits: {
+      logLinesDefault: DEFAULT_LOG_LINES,
+      logLinesMax: MAX_LOG_LINES,
       listDefault: DEFAULT_LIST_LIMIT,
       listMax: MAX_LIST_LIMIT,
       readBytesDefault: DEFAULT_READ_BYTES,
@@ -123,8 +151,10 @@ export function readCapabilities(options: McpReadOptions = {}) {
           hash: definition.contract.hash,
           uri: contractUri(definition.contract.id, definition.contract.version),
         },
-        preparationOperations: [],
-        submissionTool: null,
+        preparationOperations:
+          module === 'product-exploration' ? ['explore'] : [],
+        submissionTool:
+          module === 'product-exploration' ? definition.submissionTool : null,
         plannedPreparationOperations: definition.preparationOperations,
         plannedSubmissionTool: definition.submissionTool,
       };
@@ -425,6 +455,216 @@ export async function readArtifact(
   } satisfies McpResourceContent;
 }
 
+export function operationProjection(record: McpOperationRecord) {
+  return {
+    operationId: record.operationId,
+    projectId: record.projectId,
+    module: record.module,
+    status: record.status,
+    contract: record.contract,
+    basis: record.basis,
+    runId: record.runId,
+    request: record.request,
+    preparedAt: record.preparedAt,
+    admittedAt: record.admittedAt,
+    settledAt: record.settledAt,
+    semanticResultHash: record.semanticResultHash,
+    outcome: record.outcome,
+    receipt: record.receipt,
+    error: record.error,
+    retryAction: record.error?.retryAction ?? null,
+    logUri: record.logRef
+      ? operationLogUri(record.projectId, record.operationId)
+      : null,
+    logUrlPath: record.logUrlPath,
+    operationUri: operationUri(record.projectId, record.operationId),
+    moduleUri: moduleUri(record.projectId, record.module),
+  };
+}
+
+export async function reconcileMcpOperation(
+  project: RegisteredProject,
+  record: McpOperationRecord,
+): Promise<McpOperationRecord> {
+  if (record.status !== 'running' && record.status !== 'interrupted')
+    return record;
+  const committed = await readCommittedRunReceipt(project, record.runId);
+  if (!committed) {
+    if (
+      record.status === 'running' &&
+      record.admittedHostPid !== null &&
+      !hostProcessAlive(record.admittedHostPid)
+    )
+      return {
+        ...record,
+        status: 'interrupted',
+        error: record.error ?? {
+          code: 'PUBLICATION_FAILED',
+          title: 'The Host stopped before the outcome was provable',
+          detail:
+            'This operation was admitted but no committed receipt exists for its Run. Inspect the Run log before preparing a replacement; the result was not republished.',
+          boundary: 'publication',
+          retryAction: 'inspect-operation',
+        },
+      };
+    return record;
+  }
+  return {
+    ...record,
+    status: 'completed',
+    settledAt: record.settledAt ?? committed.settledAt,
+    outcome: record.outcome ?? committed.outcome,
+    receipt: record.receipt ?? committed.receipt,
+    error: null,
+  };
+}
+
+async function readCommittedRunReceipt(
+  project: RegisteredProject,
+  runId: string,
+) {
+  const file = path.join(
+    project.planningPath,
+    'whats-next',
+    'runs',
+    runId,
+    'run.json',
+  );
+  let stored: {
+    status?: string;
+    endedAt?: string | null;
+    materialization?: MaterializationReceipt;
+    result?: { outcome?: string; candidates?: unknown[] } | null;
+  };
+  try {
+    stored = JSON.parse(await readFile(file, 'utf8')) as typeof stored;
+  } catch {
+    return null;
+  }
+  if (!stored.materialization || stored.materialization.outcome === 'rejected')
+    return null;
+  if (!stored.result) return null;
+  const count = Array.isArray(stored.result.candidates)
+    ? stored.result.candidates.length
+    : 0;
+  return {
+    settledAt: stored.endedAt ?? new Date().toISOString(),
+    receipt: stored.materialization,
+    outcome: {
+      kind: stored.result.outcome ?? 'proposal',
+      summary:
+        stored.result.outcome === 'proposal'
+          ? `${count} Candidate${count === 1 ? '' : 's'} proposed for acceptance.`
+          : 'The module reported no Candidates.',
+    },
+  };
+}
+
+export async function readOperationResource(
+  projectId: string,
+  operationId: string,
+  options: McpReadOptions = {},
+) {
+  const project = await requireProject(projectId);
+  const record = await reconcileMcpOperation(
+    project,
+    await requireMcpOperation(project, operationId),
+  );
+  return jsonDocument(
+    operationUri(project.id, operationId),
+    operationProjection(record),
+    options,
+  );
+}
+
+export async function readOperationLog(
+  projectId: string,
+  operationId: string,
+  options: McpReadOptions & { limitLines?: number } = {},
+) {
+  const project = await requireProject(projectId);
+  const record = await requireMcpOperation(project, operationId);
+  const uri = operationLogUri(project.id, operationId);
+  const { offset } = decodeContentCursor(options.cursor, record.runId);
+  if (!record.logRef)
+    return {
+      uri,
+      mimeType: MCP_LOG_MEDIA_TYPE,
+      text: '',
+      revision: record.runId,
+      byteOffset: 0,
+      byteLength: 0,
+      totalBytes: 0,
+      nextCursor: null,
+    } satisfies McpResourceContent;
+
+  const file = path.join(project.planningPath, record.logRef);
+  const limitBytes = boundedLimit(
+    options.limitBytes,
+    DEFAULT_READ_BYTES,
+    MAX_READ_BYTES,
+  );
+  const limitLines = boundedLimit(
+    options.limitLines,
+    DEFAULT_LOG_LINES,
+    MAX_LOG_LINES,
+  );
+  let slice;
+  try {
+    slice = await readRunLogTail(file, offset, limitBytes);
+  } catch {
+    throw resourceNotFound(
+      `The log for operation ${JSON.stringify(operationId)} is not readable.`,
+    );
+  }
+  const lines = slice.text.split(/(?<=\n)/u);
+  const kept = lines.slice(0, limitLines);
+  const text = kept.join('');
+  const consumed = Buffer.byteLength(text, 'utf8');
+  const next = slice.offset + consumed;
+  return {
+    uri,
+    mimeType: MCP_LOG_MEDIA_TYPE,
+    text,
+    revision: record.runId,
+    byteOffset: slice.offset,
+    byteLength: consumed,
+    totalBytes: slice.size,
+    nextCursor:
+      next < slice.size
+        ? encodeContentCursor({ offset: next, revision: record.runId })
+        : null,
+  } satisfies McpResourceContent;
+}
+
+export async function readOperationSource(
+  projectId: string,
+  operationId: string,
+  sourceId: string,
+  options: McpReadOptions = {},
+) {
+  const project = await requireProject(projectId);
+  const record = await requireMcpOperation(project, operationId);
+  const source = record.sources.find((entry) => entry.sourceId === sourceId);
+  if (!source)
+    throw resourceNotFound(
+      `Operation ${JSON.stringify(operationId)} froze no source with that id.`,
+    );
+  const content = await readMcpOperationSource(project, operationId, sourceId);
+  const limitBytes = boundedLimit(
+    options.limitBytes,
+    DEFAULT_READ_BYTES,
+    MAX_READ_BYTES,
+  );
+  const page = pageContent(content, source.sha256, options.cursor, limitBytes);
+  return {
+    uri: operationSourceUri(project.id, operationId, sourceId),
+    mimeType: 'text/markdown',
+    revision: source.sha256,
+    ...page,
+  } satisfies McpResourceContent;
+}
+
 export async function resolveMcpResource(
   uri: string,
   options: McpReadOptions = {},
@@ -440,6 +680,25 @@ export async function resolveMcpResource(
     return readLatestResponseProjection(
       reference.projectId,
       reference.module,
+      options,
+    );
+  if (reference.kind === 'operation')
+    return readOperationResource(
+      reference.projectId,
+      reference.operationId,
+      options,
+    );
+  if (reference.kind === 'operation-log')
+    return readOperationLog(
+      reference.projectId,
+      reference.operationId,
+      options,
+    );
+  if (reference.kind === 'operation-source')
+    return readOperationSource(
+      reference.projectId,
+      reference.operationId,
+      reference.sourceId,
       options,
     );
   return readArtifact(reference.projectId, reference.artifactId, options);

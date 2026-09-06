@@ -4,6 +4,8 @@ export const DEFAULT_LIST_LIMIT = 50;
 export const MAX_LIST_LIMIT = 100;
 export const DEFAULT_READ_BYTES = 32 * 1024;
 export const MAX_READ_BYTES = 128 * 1024;
+export const DEFAULT_LOG_LINES = 200;
+export const MAX_LOG_LINES = 1000;
 
 export type ListCursor = { offset: number };
 export type ContentCursor = { offset: number; revision: string };

@@ -60,7 +60,7 @@
     "test:task-graph-concurrency": "node --experimental-strip-types --experimental-test-module-mocks --import ./tests/helpers/register-alias.mjs --test-timeout=20000 --test tests/task-graph-concurrency.test.ts",
     "test:task-graph-failures": "node --experimental-strip-types --experimental-test-module-mocks --import ./tests/helpers/register-alias.mjs --test-timeout=20000 --test tests/task-graph-failure-boundary.test.ts",
     "test:context-publication": "node --experimental-strip-types --experimental-test-module-mocks --import ./tests/helpers/register-alias.mjs --test-timeout=20000 --test tests/context-import-publication.test.ts tests/product-context-catalog.test.ts",
-    "test:mcp": "node --experimental-strip-types --import ./tests/helpers/register-alias.mjs --test-timeout=20000 --test tests/mcp-boundary.test.ts tests/mcp-schema-adapter.test.ts tests/mcp-catalog.test.ts tests/mcp-transport.test.ts",
+    "test:mcp": "node --experimental-strip-types --import ./tests/helpers/register-alias.mjs --test-timeout=20000 --test tests/mcp-boundary.test.ts tests/mcp-schema-adapter.test.ts tests/mcp-catalog.test.ts tests/mcp-operations.test.ts tests/mcp-transport.test.ts",
     "test:mcp-host-smoke": "node --experimental-strip-types scripts/smoke-mcp-host.ts"
   },
   "dependencies": {

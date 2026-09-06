@@ -104,11 +104,21 @@ void test(
     assert.equal(version?.name, 'praxis');
     const tools = await client.listTools();
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [
+      'praxis_get_operation',
       'praxis_list_projects',
+      'praxis_prepare',
+      'praxis_read_log',
       'praxis_read_resource',
+      'praxis_submit_product_exploration',
     ]);
+    const writeTools = ['praxis_prepare', 'praxis_submit_product_exploration'];
     for (const tool of tools.tools) {
-      assert.equal(tool.annotations?.readOnlyHint, true);
+      assert.equal(
+        tool.annotations?.readOnlyHint,
+        !writeTools.includes(tool.name),
+        `${tool.name} read-only annotation`,
+      );
+      assert.equal(tool.annotations?.destructiveHint, false, tool.name);
       assert.equal(
         (tool.inputSchema as { additionalProperties?: boolean })
           .additionalProperties,
@@ -169,6 +179,59 @@ void test(
       },
     });
     assert.notEqual(state.isError, true);
+  },
+);
+
+void test(
+  'every URI the catalog serves is reachable through the SDK resource route',
+  { timeout: 20_000 },
+  async (t) => {
+    const project = await fixture(t);
+    const url = await listen(t);
+    const client = await connect(t, url);
+    const templates = (
+      await client.listResourceTemplates()
+    ).resourceTemplates.map((template) => template.uriTemplate);
+    for (const expected of [
+      'praxis://projects/{projectId}/modules/{module}',
+      'praxis://projects/{projectId}/modules/{module}/latest-response',
+      'praxis://projects/{projectId}/artifacts/{artifactId}',
+      'praxis://projects/{projectId}/operations/{operationId}',
+      'praxis://projects/{projectId}/operations/{operationId}/log',
+      'praxis://projects/{projectId}/operations/{operationId}/sources/{sourceId}',
+      'praxis://contracts/{contractId}/{version}',
+    ])
+      assert.equal(
+        templates.includes(expected),
+        true,
+        `${expected} must be registered as a resource template`,
+      );
+
+    const prepare = await client.callTool({
+      name: 'praxis_prepare',
+      arguments: {
+        projectId: project.id,
+        module: 'product-exploration',
+        request: { userInput: 'Explore one bounded MVP.', layer: 'discovery' },
+      },
+    });
+    assert.notEqual(prepare.isError, true);
+    const prepared = prepare.structuredContent as {
+      operationUri: string;
+      context: { resources: Array<{ uri: string }> };
+    };
+    for (const uri of [
+      prepared.operationUri,
+      `${prepared.operationUri}/log`,
+      ...prepared.context.resources.map((resource) => resource.uri),
+    ]) {
+      const read = await client.readResource({ uri });
+      assert.equal(
+        read.contents[0]?.uri,
+        uri,
+        `${uri} must be readable through resources/read`,
+      );
+    }
   },
 );
 
