@@ -1,0 +1,70 @@
+{
+  "what-to-do/current-map.json": {
+    "schemaVersion": 1,
+    "runId": "RUN-U0",
+    "updatedAt": "T",
+    "sourceUids": ["U1"],
+    "contracts": [
+      {
+        "title": "Replacement delivery boundary",
+        "summary": "A newly coordinated delivery boundary.",
+        "outcome": "The behavior is available.",
+        "includedScope": ["Accepted behavior"],
+        "excludedScope": [],
+        "productRules": ["Preserve the accepted behavior."],
+        "domainImpact": {
+          "kind": "none",
+          "reason": "No Domain change is needed.",
+          "evidencePaths": ["what-to-do/repository-context/facts.json"]
+        },
+        "requiredExperienceStates": ["Ready", "Error"],
+        "repositoryConstraints": ["Use project-owned checks."],
+        "acceptanceCriteria": [
+          {
+            "id": "AC-1",
+            "condition": "The user reaches the behavior.",
+            "passCondition": "The behavior works.",
+            "evidence": "Focused behavior evidence."
+          }
+        ],
+        "validationExpectations": ["Run project checks."],
+        "sourceClaimIds": [],
+        "openDecisions": [],
+        "deliveryStrategy": {
+          "kind": "vertical-slice",
+          "reason": "The outcome is independently usable."
+        },
+        "id": "NODE-U2",
+        "uid": "U2",
+        "relations": {
+          "derivedFrom": [],
+          "dependsOn": []
+        },
+        "dependsOn": [],
+        "outputPath": "what-to-do/runs/RUN-U0/contracts/NODE-U2/output.md"
+      }
+    ],
+    "sourceClaims": [
+      {
+        "claimId": "CLAIM-1",
+        "sourcePath": "whats-next/nodes/NODE-X0/output.md",
+        "sourceSha256": "H0",
+        "anchor": "## Behavior",
+        "summary": "The accepted behavior must be delivered.",
+        "disposition": "in-scope",
+        "exclusionReason": null,
+        "exclusionAuthority": null,
+        "contractIds": ["NODE-U2"]
+      }
+    ],
+    "sourceSnapshots": [
+      {
+        "logicalPath": "whats-next/nodes/NODE-X0/output.md",
+        "sha256": "H0",
+        "storedPath": "what-to-do/runs/RUN-U3/context/primary/002-output.md"
+      }
+    ]
+  },
+  "what-to-do/runs/RUN-U0/contracts/NODE-U2/output.md": "# Replacement delivery boundary\n\nA newly coordinated delivery boundary.\n\n## Outcome\n\nThe behavior is available.\n\n## Included scope\n\n- Accepted behavior\n\n## Excluded scope\n\n- None\n\n## Product rules\n\n- Preserve the accepted behavior.\n\n## Domain impact\n\n- Kind: none\n- Reason: No Domain change is needed.\n- Evidence: what-to-do/repository-context/facts.json\n\n## Required experience states\n\n- Ready\n- Error\n\n## Repository constraints\n\n- Use project-owned checks.\n\n## Acceptance\n\n- **AC-1** The user reaches the behavior.\n  - Pass: The behavior works.\n  - Evidence: Focused behavior evidence.\n\n## Validation expectations\n\n- Run project checks.\n\n## Dependencies\n\n- None\n\n## Source claims\n\n- None\n\n## Delivery strategy\n\n- Kind: vertical-slice\n- Reason: The outcome is independently usable.\n",
+  "what-to-do/runs/RUN-U3/contracts/NODE-X1/output.md": "# Deliver accepted behavior\n\nOne independently deliverable behavior.\n\n## Outcome\n\nThe behavior is available.\n\n## Included scope\n\n- Accepted behavior\n\n## Excluded scope\n\n- None\n\n## Product rules\n\n- Preserve the accepted behavior.\n\n## Domain impact\n\n- Kind: none\n- Reason: No Domain change is needed.\n- Evidence: what-to-do/repository-context/facts.json\n\n## Required experience states\n\n- Ready\n- Error\n\n## Repository constraints\n\n- Use project-owned checks.\n\n## Acceptance\n\n- **AC-1** The user reaches the behavior.\n  - Pass: The behavior works.\n  - Evidence: Focused behavior evidence.\n\n## Validation expectations\n\n- Run project checks.\n\n## Dependencies\n\n- None\n\n## Source claims\n\n- None\n\n## Delivery strategy\n\n- Kind: vertical-slice\n- Reason: The outcome is independently usable.\n"
+}
