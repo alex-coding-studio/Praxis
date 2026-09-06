@@ -13,6 +13,7 @@ import {
   writeWhatToDoCurrentMap,
 } from '../lib/modules/delivery-planning/storage.ts';
 import { MaterializationError } from '../lib/materialization/receipt.ts';
+import { materializeDeliveryMapProposal } from '../lib/modules/delivery-planning/validation.ts';
 import {
   controlled,
   fixture,
@@ -139,4 +140,49 @@ void test('a Run whose Map moved underneath reports the conflict, not a bad resu
   );
   assert.doesNotMatch(completed.response?.title ?? '', /could not be verified/);
   assert.match(completed.response?.detail ?? '', /could not persist/);
+});
+
+void test('normalization returns a new proposal and leaves the caller its own', async (t) => {
+  const { project } = await fixture(t);
+  const control = controlled();
+  const call = control.calls.length;
+  const run = await startWhatToDoRun(project, input(), control.transport);
+  const envelope = result(run);
+  const source = run.request.sourceFeatures[0]!;
+  const proposal = {
+    outcome: 'map-proposal' as const,
+    candidates: envelope.candidates.map((candidate) => ({
+      ...structuredClone(candidate),
+      sourceClaimIds: [],
+    })),
+    sourceClaims: structuredClone(envelope.sourceClaims),
+  };
+  const before = structuredClone(proposal);
+  const normalized = materializeDeliveryMapProposal(
+    proposal,
+    {
+      operation: 'create-map',
+      knownSources: {
+        [source.outputPath]: {
+          sha256: source.outputSha256,
+          content: '## Behavior\n\nThe accepted behavior must be delivered.\n',
+        },
+      },
+      userInput: { path: 'input.md', sha256: 'sha', content: '' },
+    },
+    new Set(envelope.candidates[0]!.domainImpact.evidencePaths),
+  );
+  assert.deepEqual(
+    normalized.candidates[0]!.sourceClaimIds,
+    [envelope.sourceClaims[0]!.claimId],
+    'normalization must assign the in-scope claim to its Contract',
+  );
+  assert.deepEqual(proposal, before);
+  assert.notEqual(normalized.candidates[0], proposal.candidates[0]);
+  control.calls[call]!.resolve({
+    agentSessionId: 'session-normalized',
+    finalOutput: JSON.stringify(envelope),
+    usage: null,
+  });
+  await settled(project, run.id);
 });
