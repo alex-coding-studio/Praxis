@@ -79,7 +79,7 @@ import {
 } from './validation-context.ts';
 import { MaterializationError } from '../../materialization/receipt.ts';
 import { prepareProductExplorationMaterializationBasis } from './basis.ts';
-import { materializeProductExplorationResult } from './materializer.ts';
+import { publishProductExplorationResult } from './publish.ts';
 import {
   toProductExplorationCandidate,
   toProductExplorationSemanticResult,
@@ -692,9 +692,9 @@ export async function readWhatsNextRun(
   }
   if (record.result && !record.result.reflection) {
     record.result.reflection = {
-      markdown: record.result.exploration.notes.length
+      markdown: record.result.exploration?.notes?.length
         ? `# Reflection\n\n${record.result.exploration.notes.join('\n\n')}`
-        : '# Reflection\n\nThis legacy Run did not record a Reflection.',
+        : '# Reflection\n\nThis Run did not record a Reflection.',
       continuationAdvice: {
         action: 'continue',
         recommendedFocus: 'expand',
@@ -759,7 +759,7 @@ export async function recoverWhatsNextRunResult(
             : null,
         )
       : null;
-  const result = await materializeWhatsNextOutput(project, finalOutput, {
+  const submission = await prepareWhatsNextSubmission(project, finalOutput, {
     record,
     nodes,
     knownResourcePaths: record.input?.resourcePaths ?? [],
@@ -770,16 +770,19 @@ export async function recoverWhatsNextRunResult(
     knownCandidates: await collectLatestUnacceptedCandidates(project),
     revisionTarget: revisionTarget ?? undefined,
   });
-  const timestamp = new Date().toISOString();
-  record.status = result.outcome;
-  record.result = result;
-  record.error = null;
-  record.updatedAt = timestamp;
-  record.endedAt ??= timestamp;
-  await ensureCandidateArtifacts(project, record);
-  await writeWhatsNextCheckpoint(project, record);
-  await writeRunRecord(project, record);
-  return record;
+  await writeProducerEvidence(
+    project,
+    record.runId,
+    record.activity,
+    submission.envelope,
+  );
+  const published = await publishProductExplorationResult(
+    submission.basis,
+    submission.semantic,
+    { kind: 'agent-run', record, resultBase: submission.envelope },
+  );
+  await writeWhatsNextCheckpoint(project, published.record);
+  return published.record;
 }
 
 export async function cancelWhatsNextRun(
@@ -1036,7 +1039,7 @@ async function finishWhatsNextRun(
     await writeRunRecord(project, record);
     if (superseded()) return;
 
-    const result = await materializeWhatsNextOutput(
+    const submission = await prepareWhatsNextSubmission(
       project,
       agentResult.finalOutput,
       {
@@ -1053,6 +1056,38 @@ async function finishWhatsNextRun(
         revisionTarget,
       },
     );
+    await writeProducerEvidence(
+      project,
+      record.runId,
+      record.activity,
+      submission.envelope,
+    );
+    const envelope = submission.envelope;
+    record.response = classifyModuleRun(
+      envelope.outcome === 'proposal'
+        ? {
+            runState: 'settled',
+            outcome: 'proposal',
+            summary: plainSummary(envelope.reflection.markdown),
+          }
+        : envelope.outcome === 'clarification'
+          ? {
+              runState: 'settled',
+              outcome: 'clarification',
+              question: envelope.clarification.question,
+            }
+          : {
+              runState: 'settled',
+              outcome: 'no-change',
+              reason: envelope.reason,
+            },
+    );
+    const published = await publishProductExplorationResult(
+      submission.basis,
+      submission.semantic,
+      { kind: 'agent-run', record, resultBase: envelope },
+    );
+    const result = published.record.result as WhatsNextHarnessResult;
     if (
       revisionTarget &&
       result.outcome === 'proposal' &&
@@ -1063,34 +1098,10 @@ async function finishWhatsNextRun(
         'Refine must return exactly the requested Candidate identifier.',
       );
     }
-    const endedAt = new Date().toISOString();
-    record.status = result.outcome;
-    record.result = result;
-    record.updatedAt = endedAt;
-    record.endedAt = endedAt;
-    const classification = classifyModuleRun(
-      result.outcome === 'proposal'
-        ? {
-            runState: 'settled',
-            outcome: 'proposal',
-            summary: plainSummary(result.reflection.markdown),
-          }
-        : result.outcome === 'clarification'
-          ? {
-              runState: 'settled',
-              outcome: 'clarification',
-              question: result.clarification.question,
-            }
-          : {
-              runState: 'settled',
-              outcome: 'no-change',
-              reason: result.reason,
-            },
-    );
-    record.response = classification;
-    await ensureCandidateArtifacts(project, record);
+    Object.assign(record, published.record);
+    const endedAt = record.endedAt ?? new Date().toISOString();
+    const classification = record.response;
     await writeWhatsNextCheckpoint(project, record);
-    await writeRunRecord(project, record);
     await settleRun(reservation, { classification, endedAt });
   } catch (error) {
     if (superseded()) return;
@@ -1656,7 +1667,7 @@ function getActiveRuns() {
   return runtime.__praxisWhatsNextRuns;
 }
 
-async function materializeWhatsNextOutput(
+async function prepareWhatsNextSubmission(
   project: RegisteredProject,
   output: string,
   input: WhatsNextValidationContextInput,
@@ -1712,19 +1723,48 @@ async function materializeWhatsNextOutput(
         }
       : { ...subject, operation: 'explore' },
   );
-  const materialized = await materializeProductExplorationResult(
+  return {
+    envelope,
     basis,
-    toProductExplorationSemanticResult(envelope),
-  );
-  return materialized
-    ? {
-        ...envelope,
-        candidates: materialized.candidates,
-        ...(materialized.candidateAliases && {
-          candidateAliases: materialized.candidateAliases,
-        }),
-      }
-    : envelope;
+    semantic: toProductExplorationSemanticResult(envelope),
+  };
+}
+
+async function writeProducerEvidence(
+  project: RegisteredProject,
+  runId: string,
+  activity: WhatsNextRunRecord['activity'],
+  envelope: WhatsNextHarnessResult,
+) {
+  const runPath = whatsNextRunPath(project, runId);
+  await mkdir(runPath, { recursive: true });
+  await writeAgentGraphRunEvidence(runPath, {
+    activity: activity ?? [],
+    summary: renderWhatsNextSummaryMarkdown(envelope),
+    response: renderWhatsNextResponseMarkdown(envelope),
+  });
+  const reflectionPath = path.join(runPath, 'reflection.md');
+  if (
+    !(await access(reflectionPath)
+      .then(() => true)
+      .catch(() => false))
+  ) {
+    await writeFile(
+      reflectionPath,
+      `${envelope.reflection.markdown.trim()}\n`,
+      {
+        flag: 'wx',
+      },
+    );
+  }
+  const responsePath = path.join(runPath, 'response.md');
+  const responseMarkdown = renderWhatsNextResponseMarkdown(envelope);
+  const existingResponse = await readFile(responsePath, 'utf8').catch(() => '');
+  if (existingResponse !== responseMarkdown) {
+    const temporaryResponsePath = `${responsePath}.${randomUUID()}.tmp`;
+    await writeFile(temporaryResponsePath, responseMarkdown, { flag: 'wx' });
+    await rename(temporaryResponsePath, responsePath);
+  }
 }
 
 async function ensureCandidateArtifacts(
