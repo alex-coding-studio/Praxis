@@ -25,7 +25,7 @@ import {
 import {
   createDomainModelRequest,
   domainModelPrompt,
-  parseDomainModelResult,
+  parseDomainModelEnvelope,
   type DomainModelRequest,
 } from '../lib/modules/domain-modeling/harness.ts';
 import {
@@ -34,12 +34,27 @@ import {
   readDomainModelRun,
   startDomainModelRun,
 } from '../lib/modules/domain-modeling/runs.ts';
+import { toDomainModelSemanticResult } from '../lib/modules/domain-modeling/producer-adapter.ts';
+import { composeDomainModel } from '../lib/modules/domain-modeling/materializer.ts';
 import type { RegisteredProject } from '../lib/project-registry.ts';
 import type { startLocalAgentRun } from '../lib/agents/transport.ts';
 import {
   readDomainModelInstructions,
   saveDomainModelInstructions,
 } from '../lib/modules/domain-modeling/context.ts';
+
+function composedResult(raw: string, request: DomainModelRequest) {
+  const semantic = toDomainModelSemanticResult(
+    parseDomainModelEnvelope(raw, request),
+  );
+  return semantic.outcome === 'model-change'
+    ? {
+        outcome: 'applied' as const,
+        summary: semantic.summary,
+        model: composeDomainModel(request.model, semantic),
+      }
+    : semantic;
+}
 
 async function fixture(t: { after: (fn: () => Promise<void>) => void }) {
   const rootPath = await mkdtemp(path.join(os.tmpdir(), 'domain-model-'));
@@ -260,7 +275,7 @@ void test('the Domain Model Harness composes one incremental patch', () => {
     },
   };
 
-  const result = parseDomainModelResult(JSON.stringify(output), request);
+  const result = composedResult(JSON.stringify(output), request);
 
   assert.equal(result.outcome, 'applied');
   if (result.outcome === 'applied') {
@@ -277,7 +292,7 @@ void test('the Domain Model Harness composes one incremental patch', () => {
   assert.match(domainModelPrompt(request), /omit every unchanged Entity/i);
   assert.throws(
     () =>
-      parseDomainModelResult(
+      composedResult(
         JSON.stringify({ ...output, model: initialProposal() }),
         request,
       ),
@@ -285,7 +300,7 @@ void test('the Domain Model Harness composes one incremental patch', () => {
   );
   assert.throws(
     () =>
-      parseDomainModelResult(
+      composedResult(
         JSON.stringify({
           ...output,
           patch: {
@@ -299,7 +314,7 @@ void test('the Domain Model Harness composes one incremental patch', () => {
       ),
     /preserve every Field/,
   );
-  const removedField = parseDomainModelResult(
+  const removedField = composedResult(
     JSON.stringify({
       ...output,
       patch: {
@@ -317,7 +332,7 @@ void test('the Domain Model Harness composes one incremental patch', () => {
     assert.equal(removedField.model.entities[0]!.fields.length, 1);
   assert.throws(
     () =>
-      parseDomainModelResult(
+      composedResult(
         JSON.stringify({
           ...output,
           patch: {
@@ -339,7 +354,7 @@ void test('the Domain Model Harness composes one incremental patch', () => {
   );
   assert.throws(
     () =>
-      parseDomainModelResult(
+      composedResult(
         JSON.stringify({
           ...output,
           patch: undefined,
@@ -695,7 +710,7 @@ void test('the Harness binds responses to one exact model state', () => {
     },
     previousSummary: '',
   });
-  const result = parseDomainModelResult(
+  const result = composedResult(
     JSON.stringify({
       harnessVersion: 2,
       requestId: request.requestId,
@@ -710,10 +725,7 @@ void test('the Harness binds responses to one exact model state', () => {
   assert.equal(result.outcome, 'applied');
   assert.throws(
     () =>
-      parseDomainModelResult(
-        JSON.stringify({ ...result, baseVersion: 1 }),
-        request,
-      ),
+      composedResult(JSON.stringify({ ...result, baseVersion: 1 }), request),
     /does not match/,
   );
 });
