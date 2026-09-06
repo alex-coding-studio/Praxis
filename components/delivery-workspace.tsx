@@ -525,226 +525,236 @@ export function DeliveryWorkspace({
           className="relative min-h-0 flex-1 overflow-y-auto p-5 pb-64"
         >
           <div ref={setSentinel} aria-hidden="true" className="h-px" />
-          <ExecutionStickyHeaderFrame stuck={stuck}>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-3">
-                <span
-                  className={cn(
-                    'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium',
-                    targetPresentation?.badge ??
-                      'bg-secondary text-muted-foreground',
-                  )}
-                >
-                  {targetPresentation && (
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        'size-1.5 rounded-full',
-                        targetPresentation.dot,
-                        targetPresentation.pulse && 'animate-pulse',
-                      )}
-                    />
-                  )}
-                  {t(labels[target.status])}
-                </span>
-                {run && (
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {running && record?.actor ? `${record.actor} · ` : ''}
-                    {Math.floor(elapsed / 60)}:
-                    {String(elapsed % 60).padStart(2, '0')}
+          {record?.runs.length ||
+          record?.brief ||
+          record?.response ||
+          record?.workspace ? (
+            <ExecutionStickyHeaderFrame stuck={stuck}>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium',
+                      targetPresentation?.badge ??
+                        'bg-secondary text-muted-foreground',
+                    )}
+                  >
+                    {targetPresentation && (
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'size-1.5 rounded-full',
+                          targetPresentation.dot,
+                          targetPresentation.pulse && 'animate-pulse',
+                        )}
+                      />
+                    )}
+                    {t(labels[target.status])}
                   </span>
-                )}
-              </div>
-              {record?.response?.status === 'completed' && (
-                <p className="mt-2 text-sm font-medium text-foreground">
-                  {t(record.response.title)}
-                </p>
-              )}
-              {record?.response && record.response.status !== 'completed' && (
-                <p className="mt-2 line-clamp-3 text-xs text-muted-foreground">
-                  <span className="font-medium">
-                    {t(record.response.title)} —{' '}
-                  </span>
-                  {t(record.response.detail)}
-                </p>
-              )}
-              {running &&
-                record?.progress.find((item) => item.status === 'running') && (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {
-                      record.progress.find((item) => item.status === 'running')!
-                        .title
-                    }
+                  {run && (
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {running && record?.actor ? `${record.actor} · ` : ''}
+                      {Math.floor(elapsed / 60)}:
+                      {String(elapsed % 60).padStart(2, '0')}
+                    </span>
+                  )}
+                </div>
+                {record?.response?.status === 'completed' && (
+                  <p className="mt-2 text-sm font-medium text-foreground">
+                    {t(record.response.title)}
                   </p>
                 )}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(run || record?.lastWithdrawal) && (
-                  <a
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex h-6 items-center rounded-md border px-2 text-[11px]"
-                    href={
-                      record?.lastWithdrawal &&
-                      (!run || record.lastWithdrawal.at > run.startedAt)
-                        ? record.lastWithdrawal.logUrlPath
-                        : `/projects/${projectId}/delivery/${uid}/logs/${run!.id}`
-                    }
-                  >
-                    {t('Log')}
-                  </a>
+                {record?.response && record.response.status !== 'completed' && (
+                  <p className="mt-2 line-clamp-3 text-xs text-muted-foreground">
+                    <span className="font-medium">
+                      {t(record.response.title)} —{' '}
+                    </span>
+                    {t(record.response.detail)}
+                  </p>
                 )}
-                {record?.workspace && (
-                  <Button
-                    variant="outline"
-                    disabled={pending}
-                    className="h-6 gap-1 rounded-md px-2 text-[11px]"
-                    onClick={() => void command('open-workspace')}
-                  >
-                    <FolderOpen className="size-3" />
-                    {t('Open workspace folder')}
-                  </Button>
-                )}
-                {record?.publication && (
-                  <PullRequestChip
-                    pr={{
-                      ...record.publication,
-                      title: record.source.title,
-                      isDraft: record.publication.draft,
-                    }}
-                    stale={false}
-                    className="h-6 rounded-md px-2 text-[11px]"
-                  />
-                )}
-              </div>
-            </div>
-            <div className="flex max-w-full flex-col items-end gap-2">
-              {record &&
-                !record.lastWithdrawal &&
-                !record.acceptedHead &&
-                record.status !== 'completed' && (
-                  <Button
-                    variant="outline"
-                    disabled={pending}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          t(
-                            'Withdraw this unaccepted delivery? Running work will stop, unaccepted workspace changes will be discarded, and any open delivery PR will be closed. Other targets and merged code are unchanged.',
-                          ),
-                        )
-                      )
-                        void command('withdraw');
-                    }}
-                  >
-                    {t('Withdraw delivery')}
-                  </Button>
-                )}
-              {record?.status === 'ready-to-run' && !running && (
-                <Button
-                  disabled={
-                    pending ||
-                    target.sourceChanged ||
-                    target.unmetDependencies.length > 0
-                  }
-                  onClick={() => void command('start')}
-                >
-                  {t('Start delivery')}
-                </Button>
-              )}
-              {record?.status === 'ready-to-run' && !running && (
-                <p className="max-w-full text-right text-[11px] leading-4 text-muted-foreground">
-                  {t(
-                    'Brief confirmed. Click Start delivery to begin implementation.',
+                {running &&
+                  record?.progress.find(
+                    (item) => item.status === 'running',
+                  ) && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {
+                        record.progress.find(
+                          (item) => item.status === 'running',
+                        )!.title
+                      }
+                    </p>
                   )}
-                </p>
-              )}
-              {running ? (
-                <Button
-                  variant="outline"
-                  disabled={pending}
-                  onClick={() => void command('cancel')}
-                >
-                  <Square className="size-3" />
-                  {t('Cancel')}
-                </Button>
-              ) : (
-                record?.brief &&
-                !record.brief.confirmedAt && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(run || record?.lastWithdrawal) && (
+                    <a
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex h-6 items-center rounded-md border px-2 text-[11px]"
+                      href={
+                        record?.lastWithdrawal &&
+                        (!run || record.lastWithdrawal.at > run.startedAt)
+                          ? record.lastWithdrawal.logUrlPath
+                          : `/projects/${projectId}/delivery/${uid}/logs/${run!.id}`
+                      }
+                    >
+                      {t('Log')}
+                    </a>
+                  )}
+                  {record?.workspace && (
+                    <Button
+                      variant="outline"
+                      disabled={pending}
+                      className="h-6 gap-1 rounded-md px-2 text-[11px]"
+                      onClick={() => void command('open-workspace')}
+                    >
+                      <FolderOpen className="size-3" />
+                      {t('Open workspace folder')}
+                    </Button>
+                  )}
+                  {record?.publication && (
+                    <PullRequestChip
+                      pr={{
+                        ...record.publication,
+                        title: record.source.title,
+                        isDraft: record.publication.draft,
+                      }}
+                      stale={false}
+                      className="h-6 rounded-md px-2 text-[11px]"
+                    />
+                  )}
+                </div>
+              </div>
+              <div className="flex max-w-full flex-col items-end gap-2">
+                {record &&
+                  !record.lastWithdrawal &&
+                  !record.acceptedHead &&
+                  record.status !== 'completed' && (
+                    <Button
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            t(
+                              'Withdraw this unaccepted delivery? Running work will stop, unaccepted workspace changes will be discarded, and any open delivery PR will be closed. Other targets and merged code are unchanged.',
+                            ),
+                          )
+                        )
+                          void command('withdraw');
+                      }}
+                    >
+                      {t('Withdraw delivery')}
+                    </Button>
+                  )}
+                {record?.status === 'ready-to-run' && !running && (
                   <Button
-                    variant={
-                      record.brief.openDecisions.length
-                        ? 'secondary'
-                        : 'default'
-                    }
                     disabled={
-                      pending || Boolean(record.brief.openDecisions.length)
+                      pending ||
+                      target.sourceChanged ||
+                      target.unmetDependencies.length > 0
                     }
-                    aria-describedby={
-                      record.brief.openDecisions.length
-                        ? 'brief-confirmation-help'
-                        : undefined
-                    }
-                    onClick={() => void command('confirm-brief')}
+                    onClick={() => void command('start')}
                   >
-                    {!record.brief.openDecisions.length && <Check />}
-                    {t('Confirm delivery brief')}
+                    {t('Start delivery')}
                   </Button>
-                )
-              )}
-              {!running &&
-                record?.brief &&
-                !record.brief.confirmedAt &&
-                record.brief.openDecisions.length > 0 && (
-                  <p
-                    id="brief-confirmation-help"
-                    className="max-w-64 text-right text-xs text-amber-700 dark:text-amber-300"
-                  >
+                )}
+                {record?.status === 'ready-to-run' && !running && (
+                  <p className="max-w-full text-right text-[11px] leading-4 text-muted-foreground">
                     {t(
-                      'Resolve {count} open decisions in the composer before confirming.',
-                      { count: record.brief.openDecisions.length },
+                      'Brief confirmed. Click Start delivery to begin implementation.',
                     )}
                   </p>
                 )}
-              {!running &&
-                record?.publication &&
-                record.status !== 'completed' && (
+                {running ? (
                   <Button
-                    disabled={
-                      pending ||
-                      target.sourceChanged ||
-                      !deliveryCandidateReady(record, record.publication.head)
-                    }
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          t('Accept this delivery and merge its pull request?'),
+                    variant="outline"
+                    disabled={pending}
+                    onClick={() => void command('cancel')}
+                  >
+                    <Square className="size-3" />
+                    {t('Cancel')}
+                  </Button>
+                ) : (
+                  record?.brief &&
+                  !record.brief.confirmedAt && (
+                    <Button
+                      variant={
+                        record.brief.openDecisions.length
+                          ? 'secondary'
+                          : 'default'
+                      }
+                      disabled={
+                        pending || Boolean(record.brief.openDecisions.length)
+                      }
+                      aria-describedby={
+                        record.brief.openDecisions.length
+                          ? 'brief-confirmation-help'
+                          : undefined
+                      }
+                      onClick={() => void command('confirm-brief')}
+                    >
+                      {!record.brief.openDecisions.length && <Check />}
+                      {t('Confirm delivery brief')}
+                    </Button>
+                  )
+                )}
+                {!running &&
+                  record?.brief &&
+                  !record.brief.confirmedAt &&
+                  record.brief.openDecisions.length > 0 && (
+                    <p
+                      id="brief-confirmation-help"
+                      className="max-w-64 text-right text-xs text-amber-700 dark:text-amber-300"
+                    >
+                      {t(
+                        'Resolve {count} open decisions in the composer before confirming.',
+                        { count: record.brief.openDecisions.length },
+                      )}
+                    </p>
+                  )}
+                {!running &&
+                  record?.publication &&
+                  record.status !== 'completed' && (
+                    <Button
+                      disabled={
+                        pending ||
+                        target.sourceChanged ||
+                        !deliveryCandidateReady(record, record.publication.head)
+                      }
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            t(
+                              'Accept this delivery and merge its pull request?',
+                            ),
+                          )
                         )
-                      )
-                        void command('accept');
-                    }}
-                  >
-                    {t('Accept and merge')}
-                  </Button>
-                )}
-              {!running &&
-                record?.existingDelivery &&
-                record.status !== 'completed' && (
-                  <Button
-                    disabled={
-                      pending ||
-                      target.sourceChanged ||
-                      !deliveryEvidenceReady(
-                        record,
-                        record.existingDelivery.head,
-                      )
-                    }
-                    onClick={() => void command('accept-existing')}
-                  >
-                    {t('Confirm existing delivery')}
-                  </Button>
-                )}
-            </div>
-          </ExecutionStickyHeaderFrame>
+                          void command('accept');
+                      }}
+                    >
+                      {t('Accept and merge')}
+                    </Button>
+                  )}
+                {!running &&
+                  record?.existingDelivery &&
+                  record.status !== 'completed' && (
+                    <Button
+                      disabled={
+                        pending ||
+                        target.sourceChanged ||
+                        !deliveryEvidenceReady(
+                          record,
+                          record.existingDelivery.head,
+                        )
+                      }
+                      onClick={() => void command('accept-existing')}
+                    >
+                      {t('Confirm existing delivery')}
+                    </Button>
+                  )}
+              </div>
+            </ExecutionStickyHeaderFrame>
+          ) : null}
           {record?.brief && (
             <section className="my-5">
               <MarkdownReader
@@ -969,6 +979,13 @@ export function DeliveryWorkspace({
               ? 'Delivery feedback'
               : 'Discuss delivery',
           )}
+          description={
+            !record?.brief
+              ? t(
+                  'The task document is already included. Add delivery priorities, extra requirements or scope adjustments. The Agent will prepare a brief first; implementation starts only after your confirmation.',
+                )
+              : undefined
+          }
           running={running}
           collapsed={composerCollapsed}
           onCollapsedChange={setComposerCollapsed}
@@ -1071,7 +1088,11 @@ export function DeliveryWorkspace({
               disabled={pending || running}
               rows={4}
               className="min-h-24 resize-none text-sm"
-              placeholder={t('Describe the outcome or your feedback.')}
+              placeholder={t(
+                record?.brief
+                  ? 'Describe the outcome or your feedback.'
+                  : 'What should this delivery focus on? Add any requirements or scope changes here.',
+              )}
               aria-label={t('Delivery feedback')}
             />
           </AgentComposerShell>

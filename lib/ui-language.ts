@@ -5,6 +5,10 @@ export function isUiLanguage(value: unknown): value is UiLanguage {
 }
 
 export const chineseUi: Record<string, string> = {
+  'The task document is already included. Add delivery priorities, extra requirements or scope adjustments. The Agent will prepare a brief first; implementation starts only after your confirmation.':
+    '任务文档已带入，无需重复粘贴。补充交付重点、额外要求或范围调整；Agent 会先准备简报，确认后才执行。',
+  'What should this delivery focus on? Add any requirements or scope changes here.':
+    '这次交付有什么重点？在这里补充要求或调整范围。',
   'Add a Worker model before starting delivery. Save your settings, then click Start delivery again.':
     '开始交付前，请先添加一个 Worker 模型。保存后，再点击“开始交付”。',
   'Start delivery': '开始交付',
