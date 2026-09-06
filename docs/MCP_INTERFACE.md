@@ -40,16 +40,45 @@ the interoperability baseline this interface targets. The route uses the SDK's
 `WebStandardStreamableHTTPServerTransport`, which speaks Web `Request`/`Response`
 directly, in stateless mode with JSON responses.
 
-[lib/mcp/server.ts](../lib/mcp/server.ts) builds on the SDK's lower-level `Server`
-rather than `McpServer`. `McpServer.registerTool` accepts only a Zod schema or raw Zod
-shape and throws on a plain JSON Schema object. Tool inputs here are authored as JSON
-Schema, and Part 2 must embed the actual Result Contract schemas from
-[lib/materialization/contract.ts](../lib/materialization/contract.ts) under `result`
-without a lossy conversion. `.oxlintrc.json` therefore turns off
-`typescript/no-deprecated` for that one file; the SDK's own guidance is to use `Server`
-for advanced cases.
+[lib/mcp/server.ts](../lib/mcp/server.ts) registers resources and tools through the
+SDK's `McpServer`. `McpServer` accepts only a Zod schema, while Praxis authors tool
+inputs and Result Contracts as JSON Schema, so
+[lib/mcp/schema-adapter.ts](../lib/mcp/schema-adapter.ts) converts them once at
+registration with Zod 4's `z.fromJSONSchema`. The four business contracts are not
+rewritten in Zod, and the contract resources and hashes still come from
+[lib/materialization/contract.ts](../lib/materialization/contract.ts).
 
-### Connecting
+## Schema adapter
+
+`z.fromJSONSchema` is marked experimental upstream, so the pinned release matters and
+its behaviour is measured rather than assumed. Zod is a direct dependency pinned at
+exactly `4.5.4`; a test fails if that changes without the measurements being redone.
+
+The adapter classifies every keyword before converting and **throws at registration**
+for anything it has not classified, so a future contract keyword can never be widened
+silently.
+
+| Class      | Keywords                                                                                                                                                                       | Meaning                                                                                               |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| Enforced   | `type`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const`, `oneOf`, `pattern`, `minLength`, `maxLength`, `minimum`, `maximum`, `minItems`, `maxItems` | Converted and still enforced by the tool-level schema                                                 |
+| Advisory   | `uniqueItems`                                                                                                                                                                  | Converted but **not** enforced at the tool layer; the Result Contract validator remains authoritative |
+| Annotation | `$schema`, `title`, `description`                                                                                                                                              | Carry no constraint                                                                                   |
+
+`uniqueItems` is the one measured gap, and the four contracts use it in 13 places. A
+duplicated array entry passes the tool-level schema and is then refused by the contract's
+own AJV validator with a precise pointer. `tests/mcp-schema-adapter.test.ts` pins both
+halves of that boundary against the real Delivery Planning contract, so the gap cannot
+widen unnoticed and cannot be mistaken for enforcement.
+
+Genuinely unsupported constructs — `not`, `if`/`then`/`else`, `dependentRequired` —
+make the conversion throw, which fails registration rather than serving a weaker tool.
+
+The SDK advertises draft-07 and drops several constraints from the advertised schema
+even where it still enforces them, and it rewrites `oneOf` as `anyOf`. Contract
+resources therefore keep serving the original schema and hash; the advertised tool
+schema is never presented as the contract.
+
+### Connecting### Connecting
 
 The endpoint is `http://127.0.0.1:<actual-port>/api/mcp`. The port is whatever the
 running Host uses; no port is hardcoded in tracked code.
@@ -192,6 +221,15 @@ next cursor. `limitBytes` controls pagination, not which documents are reachable
 
 ### Errors
 
+Argument failures split at a deliberate line. A violation of the **advertised input
+schema** — an unknown field, a wrong type, a bound the schema states — is refused by the
+SDK before the handler runs, and the error text names the offending key. A **semantic**
+failure the schema cannot express — a URI that is not a catalog resource, a cursor that
+does not decode, an unknown project, a contract version that is not served — reaches the
+handler and returns the structured Praxis envelope. The `praxis_read_resource` URI is
+deliberately not constrained by a `pattern` in the tool schema, so its refusal keeps the
+actionable envelope rather than becoming a bare schema error.
+
 Tool failures use the SDK tool-error representation with a structured envelope, not a
 stack trace:
 
@@ -280,8 +318,14 @@ npm run test:mcp
   module, contract and artifact reads against real fixture projects; the shape allowlist
   refusing an existing file outside it; a module resource observing a reservation held in
   this Host's owner registry.
+- [tests/mcp-schema-adapter.test.ts](../tests/mcp-schema-adapter.test.ts) — the keyword
+  classification of all four real contracts, per-keyword enforcement after conversion,
+  required/optional/null handling, the `uniqueItems` advisory boundary against the real
+  contract and its AJV validator, loud failure on unclassified and unsupported
+  constructs, and the pinned Zod release.
 - [tests/mcp-transport.test.ts](../tests/mcp-transport.test.ts) — a real SDK client over
-  HTTP completing initialization, discovery and reads, with bounded 20-second timeouts.
+  HTTP completing initialization, discovery and reads, with bounded 20-second timeouts,
+  including both sides of the argument-failure split.
 
 ## Not in this interface
 

@@ -205,7 +205,7 @@ void test(
 );
 
 void test(
-  'an unknown structural field is rejected instead of being ignored',
+  'an unknown structural field is rejected before the handler runs',
   { timeout: 20_000 },
   async (t) => {
     const url = await listen(t);
@@ -215,10 +215,62 @@ void test(
       arguments: { limit: 5, projectPath: '/etc' },
     });
     assert.equal(result.isError, true);
-    assert.equal(
-      (result.structuredContent as { code: string }).code,
-      'INVALID_ARGUMENT',
-    );
+    const text = (result.content as Array<{ text: string }>)[0]?.text ?? '';
+    assert.match(text, /projectPath/);
+  },
+);
+
+void test(
+  'a value outside the advertised bounds is rejected by the advertised schema',
+  { timeout: 20_000 },
+  async (t) => {
+    const url = await listen(t);
+    const client = await connect(t, url);
+    for (const args of [
+      { limit: 0 },
+      { limit: 101 },
+      { limit: 'many' },
+      { cursor: 7 },
+    ]) {
+      const result = await client.callTool({
+        name: 'praxis_list_projects',
+        arguments: args as Record<string, unknown>,
+      });
+      assert.equal(
+        result.isError,
+        true,
+        `expected ${JSON.stringify(args)} to be refused`,
+      );
+    }
+  },
+);
+
+void test(
+  'a semantic argument failure keeps the structured Praxis envelope',
+  { timeout: 20_000 },
+  async (t) => {
+    const url = await listen(t);
+    const client = await connect(t, url);
+    for (const [uri, code] of [
+      ['file:///etc/passwd', 'INVALID_ARGUMENT'],
+      ['praxis://projects/p1/artifacts/../../etc', 'INVALID_ARGUMENT'],
+      [
+        'praxis://projects/missing/modules/domain-modeling',
+        'PROJECT_NOT_FOUND',
+      ],
+      ['praxis://contracts/praxis.domain-model.result/99', 'CONTRACT_MISMATCH'],
+    ] as const) {
+      const result = await client.callTool({
+        name: 'praxis_read_resource',
+        arguments: { uri },
+      });
+      assert.equal(result.isError, true, `expected ${uri} to be refused`);
+      assert.equal(
+        (result.structuredContent as { code: string }).code,
+        code,
+        `expected ${uri} to report ${code}`,
+      );
+    }
   },
 );
 

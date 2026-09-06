@@ -1,5 +1,3 @@
-import Ajv2020 from 'ajv/dist/2020.js';
-import { invalidArgument } from './errors.ts';
 import {
   DEFAULT_LIST_LIMIT,
   DEFAULT_READ_BYTES,
@@ -33,8 +31,9 @@ export const READ_RESOURCE_INPUT_SCHEMA = {
   properties: {
     uri: {
       type: 'string',
-      pattern: '^praxis://',
-      description: 'A praxis:// resource URI from the catalog.',
+      minLength: 1,
+      description:
+        'A praxis:// resource URI from the catalog. Read praxis://capabilities for the shapes this Host serves.',
     },
     cursor: {
       type: 'string',
@@ -48,30 +47,3 @@ export const READ_RESOURCE_INPUT_SCHEMA = {
     },
   },
 } as const;
-
-const ajv = new Ajv2020({ strict: true, allErrors: true });
-
-const validators = new Map<object, ReturnType<typeof ajv.compile>>();
-
-function validatorFor(schema: object) {
-  let validate = validators.get(schema);
-  if (!validate) {
-    validate = ajv.compile(schema);
-    validators.set(schema, validate);
-  }
-  return validate;
-}
-
-export function validateToolInput<T>(
-  toolName: string,
-  schema: object,
-  value: unknown,
-): T {
-  const validate = validatorFor(schema);
-  const candidate = value ?? {};
-  if (!validate(candidate))
-    throw invalidArgument(
-      `${toolName}: ${ajv.errorsText(validate.errors, { dataVar: 'arguments' })}.`,
-    );
-  return candidate as T;
-}
