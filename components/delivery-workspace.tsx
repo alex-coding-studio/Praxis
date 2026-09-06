@@ -44,6 +44,10 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { MarkdownReader } from '@/components/markdown-reader';
+import {
+  MarkdownReaderDialog,
+  type MarkdownReaderDialogPreview,
+} from '@/components/markdown-reader-dialog';
 import { renderDeliveryBrief } from '@/lib/modules/delivery/documents';
 import { ProjectModuleHeader } from '@/components/project-module-header';
 import { ModuleInstructionsDialog } from '@/components/module-instructions-dialog';
@@ -60,6 +64,7 @@ import type {
 import {
   deliveryCandidateReady,
   deliveryEvidenceReady,
+  deliveryEvidenceBlockers,
   type DeliveryRecord,
 } from '@/lib/modules/delivery/record';
 import { cn } from '@/lib/utils';
@@ -95,6 +100,8 @@ function TargetNode({
   const { t } = useUiText();
   const target = data.target;
   const busy = ['running', 'reviewing', 'briefing'].includes(target.status);
+  const inProgress =
+    busy || ['ready-to-run', 'waiting-for-user'].includes(target.status);
   return (
     <>
       <Handle type="target" position={Position.Left} isConnectable={false} />
@@ -102,7 +109,7 @@ function TargetNode({
         density="standard"
         focused={selected}
         busy={busy}
-        accentColor={busy ? 'var(--graph-running)' : undefined}
+        accentColor={inProgress ? 'var(--graph-running)' : undefined}
         kindLabel={
           <span className="rounded-lg bg-foreground px-1.5 py-0.5 text-[9px] font-medium text-background">
             {t(layers.find((layer) => layer.id === target.sourceKind)!.label)}
@@ -116,14 +123,14 @@ function TargetNode({
               'text-[11px]',
               target.status === 'completed'
                 ? 'text-emerald-600'
-                : busy
+                : inProgress
                   ? 'text-sky-500'
                   : target.status === 'failed'
                     ? 'text-red-500'
                     : 'text-muted-foreground',
             )}
           >
-            {t(labels[target.status])}
+            {t(inProgress ? 'In progress' : labels[target.status])}
           </span>
         }
         footer={
@@ -138,24 +145,125 @@ function TargetNode({
 }
 const nodeTypes = { target: TargetNode };
 
+function InlineTaskDocument({
+  projectId,
+  target,
+}: {
+  projectId: string;
+  target: ExecutableTarget;
+}) {
+  const { t } = useUiText();
+  const [document, setDocument] = useState<MarkdownReaderDialogPreview | null>(
+    null,
+  );
+  const [error, setError] = useState('');
+  const paths = target.outputPaths.join('\n');
+  useEffect(() => {
+    let current = true;
+    void Promise.all(
+      paths
+        .split('\n')
+        .filter(Boolean)
+        .map(async (filePath) => {
+          const response = await fetch(
+            `/api/projects/${projectId}/resources?path=${encodeURIComponent(filePath)}`,
+            { cache: 'no-store' },
+          );
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error);
+          return result.markdown as string;
+        }),
+    ).then(
+      (markdown) => {
+        if (current)
+          setDocument({
+            title: target.title,
+            path: paths,
+            markdown: markdown.join('\n\n---\n\n'),
+          });
+      },
+      (failure) => {
+        if (current) setError(String(failure));
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [projectId, paths, target.title]);
+  if (error)
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        {error}
+      </p>
+    );
+  if (!document)
+    return (
+      <p className="text-sm text-muted-foreground">
+        {t('Loading task document…')}
+      </p>
+    );
+  return (
+    <MarkdownReader
+      title={document.title}
+      filePath={document.path}
+      markdown={document.markdown}
+      initialAnnotationsEnabled={false}
+    />
+  );
+}
+
 export function DeliveryWorkspace({
   projectId,
   initialWorkspace,
   folders,
   initialTarget,
+  initialLayer,
 }: {
   projectId: string;
   initialWorkspace: Workspace;
   folders: ContextBrowserFolder[];
   initialTarget?: string;
+  initialLayer?: string;
 }) {
   const { t } = useUiText();
   const [workspace, setWorkspace] = useState<Workspace>(initialWorkspace);
   const [layer, setLayer] = useState<DeliverySourceKind>(
     initialWorkspace.targets.find((entry) => entry.sourceUid === initialTarget)
-      ?.sourceKind ?? 'mvp',
+      ?.sourceKind ??
+      (layers.some((item) => item.id === initialLayer)
+        ? (initialLayer as DeliverySourceKind)
+        : 'mvp'),
   );
   const [uid, setUid] = useState<string | null>(initialTarget ?? null);
+  function selectDelivery(
+    nextUid: string | null,
+    nextLayer: DeliverySourceKind = layer,
+  ) {
+    setUid(nextUid);
+    setLayer(nextLayer);
+    const url = new URL(window.location.href);
+    url.searchParams.set('layer', nextLayer);
+    if (nextUid) url.searchParams.set('target', nextUid);
+    else url.searchParams.delete('target');
+    window.history.pushState(null, '', url);
+  }
+  useEffect(() => {
+    const restore = () => {
+      const search = new URL(window.location.href).searchParams;
+      const nextUid = search.get('target');
+      const nextLayer = search.get('layer');
+      setUid(nextUid);
+      setLayer(
+        workspace.targets.find((item) => item.sourceUid === nextUid)
+          ?.sourceKind ??
+          (layers.some((item) => item.id === nextLayer)
+            ? (nextLayer as DeliverySourceKind)
+            : 'mvp'),
+      );
+    };
+    window.addEventListener('popstate', restore);
+    return () => window.removeEventListener('popstate', restore);
+  }, [workspace.targets]);
   const [input, setInput] = useState('');
   const [files, setFiles] = useState<Array<{ name: string; base64: string }>>(
     [],
@@ -163,8 +271,12 @@ export function DeliveryWorkspace({
   const [contextRefs, setContextRefs] = useState<string[]>([]);
   const [folderPath, setFolderPath] = useState('');
   const [error, setError] = useState('');
+  const [taskDocument, setTaskDocument] =
+    useState<MarkdownReaderDialogPreview | null>(null);
+  const [readingTask, setReadingTask] = useState(false);
   const [pending, setPending] = useState(false);
   const [settings, setSettings] = useState(false);
+  const [modelNotice, setModelNotice] = useState(false);
   const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null);
   const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
   const [stuck, setStuck] = useState(false);
@@ -190,6 +302,35 @@ export function DeliveryWorkspace({
   const record = workspace.records.find((entry) => entry.sourceUid === uid);
   const run = record?.lastWithdrawal ? undefined : record?.runs.at(-1);
   const running = run?.status === 'running';
+  const initialStage = !record?.brief && !record?.workspace && !run;
+  async function openTaskDocument() {
+    if (!target || readingTask) return;
+    setReadingTask(true);
+    try {
+      const documents = await Promise.all(
+        target.outputPaths.map(async (filePath) => {
+          const response = await fetch(
+            `/api/projects/${projectId}/resources?path=${encodeURIComponent(filePath)}`,
+            { cache: 'no-store' },
+          );
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error);
+          return { path: filePath, markdown: result.markdown as string };
+        }),
+      );
+      setTaskDocument({
+        title: target.title,
+        path: target.outputPaths.join(', '),
+        markdown: documents
+          .map((document) => document.markdown)
+          .join('\n\n---\n\n'),
+      });
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setReadingTask(false);
+    }
+  }
   const load = useCallback(async () => {
     const response = await fetch(`/api/projects/${projectId}/delivery`, {
       cache: 'no-store',
@@ -228,6 +369,13 @@ export function DeliveryWorkspace({
     return () => observer.disconnect();
   }, [scrollRoot, sentinel]);
   async function command(action: string, extra: Record<string, unknown> = {}) {
+    if (action === 'start' && !(record?.models ?? models).workers.length) {
+      setError('');
+      if (record) setModels(record.models);
+      setModelNotice(true);
+      setSettings(true);
+      return false;
+    }
     setPending(true);
     setError('');
     try {
@@ -367,7 +515,7 @@ export function DeliveryWorkspace({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                onClick={() => setUid(null)}
+                onClick={() => selectDelivery(null)}
                 aria-label={t('Back')}
               >
                 <ArrowLeft />
@@ -378,6 +526,16 @@ export function DeliveryWorkspace({
         }
         actions={
           <>
+            {target && !initialStage && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={readingTask || !target.outputPaths.length}
+                onClick={() => void openTaskDocument()}
+              >
+                {t('View task document')}
+              </Button>
+            )}
             <ModuleInstructionsDialog
               endpoint={`/api/projects/${projectId}/delivery-context`}
               title="Development Delivery instructions"
@@ -410,7 +568,7 @@ export function DeliveryWorkspace({
                 <Button
                   key={item.id}
                   variant={layer === item.id ? 'secondary' : 'ghost'}
-                  onClick={() => setLayer(item.id)}
+                  onClick={() => selectDelivery(null, item.id)}
                 >
                   {t(item.label)}
                   <span
@@ -437,7 +595,7 @@ export function DeliveryWorkspace({
               nodesDraggable={false}
               nodesConnectable={false}
               onNodeClick={(_, node) => {
-                setUid(node.id);
+                selectDelivery(node.id);
                 setInput('');
               }}
               fitView
@@ -467,193 +625,273 @@ export function DeliveryWorkspace({
       ) : target ? (
         <div
           ref={setScrollRoot}
-          className="relative min-h-0 flex-1 overflow-y-auto p-5 pb-64"
+          className="relative min-h-0 flex-1 overflow-y-auto px-5 pb-64"
         >
+          <div aria-hidden="true" className="h-5" />
           <div ref={setSentinel} aria-hidden="true" className="h-px" />
-          <ExecutionStickyHeaderFrame stuck={stuck}>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-3">
-                <span
-                  className={cn(
-                    'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium',
-                    targetPresentation?.badge ??
-                      'bg-secondary text-muted-foreground',
-                  )}
-                >
-                  {targetPresentation && (
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        'size-1.5 rounded-full',
-                        targetPresentation.dot,
-                        targetPresentation.pulse && 'animate-pulse',
-                      )}
-                    />
-                  )}
-                  {t(labels[target.status])}
-                </span>
-                {run && (
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {running && record?.actor ? `${record.actor} · ` : ''}
-                    {Math.floor(elapsed / 60)}:
-                    {String(elapsed % 60).padStart(2, '0')}
+          {initialStage && (
+            <InlineTaskDocument
+              key={`${target.sourceUid}:${target.sourceFingerprint}`}
+              projectId={projectId}
+              target={target}
+            />
+          )}
+          {!initialStage &&
+          (record?.runs.length ||
+            record?.brief ||
+            record?.response ||
+            record?.workspace) ? (
+            <ExecutionStickyHeaderFrame stuck={stuck}>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium',
+                      targetPresentation?.badge ??
+                        'bg-secondary text-muted-foreground',
+                    )}
+                  >
+                    {targetPresentation && (
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'size-1.5 rounded-full',
+                          targetPresentation.dot,
+                          targetPresentation.pulse && 'animate-pulse',
+                        )}
+                      />
+                    )}
+                    {t(labels[target.status])}
                   </span>
-                )}
-              </div>
-              {record?.response && (
-                <p className="mt-2 line-clamp-3 text-xs text-muted-foreground">
-                  <span className="font-medium">
-                    {t(record.response.title)} —{' '}
-                  </span>
-                  {t(record.response.detail)}
-                </p>
-              )}
-              {running &&
-                record?.progress.find((item) => item.status === 'running') && (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {
-                      record.progress.find((item) => item.status === 'running')!
-                        .title
-                    }
+                  {run && (
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {running && record?.actor ? `${record.actor} · ` : ''}
+                      {Math.floor(elapsed / 60)}:
+                      {String(elapsed % 60).padStart(2, '0')}
+                    </span>
+                  )}
+                </div>
+                {record?.response?.status === 'completed' && (
+                  <p className="mt-2 text-sm font-medium text-foreground">
+                    {t(record.response.title)}
                   </p>
                 )}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(run || record?.lastWithdrawal) && (
-                  <a
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex h-6 items-center rounded-md border px-2 text-[11px]"
-                    href={
-                      record?.lastWithdrawal &&
-                      (!run || record.lastWithdrawal.at > run.startedAt)
-                        ? record.lastWithdrawal.logUrlPath
-                        : `/projects/${projectId}/delivery/${uid}/logs/${run!.id}`
-                    }
-                  >
-                    {t('Log')}
-                  </a>
+                {record?.response && record.response.status !== 'completed' && (
+                  <p className="mt-2 line-clamp-3 text-xs text-muted-foreground">
+                    <span className="font-medium">
+                      {t(record.response.title)} —{' '}
+                    </span>
+                    {t(record.response.detail)}
+                  </p>
                 )}
-                {record?.workspace && (
-                  <Button
-                    variant="outline"
-                    disabled={pending}
-                    className="h-6 gap-1 rounded-md px-2 text-[11px]"
-                    onClick={() => void command('open-workspace')}
-                  >
-                    <FolderOpen className="size-3" />
-                    {t('Open workspace folder')}
-                  </Button>
-                )}
-                {record?.publication && (
-                  <PullRequestChip
-                    pr={{
-                      ...record.publication,
-                      title: record.source.title,
-                      isDraft: record.publication.draft,
-                    }}
-                    stale={false}
-                    className="h-6 rounded-md px-2 text-[11px]"
-                  />
-                )}
+                {running &&
+                  record?.progress.find(
+                    (item) => item.status === 'running',
+                  ) && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {
+                        record.progress.find(
+                          (item) => item.status === 'running',
+                        )!.title
+                      }
+                    </p>
+                  )}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(run || record?.lastWithdrawal) && (
+                    <a
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex h-6 items-center rounded-md border px-2 text-[11px]"
+                      href={
+                        record?.lastWithdrawal &&
+                        (!run || record.lastWithdrawal.at > run.startedAt)
+                          ? record.lastWithdrawal.logUrlPath
+                          : `/projects/${projectId}/delivery/${uid}/logs/${run!.id}`
+                      }
+                    >
+                      {t('Log')}
+                    </a>
+                  )}
+                  {record?.workspace && (
+                    <Button
+                      variant="outline"
+                      disabled={pending}
+                      className="h-6 gap-1 rounded-md px-2 text-[11px]"
+                      onClick={() => void command('open-workspace')}
+                    >
+                      <FolderOpen className="size-3" />
+                      {t('Open workspace folder')}
+                    </Button>
+                  )}
+                  {record?.publication && (
+                    <PullRequestChip
+                      pr={{
+                        ...record.publication,
+                        title: record.source.title,
+                        isDraft: record.publication.draft,
+                      }}
+                      stale={false}
+                      className="h-6 rounded-md px-2 text-[11px]"
+                    />
+                  )}
+                </div>
               </div>
-            </div>
-            <div className="flex flex-col items-end gap-2">
-              {record &&
-                !record.lastWithdrawal &&
-                !record.acceptedHead &&
-                record.status !== 'completed' && (
-                  <Button
-                    variant="outline"
-                    disabled={pending}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          t(
-                            'Withdraw this unaccepted delivery? Running work will stop, unaccepted workspace changes will be discarded, and any open delivery PR will be closed. Other targets and merged code are unchanged.',
-                          ),
+              <div className="flex max-w-full flex-col items-end gap-2">
+                {record &&
+                  !record.lastWithdrawal &&
+                  !record.acceptedHead &&
+                  record.status !== 'completed' && (
+                    <Button
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            t(
+                              'Withdraw this unaccepted delivery? Running work will stop, unaccepted workspace changes will be discarded, and any open delivery PR will be closed. Other targets and merged code are unchanged.',
+                            ),
+                          )
                         )
-                      )
-                        void command('withdraw');
-                    }}
-                  >
-                    {t('Withdraw delivery')}
-                  </Button>
-                )}
-              {running ? (
-                <Button
-                  variant="outline"
-                  disabled={pending}
-                  onClick={() => void command('cancel')}
-                >
-                  <Square className="size-3" />
-                  {t('Cancel')}
-                </Button>
-              ) : (
-                record?.brief &&
-                !record.brief.confirmedAt && (
+                          void command('withdraw');
+                      }}
+                    >
+                      {t('Withdraw delivery')}
+                    </Button>
+                  )}
+                {record?.status === 'ready-to-run' && !running && (
                   <Button
                     disabled={
-                      pending || Boolean(record.brief.openDecisions.length)
+                      pending ||
+                      target.sourceChanged ||
+                      target.unmetDependencies.length > 0
                     }
-                    onClick={() => void command('confirm-brief')}
+                    onClick={() => void command('start')}
                   >
-                    <Check />
-                    {t('Confirm delivery brief')}
+                    {t('Start delivery')}
                   </Button>
-                )
-              )}
+                )}
+                {record?.status === 'ready-to-run' && !running && (
+                  <p className="max-w-full text-right text-[11px] leading-4 text-muted-foreground">
+                    {t(
+                      'Brief confirmed. Click Start delivery to begin implementation.',
+                    )}
+                  </p>
+                )}
+                {running ? (
+                  <Button
+                    variant="outline"
+                    disabled={pending}
+                    onClick={() => void command('cancel')}
+                  >
+                    <Square className="size-3" />
+                    {t('Cancel')}
+                  </Button>
+                ) : (
+                  record?.brief &&
+                  !record.brief.confirmedAt && (
+                    <Button
+                      variant={
+                        record.brief.openDecisions.length
+                          ? 'secondary'
+                          : 'default'
+                      }
+                      disabled={
+                        pending || Boolean(record.brief.openDecisions.length)
+                      }
+                      aria-describedby={
+                        record.brief.openDecisions.length
+                          ? 'brief-confirmation-help'
+                          : undefined
+                      }
+                      onClick={() => void command('confirm-brief')}
+                    >
+                      {!record.brief.openDecisions.length && <Check />}
+                      {t('Confirm delivery brief')}
+                    </Button>
+                  )
+                )}
+                {!running &&
+                  record?.brief &&
+                  !record.brief.confirmedAt &&
+                  record.brief.openDecisions.length > 0 && (
+                    <p
+                      id="brief-confirmation-help"
+                      className="max-w-64 text-right text-xs text-amber-700 dark:text-amber-300"
+                    >
+                      {t(
+                        'Resolve {count} open decisions in the composer before confirming.',
+                        { count: record.brief.openDecisions.length },
+                      )}
+                    </p>
+                  )}
+                {!running &&
+                  record?.publication &&
+                  record.status !== 'completed' && (
+                    <Button
+                      disabled={
+                        pending ||
+                        target.sourceChanged ||
+                        !deliveryCandidateReady(record, record.publication.head)
+                      }
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            t(
+                              'Accept this delivery and merge its pull request?',
+                            ),
+                          )
+                        )
+                          void command('accept');
+                      }}
+                    >
+                      {t('Accept and merge')}
+                    </Button>
+                  )}
+                {!running &&
+                  record?.existingDelivery &&
+                  record.status !== 'completed' && (
+                    <Button
+                      disabled={
+                        pending ||
+                        target.sourceChanged ||
+                        !deliveryEvidenceReady(
+                          record,
+                          record.existingDelivery.head,
+                        )
+                      }
+                      onClick={() => void command('accept-existing')}
+                    >
+                      {t('Confirm existing delivery')}
+                    </Button>
+                  )}
+              </div>
               {!running &&
                 record?.publication &&
-                record.status !== 'completed' && (
-                  <Button
-                    disabled={
-                      pending ||
-                      target.sourceChanged ||
-                      !deliveryCandidateReady(record, record.publication.head)
-                    }
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          t('Accept this delivery and merge its pull request?'),
-                        )
-                      )
-                        void command('accept');
-                    }}
-                  >
-                    {t('Accept and merge')}
-                  </Button>
-                )}
-              {!running &&
-                record?.existingDelivery &&
-                record.status !== 'completed' && (
-                  <Button
-                    disabled={
-                      pending ||
-                      target.sourceChanged ||
-                      !deliveryEvidenceReady(
+                record.status !== 'completed' &&
+                deliveryEvidenceBlockers(record, record.publication.head)
+                  .length > 0 && (
+                  <section className="basis-full border-t border-border pt-3">
+                    <ul className="flex flex-wrap gap-x-5 gap-y-2 text-[11px] leading-4 text-muted-foreground">
+                      {deliveryEvidenceBlockers(
                         record,
-                        record.existingDelivery.head,
-                      )
-                    }
-                    onClick={() => void command('accept-existing')}
-                  >
-                    {t('Confirm existing delivery')}
-                  </Button>
+                        record.publication.head,
+                      ).map((blocker) => (
+                        <li key={`${blocker.message}:${blocker.id ?? ''}`}>
+                          {t(blocker.message, { id: blocker.id ?? '' })}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
                 )}
-            </div>
-          </ExecutionStickyHeaderFrame>
-          <details className="my-5 text-sm">
-            <summary className="cursor-pointer text-muted-foreground">
-              {t('Source')}
-            </summary>
-            <p className="mt-3 whitespace-pre-wrap">{target.summary}</p>
-          </details>
+            </ExecutionStickyHeaderFrame>
+          ) : null}
           {record?.brief && (
-            <section className="mb-5">
+            <section className="my-5">
               <MarkdownReader
                 title={t('Delivery brief')}
                 filePath={`delivery/targets/${record.sourceUid}/record.json`}
                 markdown={renderDeliveryBrief(record)}
+                initialAnnotationsEnabled={false}
                 compact
                 onAddFeedback={
                   running
@@ -689,8 +927,10 @@ export function DeliveryWorkspace({
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      setUid(prerequisite.sourceUid);
-                      setLayer(prerequisite.sourceKind);
+                      selectDelivery(
+                        prerequisite.sourceUid,
+                        prerequisite.sourceKind,
+                      );
                     }}
                   >
                     {prerequisite.title}
@@ -759,11 +999,24 @@ export function DeliveryWorkspace({
           {error}
         </div>
       )}
-      <Dialog open={settings} onOpenChange={setSettings}>
+      <Dialog
+        open={settings}
+        onOpenChange={(open) => {
+          setSettings(open);
+          if (!open) setModelNotice(false);
+        }}
+      >
         <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{t('Delivery settings')}</DialogTitle>
           </DialogHeader>
+          {modelNotice && (
+            <p className="text-sm text-muted-foreground">
+              {t(
+                'Add a Worker model before starting delivery. Save your settings, then click Start delivery again.',
+              )}
+            </p>
+          )}
           <section className="space-y-2 border-b border-border pb-4">
             <h3 className="text-sm font-medium">{t('Orchestrator model')}</h3>
             <p className="text-xs text-muted-foreground">
@@ -837,13 +1090,20 @@ export function DeliveryWorkspace({
           <Button
             disabled={pending}
             onClick={async () => {
-              if (await command('models', { models })) setSettings(false);
+              if (await command('models', { models })) {
+                setSettings(false);
+                setModelNotice(false);
+              }
             }}
           >
             {t('Save')}
           </Button>
         </DialogContent>
       </Dialog>
+      <MarkdownReaderDialog
+        preview={taskDocument}
+        onClose={() => setTaskDocument(null)}
+      />
       {target && (
         <AgentGraphComposerCard
           title={t(
@@ -953,7 +1213,11 @@ export function DeliveryWorkspace({
               disabled={pending || running}
               rows={4}
               className="min-h-24 resize-none text-sm"
-              placeholder={t('Describe the outcome or your feedback.')}
+              placeholder={t(
+                record?.brief
+                  ? 'Describe the outcome or your feedback.'
+                  : 'What should this delivery focus on? Add any requirements or scope changes here.',
+              )}
               aria-label={t('Delivery feedback')}
             />
           </AgentComposerShell>

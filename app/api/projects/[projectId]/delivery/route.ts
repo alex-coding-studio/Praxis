@@ -94,7 +94,17 @@ export async function POST(request: Request, context: RouteContext) {
         );
     } else if (input.action === 'confirm-brief')
       await confirmDeliveryBrief(project, input.uid, input.expectedRevision);
-    else if (input.action === 'send') {
+    else if (input.action === 'start') {
+      const record = await readDeliveryRecord(project, input.uid);
+      if (!record?.brief?.confirmedAt)
+        throw new PublicApiError('Confirm the delivery brief first.', 409);
+      await submitDeliveryInput(
+        project,
+        input.uid,
+        'Implement the confirmed delivery brief.',
+        input.expectedRevision,
+      );
+    } else if (input.action === 'send') {
       if (input.files?.length) {
         const files = await saveDeliveryAttachments(
           project,

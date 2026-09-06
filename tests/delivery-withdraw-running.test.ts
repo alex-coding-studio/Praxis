@@ -65,6 +65,9 @@ void test('withdrawal drains publication after provider interruption before clos
   const finish = Promise.withResolvers<void>();
   t.mock.module('../lib/modules/delivery/publication.ts', {
     namedExports: {
+      readyDeliveryForReview: async () => {
+        throw new Error('Canceled delivery must not request review.');
+      },
       publishDeliveryCandidate: async () => {
         started.resolve();
         await finish.promise;

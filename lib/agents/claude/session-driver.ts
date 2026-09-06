@@ -292,7 +292,7 @@ export class ClaudeSessionDriver implements AgentSessionDriver {
         mcpUrl: `http://127.0.0.1:${port}/mcp/${state.thread.threadId}`,
         token: state.token,
         toolNames,
-        instructions: resume ? undefined : state.instructions,
+        instructions: state.instructions,
       }),
     ];
     const environment = { ...(this.options.environment ?? process.env) };

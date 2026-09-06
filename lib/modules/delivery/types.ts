@@ -44,6 +44,7 @@ export type DeliveryBrief = {
   included: string[];
   excluded: string[];
   criteria: Array<{ id: string; description: string; verification: string }>;
+  userAcceptance?: string[];
   openDecisions: string[];
   confirmedAt: string | null;
 };

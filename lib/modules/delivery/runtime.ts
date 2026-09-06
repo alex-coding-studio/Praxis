@@ -25,14 +25,22 @@ import {
   updateDeliveryRecord,
 } from './storage.ts';
 import { selectDeliveryModel } from './models.ts';
-import { publishDeliveryCandidate } from './publication.ts';
+import {
+  publishDeliveryCandidate,
+  readyDeliveryForReview,
+} from './publication.ts';
 import { deliveryGit, prepareDeliveryWorkspace } from './workspace.ts';
 import {
+  DELIVERY_PRINCIPLES,
   ORCHESTRATOR_INSTRUCTIONS,
   REVIEWER_INSTRUCTIONS,
   WORKER_INSTRUCTIONS,
 } from './instructions.ts';
-import type { DeliveryRecord, DeliveryRun } from './record.ts';
+import {
+  shouldPrepareDeliveryReview,
+  type DeliveryRecord,
+  type DeliveryRun,
+} from './record.ts';
 import { claimDeliveryTarget } from './ownership.ts';
 import { recognizeExistingDelivery } from './existing-delivery.ts';
 
@@ -268,7 +276,7 @@ async function executeDelivery(
         run.kind === 'brief' || role === 'REVIEWER'
           ? ('read-only' as const)
           : ('workspace-write' as const),
-      instructions,
+      instructions: `${DELIVERY_PRINCIPLES}\n\n${instructions}`,
       hostJobs: run.kind !== 'brief' && role !== 'REVIEWER',
       advertiseHostJobs: role === 'ORCHESTRATOR',
     };
@@ -496,6 +504,7 @@ async function executeDelivery(
             !args.required &&
             value.review?.head === head &&
             value.review.disposition === 'required' &&
+            value.review.reviewerSessionId &&
             !value.review.approved
           )
             throw new PublicApiError(
@@ -514,7 +523,7 @@ async function executeDelivery(
     ),
     hostTool(
       'save_delivery_brief',
-      'Save the proposed outcome and acceptance for user confirmation.',
+      'Save the proposed outcome for confirmation. Criteria contain only technical checks; place subjective visual or experience judgments in userAcceptance, never in technical gates.',
       {
         outcome: { type: 'string' },
         included: { type: 'array', items: { type: 'string' } },
@@ -533,6 +542,7 @@ async function executeDelivery(
           },
         },
         openDecisions: { type: 'array', items: { type: 'string' } },
+        userAcceptance: { type: 'array', items: { type: 'string' } },
       },
       async (args) => {
         assertActive();
@@ -558,6 +568,10 @@ async function executeDelivery(
             excluded: strings(args.excluded, 'Excluded'),
             criteria,
             openDecisions: strings(args.openDecisions, 'Open decisions'),
+            userAcceptance: strings(
+              args.userAcceptance ?? [],
+              'User acceptance',
+            ),
             confirmedAt: null,
           };
           current.checks = [];
@@ -667,6 +681,7 @@ async function executeDelivery(
             role === 'worker' ? 'WORKER' : 'REVIEWER',
             JSON.stringify({
               instruction,
+              stopAt: current.stopAt ?? 'ready-for-review',
               brief: current.brief,
               userInstructions: current.instructions,
               moduleInstructions: run.moduleInstructions,
@@ -789,6 +804,7 @@ async function executeDelivery(
       'ORCHESTRATOR',
       JSON.stringify({
         kind: run.kind,
+        stopAt: current.stopAt ?? 'ready-for-review',
         input: run.input,
         source: current.source,
         contextRoot: project.planningPath,
@@ -822,6 +838,18 @@ async function executeDelivery(
         });
       },
     );
+    assertActive();
+    const delivered = await record();
+    if (run.kind !== 'brief' && shouldPrepareDeliveryReview(delivered)) {
+      await readyDeliveryForReview(project, uid);
+      log.append({
+        level: 'INFO',
+        actor: 'HOST',
+        phase: 'PUBLISH',
+        event: 'delivery.ready-for-review',
+        message: `${delivered.publication!.url} is ready for review. User acceptance is still pending.`,
+      });
+    }
     assertActive();
     await updateDeliveryRecord(project, uid, (value) => {
       const storedRun = value.runs.find((entry) => entry.id === run.id)!;

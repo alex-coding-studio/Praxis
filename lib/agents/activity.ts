@@ -20,7 +20,11 @@ export function redactRecord(text: string) {
     )
     .replace(/(Bearer\s+)\S+/gi, '$1[redacted]')
     .replace(
-      /((?:password|token|api[_-]?key|secret)\s*[:=]\s*)[^\s,;]+/gi,
+      /(--(?:api[-_]key|access[-_]token|refresh[-_]token|token|password|secret)\s+)(?:"[^"]*"|'[^']*'|\S+)/gi,
+      '$1[redacted]',
+    )
+    .replace(
+      /((?:password|token|api[_-]?key|secret)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
       '$1[redacted]',
     );
 }
@@ -85,15 +89,34 @@ export function readLocalAgentActivity(
             ? 'Agent report received.'
             : redactActivity(item.text),
         };
-      if (item?.type === 'tool_use')
+      if (item?.type === 'tool_use') {
+        const input =
+          item.input && typeof item.input === 'object'
+            ? (item.input as Record<string, unknown>)
+            : {};
+        const detail =
+          item.name === 'Bash' && typeof input.command === 'string'
+            ? input.command.trim().split('\n')[0]
+            : typeof input.file_path === 'string'
+              ? input.file_path
+              : typeof input.path === 'string'
+                ? input.path
+                : '';
         return {
           kind: 'tool',
           phase: 'started',
-          summary: redactActivity(`Running tool: ${String(item.name)}`),
+          summary: redactActivity(
+            `Running tool: ${String(item.name)}${detail ? ` — ${detail}` : ''}`,
+          ),
         };
+      }
     }
   }
-  if (event.type === 'turn.failed' || event.type === 'error')
+  if (
+    event.type === 'turn.failed' ||
+    event.type === 'error' ||
+    (event.type === 'result' && event.is_error === true)
+  )
     return { kind: 'result', summary: 'Agent reported an execution error.' };
   if (event.type === 'turn.completed' || event.type === 'result')
     return { kind: 'result', summary: 'Agent call completed.' };
