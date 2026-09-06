@@ -133,6 +133,8 @@ void test('a validated Agent result becomes one formal terminal Delivery Map', (
     map.contracts[0]!.id,
     map.contracts[1]!.id,
   ]);
+  assert.deepEqual(map.contracts[0]!.sourceClaimIds, ['CLAIM-1']);
+  assert.deepEqual(map.contracts[1]!.sourceClaimIds, ['CLAIM-1']);
   assert.match(
     renderWhatToDoContract(map.contracts[1]!),
     new RegExp(map.contracts[0]!.id),

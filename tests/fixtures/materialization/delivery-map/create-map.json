@@ -28,7 +28,7 @@
           }
         ],
         "validationExpectations": ["Run project checks."],
-        "sourceClaimIds": [],
+        "sourceClaimIds": ["CLAIM-1"],
         "openDecisions": [],
         "deliveryStrategy": {
           "kind": "vertical-slice",
@@ -65,7 +65,7 @@
       }
     ]
   },
-  "what-to-do/runs/RUN-U0/contracts/NODE-U2/output.md": "# Deliver accepted behavior\n\nOne independently deliverable behavior.\n\n## Outcome\n\nThe behavior is available.\n\n## Included scope\n\n- Accepted behavior\n\n## Excluded scope\n\n- None\n\n## Product rules\n\n- Preserve the accepted behavior.\n\n## Domain impact\n\n- Kind: none\n- Reason: No Domain change is needed.\n- Evidence: what-to-do/repository-context/facts.json\n\n## Required experience states\n\n- Ready\n- Error\n\n## Repository constraints\n\n- Use project-owned checks.\n\n## Acceptance\n\n- **AC-1** The user reaches the behavior.\n  - Pass: The behavior works.\n  - Evidence: Focused behavior evidence.\n\n## Validation expectations\n\n- Run project checks.\n\n## Dependencies\n\n- None\n\n## Source claims\n\n- None\n\n## Delivery strategy\n\n- Kind: vertical-slice\n- Reason: The outcome is independently usable.\n",
+  "what-to-do/runs/RUN-U0/contracts/NODE-U2/output.md": "# Deliver accepted behavior\n\nOne independently deliverable behavior.\n\n## Outcome\n\nThe behavior is available.\n\n## Included scope\n\n- Accepted behavior\n\n## Excluded scope\n\n- None\n\n## Product rules\n\n- Preserve the accepted behavior.\n\n## Domain impact\n\n- Kind: none\n- Reason: No Domain change is needed.\n- Evidence: what-to-do/repository-context/facts.json\n\n## Required experience states\n\n- Ready\n- Error\n\n## Repository constraints\n\n- Use project-owned checks.\n\n## Acceptance\n\n- **AC-1** The user reaches the behavior.\n  - Pass: The behavior works.\n  - Evidence: Focused behavior evidence.\n\n## Validation expectations\n\n- Run project checks.\n\n## Dependencies\n\n- None\n\n## Source claims\n\n- CLAIM-1\n\n## Delivery strategy\n\n- Kind: vertical-slice\n- Reason: The outcome is independently usable.\n",
   "what-to-do/runs/RUN-U0/semantic-result.json": {
     "schemaVersion": 1,
     "contract": {
