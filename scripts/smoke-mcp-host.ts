@@ -204,6 +204,42 @@ try {
     'a browser origin outside loopback must be refused',
   );
 
+  const handshake = {
+    jsonrpc: '2.0' as const,
+    id: 5,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      clientInfo: { name: 'praxis-smoke', version: '0' },
+    },
+  };
+  await credentials.disableMcpEndpoint(home);
+  assert.equal(
+    (await callMcp(origin, token, handshake)).status,
+    404,
+    'disable must take effect on the running Host without a restart',
+  );
+  await credentials.enableMcpEndpoint(home);
+  assert.equal(
+    (await callMcp(origin, token, handshake)).status,
+    200,
+    'enable must take effect on the running Host without a restart',
+  );
+  await credentials.rotateMcpToken(home);
+  const rotated = await credentials.readMcpCredentials(home);
+  assert.ok(rotated && rotated.token !== token, 'rotation must issue a token');
+  assert.equal(
+    (await callMcp(origin, token, handshake)).status,
+    401,
+    'a rotated-away credential must stop working immediately',
+  );
+  assert.equal(
+    (await callMcp(origin, rotated.token, handshake)).status,
+    200,
+    'the rotated credential must work without a restart',
+  );
+
   await credentials.disableMcpEndpoint(home);
   process.stdout.write(
     `MCP_HOST_SMOKE_OK pid=${served.host.activeRunRegistry.hostPid} port=${port} tools=${served.tools.join(',')}\n`,

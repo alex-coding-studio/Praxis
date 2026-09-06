@@ -8,9 +8,10 @@ deterministic publication and evidence.
 This document records the settled interface. It is delivered in Parts. **This release
 implements Part 1 (the endpoint, its connection boundary and the read surface), Part 2
 (prepared operations and the Product Exploration submission slice), Part 3 (Scope
-Decomposition) and Part 4 (Domain Modeling and Delivery Planning).** All four modules
-can now be prepared against and submitted to. Acceptance, Agent dispatch and GitHub
-capability are not served here, and none is advertised.
+Decomposition), Part 4 (Domain Modeling and Delivery Planning) and Part 5 (client
+acceptance and these instructions).** All four modules can now be prepared against and
+submitted to. Acceptance, Agent dispatch and GitHub capability are not served here, and
+none is advertised.
 
 ## Served in this release
 
@@ -77,10 +78,12 @@ even where it still enforces them, and it rewrites `oneOf` as `anyOf`. Contract
 resources therefore keep serving the original schema and hash; the advertised tool
 schema is never presented as the contract.
 
-### Connecting
+## Installing in a client
 
 The endpoint is `http://127.0.0.1:<actual-port>/api/mcp`. The port is whatever the
 running Host uses; no port is hardcoded in tracked code.
+
+### 1. Enable the endpoint and find it
 
 ```bash
 praxis mcp enable
@@ -90,16 +93,85 @@ praxis mcp enable
 praxis mcp info
 ```
 
-`praxis mcp info` prints the endpoint for each managed background instance and the path
-of the credential file. It never prints the credential, and it does not start, restart
-or modify a running project. Start the Host with the existing lifecycle command:
+`praxis mcp info` prints the endpoint for every running managed instance and the path of
+the credential file. It never prints the credential, and it does not start, restart or
+modify a running project. Start the Host with the existing lifecycle command:
 
 ```bash
 praxis start -d --port 3101
 ```
 
-An offline Host produces an ordinary connection failure; start it rather than spawning
-a competing writer.
+An offline Host produces an ordinary connection failure; start it rather than spawning a
+competing writer. `enable`, `disable` and `rotate` are read on the next request, so a
+Host that is already running picks them up without a restart.
+
+### 2. Put the credential in the environment, not in a config file
+
+Both clients below read the credential from `PRAXIS_MCP_TOKEN`, so it is never written
+into client configuration. Read it from the `0600` file rather than pasting it, which
+also keeps it out of shell history:
+
+```bash
+export PRAXIS_MCP_TOKEN="$(python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/.praxis/mcp/credentials.json")))["token"])')"
+```
+
+Put that line in the shell profile the client inherits. A client started without the
+variable fails with the endpoint's own `401` text, which names the credential file.
+
+### 3. Codex
+
+```bash
+codex mcp add praxis --url http://127.0.0.1:3101/api/mcp --bearer-token-env-var PRAXIS_MCP_TOKEN
+```
+
+This writes an `[mcp_servers.praxis]` table to `~/.codex/config.toml` holding the URL and
+the **name** of the environment variable. Adding a server rewrites that file through
+Codex's own serializer, so unrelated entries may come back reordered. Check with
+`codex mcp get praxis`, and remove it with `codex mcp remove praxis`.
+
+### 4. Claude Code
+
+```bash
+claude mcp add --transport http praxis http://127.0.0.1:3101/api/mcp --header 'Authorization: Bearer ${PRAXIS_MCP_TOKEN}'
+```
+
+Keep the single quotes: `${PRAXIS_MCP_TOKEN}` is stored literally and expanded by Claude
+Code when it connects, so `~/.claude.json` holds no credential. Add `-s user` for every
+project on this machine rather than the current one. Check with `claude mcp list`, and
+remove it with `claude mcp remove praxis`.
+
+### 5. Disable and rotate
+
+```bash
+praxis mcp disable
+```
+
+```bash
+praxis mcp rotate
+```
+
+`disable` denies new work immediately while an operation that is already publishing runs
+to completion, and retains the credential so `praxis mcp enable` restores the same one.
+`rotate` issues a new credential and the previous one stops working on the next request;
+every configured client needs the new value. Both take effect without restarting the
+Host.
+
+### A first conversation
+
+Ask the assistant to read before it writes. Preparation is what turns a request into an
+operation; nothing is published until a submission tool is called.
+
+> Read `praxis://projects` and tell me which projects are registered.
+
+> Read the Delivery Planning module resource for that project, then prepare a
+> `delivery-planning` operation that plans the accepted Feature it lists.
+
+> Here is the Delivery Map I want. Submit it against the contract that operation returned.
+
+The prepare result carries the Result Contract identity, the frozen Basis and the name of
+the submission tool to call, so the assistant does not have to guess any of them. If the
+project state moved while it was reasoning, the submission is refused as `STALE_BASIS`
+and the operation stays preparable — read the module resource again and prepare a new one.
 
 ## Security boundary
 
@@ -400,6 +472,30 @@ npm run test:mcp
   HTTP completing initialization, discovery and reads, with bounded 20-second timeouts,
   including both sides of the argument-failure split, and `praxis://capabilities` naming
   exactly the tools the server registers.
+- [tests/cli-lifecycle.test.ts](../tests/cli-lifecycle.test.ts) — `praxis mcp info`
+  reporting the endpoint of a running managed server, and saying so when none is running.
+
+```bash
+npm run test:mcp-host-smoke
+```
+
+Builds and starts a real Host, then proves the MCP endpoint and the UI API answer from
+one process and one owner registry, that the endpoint serves the nine implemented tools,
+and that `enable`, `disable` and `rotate` each take effect on the running Host without a
+restart.
+
+### Client acceptance
+
+Verified against a real Host on `127.0.0.1:3101` with the configuration documented above:
+
+| Client              | Configuration                                      | Result                                                                |
+| ------------------- | -------------------------------------------------- | --------------------------------------------------------------------- |
+| Codex CLI 0.153.1   | `bearer_token_env_var` in `~/.codex/config.toml`   | `praxis_list_projects` completed and returned the registered project  |
+| Claude Code 2.1.263 | `${PRAXIS_MCP_TOKEN}` in an `Authorization` header | connected, then `praxis_list_projects` completed with the same answer |
+
+Both calls were read-only against an existing project. A missing or wrong
+`PRAXIS_MCP_TOKEN` produces the endpoint's own `401` envelope in the client's own error
+output, naming the credential file to read.
 
 ## Not in this interface
 
