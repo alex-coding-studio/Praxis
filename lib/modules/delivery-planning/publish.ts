@@ -1,6 +1,19 @@
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { MaterializationError } from '../../materialization/receipt.ts';
+import { writeFileAtomically } from '../../atomic-json-store.ts';
+import { semanticResultHash } from '../../materialization/hash.ts';
+import { materializationLogEntry } from '../../materialization/log.ts';
+import {
+  materializationGuard,
+  receiptIdentity,
+  semanticResultDocument,
+  NO_AFFECTED_IDENTITIES,
+  type MaterializationLog,
+} from '../../materialization/publication.ts';
+import {
+  MaterializationError,
+  type MaterializationReceipt,
+} from '../../materialization/receipt.ts';
 import { withDeliveryState } from '../../delivery-state-lock.ts';
 import { PublicApiError } from '../../api-errors.ts';
 import type { RegisteredProject } from '../../project-registry.ts';
@@ -78,6 +91,7 @@ export type PublishedDeliveryMap = {
   outcome: DeliveryMapResult['outcome'];
   map: WhatToDoDeliveryMap | null;
   contractPaths: Record<string, string>;
+  receipt: MaterializationReceipt;
 };
 
 export function computeDeliveryMap(
@@ -196,6 +210,38 @@ function planningCardProtectsDeliveryMap(card: DeliveryPlanningCard) {
   );
 }
 
+export function deliveryMapReceipt(input: {
+  identity: ReturnType<typeof receiptIdentity>;
+  basis: DeliveryMapBasis;
+  semanticResultHash: string;
+  outcome: MaterializationReceipt['outcome'];
+  map: WhatToDoDeliveryMap | null;
+  publishedAt: string;
+}): MaterializationReceipt {
+  return {
+    schemaVersion: 1,
+    ...input.identity,
+    basis: {
+      fingerprint: input.basis.fingerprint,
+      preparedAt: input.basis.preparedAt,
+    },
+    semanticResultHash: input.semanticResultHash,
+    outcome: input.outcome,
+    affected: {
+      ...NO_AFFECTED_IDENTITIES,
+      contractIds: (input.map?.contracts ?? []).map((contract) => contract.id),
+    },
+    publication: input.map
+      ? {
+          target: 'current-map',
+          at: input.publishedAt,
+          revision: input.map.runId,
+        }
+      : null,
+    failure: null,
+  };
+}
+
 export async function submitDeliveryMapResult(
   project: RegisteredProject,
   basis: DeliveryMapBasis,
@@ -206,56 +252,111 @@ export async function submitDeliveryMapResult(
   } & DeliveryMapEvidence &
     DeliveryMapFrozenEvidence,
   host: DeliveryPublicationHost,
+  log: MaterializationLog = () => undefined,
 ): Promise<PublishedDeliveryMap> {
-  try {
+  const resultHash = semanticResultHash(result);
+  const identity = receiptIdentity(DELIVERY_MAP_RESULT_CONTRACT, {
+    kind: 'direct',
+    runId: submission.runId,
+  });
+  const guard = materializationGuard({
+    log,
+    identity,
+    basis: { fingerprint: basis.fingerprint, preparedAt: basis.preparedAt },
+    semanticResultHash: resultHash,
+  });
+  const publishedAt = submission.updatedAt ?? new Date().toISOString();
+  const runPath = await whatToDoRunDirectory(project, submission.runId, true);
+  await guard('publication', () =>
+    writeFileAtomically(
+      path.join(runPath, 'semantic-result.json'),
+      semanticResultDocument(identity, resultHash, result),
+    ),
+  );
+  const merged = await guard('validation', async () => {
     DELIVERY_MAP_RESULT_CONTRACT.validateStructure(result);
-  } catch (error) {
-    throw new MaterializationError(
-      'validation',
-      error instanceof Error ? error.message : String(error),
-    );
-  }
-  const merged =
-    result.outcome === 'map-proposal'
-      ? mergeDeliveryMapClaims(basis, result)
-      : result;
-  if (merged.outcome === 'map-proposal') {
-    for (const snapshot of submission.sourceSnapshots) {
-      const source = submission.knownSources[snapshot.logicalPath];
-      if (!source || source.sha256 !== snapshot.sha256)
-        throw new MaterializationError(
-          'validation',
-          `The frozen source content is unavailable: ${snapshot.logicalPath}.`,
-        );
+    const value =
+      result.outcome === 'map-proposal'
+        ? mergeDeliveryMapClaims(basis, result)
+        : result;
+    if (value.outcome === 'map-proposal') {
+      for (const snapshot of submission.sourceSnapshots) {
+        const source = submission.knownSources[snapshot.logicalPath];
+        if (!source || source.sha256 !== snapshot.sha256)
+          throw new MaterializationError(
+            'validation',
+            `The frozen source content is unavailable: ${snapshot.logicalPath}.`,
+          );
+      }
+      validateDeliveryMapPlan(basis, value, submission);
     }
-    validateDeliveryMapPlan(basis, merged, submission);
-  }
+    return value;
+  });
+  log(
+    materializationLogEntry(
+      'materialization.validated',
+      `The ${merged.outcome} result satisfies ${DELIVERY_MAP_RESULT_CONTRACT.id} v${DELIVERY_MAP_RESULT_CONTRACT.version}.`,
+    ),
+  );
   const map = computeDeliveryMap(
     basis,
     merged,
-    {
-      runId: submission.runId,
-      updatedAt: submission.updatedAt ?? new Date().toISOString(),
-    },
+    { runId: submission.runId, updatedAt: publishedAt },
     submission,
   );
-  if (!map)
+  const receiptOf = (
+    outcome: MaterializationReceipt['outcome'],
+    published: WhatToDoDeliveryMap | null,
+  ) =>
+    deliveryMapReceipt({
+      identity,
+      basis,
+      semanticResultHash: resultHash,
+      outcome,
+      map: published,
+      publishedAt,
+    });
+  if (merged.outcome !== 'map-proposal' || !map) {
+    log(
+      materializationLogEntry(
+        'materialization.published',
+        `Published the ${merged.outcome} outcome without a Delivery Map change.`,
+      ),
+    );
     return {
       runId: submission.runId,
       outcome: merged.outcome,
       map: null,
       contractPaths: {},
+      receipt: receiptOf(
+        merged.outcome === 'map-proposal' ? 'canonical' : merged.outcome,
+        null,
+      ),
     };
-  const contractPaths = await stageDeliveryContractArtifacts(
-    project,
-    submission.runId,
-    map,
+  }
+  const contractPaths = await guard('staging', () =>
+    stageDeliveryContractArtifacts(project, submission.runId, map),
   );
-  await publishDeliveryMap(project, map, host, basis);
+  log(
+    materializationLogEntry(
+      'materialization.staged',
+      `Staged ${Object.keys(contractPaths).length} Contract documents.`,
+    ),
+  );
+  await guard('publication', () =>
+    publishDeliveryMap(project, map, host, basis),
+  );
+  log(
+    materializationLogEntry(
+      'materialization.published',
+      `Published the Delivery Map from Run ${map.runId}.`,
+    ),
+  );
   return {
     runId: submission.runId,
     outcome: merged.outcome,
     map,
     contractPaths,
+    receipt: receiptOf('canonical', map),
   };
 }

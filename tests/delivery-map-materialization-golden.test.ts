@@ -24,7 +24,8 @@ const GOLDENS = path.resolve(
 );
 const UPDATE = process.env.PRAXIS_UPDATE_GOLDENS === '1';
 
-const CAPTURED = /(?:^|\/)(?:current-map\.json|output\.md)$/;
+const CAPTURED =
+  /(?:^|\/)(?:current-map\.json|semantic-result\.json|output\.md)$/;
 
 async function tree(root: string, relative = ''): Promise<string[]> {
   const entries = await readdir(path.join(root, relative), {

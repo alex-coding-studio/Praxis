@@ -11,8 +11,15 @@ import {
   listLatestTaskDecompositionRuns,
   readTaskDecompositionRun,
 } from '../lib/modules/scope-decomposition/runs.ts';
-import type { ScopeDecompositionResult } from '../lib/modules/scope-decomposition/contract.ts';
-import { MaterializationError } from '../lib/materialization/receipt.ts';
+import {
+  SCOPE_DECOMPOSITION_RESULT_CONTRACT,
+  type ScopeDecompositionResult,
+} from '../lib/modules/scope-decomposition/contract.ts';
+import { semanticResultHash } from '../lib/materialization/hash.ts';
+import {
+  MaterializationError,
+  type MaterializationReceipt,
+} from '../lib/materialization/receipt.ts';
 import type { RegisteredProject } from '../lib/project-registry.ts';
 
 async function fixture(t: test.TestContext) {
@@ -311,4 +318,107 @@ void test('a direct revision keeps the Candidate identity and advances its revis
   assert.equal(record.uid, original.uid);
   assert.equal(record.revision, original.revision + 1);
   assert.equal(revised.candidateAliases, null);
+});
+
+void test('a direct publication records a Receipt and its semantic result', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const basis = await basisFor(project, sourceNodeId);
+  const result: ScopeDecompositionResult = {
+    outcome: 'proposal',
+    candidates: [candidate('capture', sourceNodeId)],
+  };
+  const runId = 'RUN-11111111-1111-4111-8111-111111111111';
+  const events: string[] = [];
+  const published = await submitScopeDecompositionResult(
+    basis,
+    result,
+    { runId, sourceNodeId },
+    () => '2026-09-06T00:00:00.000Z',
+    (entry) => {
+      assert.equal(entry.actor, 'HOST');
+      events.push(entry.event);
+    },
+  );
+
+  assert.deepEqual(events, [
+    'materialization.validated',
+    'materialization.identities.allocated',
+    'materialization.staged',
+    'materialization.published',
+  ]);
+
+  const receipt = published.record.materialization;
+  assert.ok(receipt);
+  assert.deepEqual(receipt.contract, {
+    id: SCOPE_DECOMPOSITION_RESULT_CONTRACT.id,
+    version: SCOPE_DECOMPOSITION_RESULT_CONTRACT.version,
+    hash: SCOPE_DECOMPOSITION_RESULT_CONTRACT.hash,
+  });
+  assert.deepEqual(receipt.producer, { kind: 'direct', runId });
+  assert.equal(receipt.semanticResultHash, semanticResultHash(result));
+  assert.equal(receipt.outcome, 'candidates');
+  assert.deepEqual(receipt.affected.candidateIds, [
+    published.candidates[0]!.candidateId,
+  ]);
+  assert.deepEqual(receipt.publication, {
+    target: 'run-record',
+    at: '2026-09-06T00:00:00.000Z',
+    revision: null,
+  });
+  assert.equal(receipt.failure, null);
+
+  const semantic = JSON.parse(
+    await readFile(
+      path.join(
+        project.planningPath,
+        'task-decomposition',
+        'runs',
+        runId,
+        'semantic-result.json',
+      ),
+      'utf8',
+    ),
+  ) as { semanticResultHash: string; result: ScopeDecompositionResult };
+  assert.equal(semantic.semanticResultHash, receipt.semanticResultHash);
+  assert.deepEqual(semantic.result, result);
+});
+
+void test('a rejected direct submission persists its rejection Receipt', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const basis = await basisFor(project, sourceNodeId);
+  const runId = 'RUN-22222222-2222-4222-8222-222222222222';
+  const events: string[] = [];
+  await assert.rejects(
+    submitScopeDecompositionResult(
+      basis,
+      {
+        outcome: 'proposal',
+        candidates: [candidate('capture', 'NODE-deadbeef')],
+      },
+      { runId, sourceNodeId },
+      () => '2026-09-06T00:00:00.000Z',
+      (entry) => events.push(entry.event),
+    ),
+    (error: unknown) =>
+      error instanceof MaterializationError &&
+      error.receipt?.outcome === 'rejected' &&
+      error.receipt.failure?.boundary === 'validation',
+  );
+  assert.deepEqual(events, ['materialization.rejected']);
+
+  const stored = JSON.parse(
+    await readFile(
+      path.join(
+        project.planningPath,
+        'task-decomposition',
+        'runs',
+        runId,
+        'run.json',
+      ),
+      'utf8',
+    ),
+  ) as { status: string; materialization: MaterializationReceipt };
+  assert.equal(stored.status, 'failed');
+  assert.equal(stored.materialization.outcome, 'rejected');
+  assert.equal(stored.materialization.publication, null);
 });

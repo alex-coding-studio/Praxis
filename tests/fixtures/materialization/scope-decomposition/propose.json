@@ -136,6 +136,126 @@
       "detail": "3 Candidates proposed for NODE-U0. Review them on the graph.",
       "supplementaryWarnings": [],
       "recovery": ["log", "continue"]
+    },
+    "materialization": {
+      "schemaVersion": 1,
+      "contract": {
+        "id": "praxis.scope-decomposition.result",
+        "version": 1,
+        "hash": "H1"
+      },
+      "producer": {
+        "kind": "agent-run",
+        "runId": "RUN-U4",
+        "harness": {
+          "id": "praxis.task-decomposition",
+          "revision": 8
+        }
+      },
+      "basis": {
+        "fingerprint": "H2",
+        "preparedAt": "T"
+      },
+      "semanticResultHash": "H3",
+      "outcome": "candidates",
+      "affected": {
+        "candidateIds": ["CANDIDATE-U1", "CANDIDATE-U2", "CANDIDATE-U3"],
+        "nodeIds": [],
+        "contractIds": [],
+        "domainIds": []
+      },
+      "publication": {
+        "target": "run-record",
+        "at": "T",
+        "revision": null
+      },
+      "failure": null
+    }
+  },
+  "task-decomposition/runs/RUN-U4/semantic-result.json": {
+    "schemaVersion": 1,
+    "contract": {
+      "id": "praxis.scope-decomposition.result",
+      "version": 1,
+      "hash": "H1"
+    },
+    "producer": {
+      "kind": "agent-run",
+      "runId": "RUN-U4",
+      "harness": {
+        "id": "praxis.task-decomposition",
+        "revision": 8
+      }
+    },
+    "semanticResultHash": "H3",
+    "result": {
+      "outcome": "proposal",
+      "candidates": [
+        {
+          "localKey": "CANDIDATE-0001",
+          "type": "module",
+          "title": "Capture the source",
+          "summary": "Capture the source stated as one bounded unit of work.",
+          "derivedFrom": [
+            {
+              "kind": "node",
+              "id": "NODE-U0"
+            }
+          ],
+          "dependsOn": [],
+          "resources": [],
+          "typeTemplateRef": null,
+          "metadata": {},
+          "presentation": {},
+          "assumptions": ["The source already describes the intended outcome."]
+        },
+        {
+          "localKey": "CANDIDATE-0002",
+          "type": "module",
+          "title": "Render the page",
+          "summary": "Render the page stated as one bounded unit of work.",
+          "derivedFrom": [
+            {
+              "kind": "node",
+              "id": "NODE-U0"
+            }
+          ],
+          "dependsOn": [
+            {
+              "kind": "proposal",
+              "localKey": "CANDIDATE-0001"
+            }
+          ],
+          "resources": [],
+          "typeTemplateRef": null,
+          "metadata": {},
+          "presentation": {},
+          "assumptions": ["The source already describes the intended outcome."]
+        },
+        {
+          "localKey": "CANDIDATE-0003",
+          "type": "module",
+          "title": "Publish the site",
+          "summary": "Publish the site stated as one bounded unit of work.",
+          "derivedFrom": [
+            {
+              "kind": "node",
+              "id": "NODE-U0"
+            }
+          ],
+          "dependsOn": [
+            {
+              "kind": "proposal",
+              "localKey": "CANDIDATE-0002"
+            }
+          ],
+          "resources": [],
+          "typeTemplateRef": null,
+          "metadata": {},
+          "presentation": {},
+          "assumptions": ["The source already describes the intended outcome."]
+        }
+      ]
     }
   },
   "task-graph/identities.json": {
