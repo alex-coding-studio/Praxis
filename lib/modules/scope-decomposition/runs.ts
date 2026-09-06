@@ -54,7 +54,7 @@ import {
   type ScopeDecompositionBasisInput,
 } from './basis.ts';
 import { MaterializationError } from '../../materialization/receipt.ts';
-import { materializeScopeDecompositionResult } from './materializer.ts';
+import { publishScopeDecompositionResult } from './publish.ts';
 import { toScopeDecompositionSemanticResult } from './producer-adapter.ts';
 import {
   buildTaskDecompositionContinuationPrompt,
@@ -1056,22 +1056,46 @@ async function finishTaskDecompositionRun(
       revisionTarget,
       subject,
     );
-    const materialized = await materializeScopeDecompositionResult(
+    await writeAgentGraphRunEvidence(
+      taskDecompositionRunPath(project, record.runId),
+      {
+        activity: record.activity ?? [],
+        summary: renderTaskDecompositionSummaryMarkdown(envelope),
+        response: renderTaskDecompositionResponseMarkdown(envelope),
+      },
+    );
+    const classification = classifyModuleRun(
+      envelope.outcome === 'proposal'
+        ? {
+            runState: 'settled',
+            outcome: 'proposal',
+            summary: `${envelope.candidates.length} ${envelope.candidates.length === 1 ? 'Candidate' : 'Candidates'} proposed for ${record.sourceNodeId}. Review them on the graph.`,
+          }
+        : envelope.outcome === 'clarification'
+          ? {
+              runState: 'settled',
+              outcome: 'clarification',
+              question: envelope.clarification.question,
+            }
+          : envelope.outcome === 'insufficient-evidence'
+            ? {
+                runState: 'settled',
+                outcome: 'insufficient-evidence',
+                missingEvidence: envelope.missingEvidence,
+              }
+            : {
+                runState: 'settled',
+                outcome: 'no-change',
+                reason: envelope.reason,
+              },
+    );
+    record.response = classification;
+    const published = await publishScopeDecompositionResult(
       basis,
       toScopeDecompositionSemanticResult(envelope),
+      { record, resultBase: envelope },
     );
-    const result = materialized
-      ? {
-          ...envelope,
-          candidates: materialized.candidates,
-          ...(materialized.candidateAliases && {
-            candidateAliases: materialized.candidateAliases,
-          }),
-          ...(materialized.effects && {
-            recomposition: { effects: materialized.effects },
-          }),
-        }
-      : envelope;
+    const result = published.record.result as TaskDecompositionHarnessResult;
     if (
       revisionTarget &&
       result.outcome === 'proposal' &&
@@ -1085,36 +1109,7 @@ async function finishTaskDecompositionRun(
     const endedAt = new Date().toISOString();
     record.status = result.outcome;
     record.result = result;
-    const classification = classifyModuleRun(
-      result.outcome === 'proposal'
-        ? {
-            runState: 'settled',
-            outcome: 'proposal',
-            summary: `${result.candidates.length} ${result.candidates.length === 1 ? 'Candidate' : 'Candidates'} proposed for ${record.sourceNodeId}. Review them on the graph.`,
-          }
-        : result.outcome === 'clarification'
-          ? {
-              runState: 'settled',
-              outcome: 'clarification',
-              question: result.clarification.question,
-            }
-          : result.outcome === 'insufficient-evidence'
-            ? {
-                runState: 'settled',
-                outcome: 'insufficient-evidence',
-                missingEvidence: result.missingEvidence,
-              }
-            : {
-                runState: 'settled',
-                outcome: 'no-change',
-                reason: result.reason,
-              },
-    );
-    record.response = classification;
-    await ensureCandidateArtifacts(project, record);
-    record.updatedAt = endedAt;
-    record.endedAt = endedAt;
-    await writeRunRecord(project, record);
+    Object.assign(record, published.record);
     await settleRun(reservation, { classification, endedAt });
   } catch (error) {
     if (superseded()) return;
