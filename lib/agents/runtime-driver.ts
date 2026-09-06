@@ -80,6 +80,32 @@ export type AgentRuntimeEvent =
       at: string;
     }
   | {
+      type: 'session-process';
+      threadId: string;
+      pid: number | undefined;
+      launch: number;
+      cliVersion?: string;
+      model?: string;
+      effort?: string;
+      resumed: boolean;
+      instructionsHash: string;
+      toolsHash: string;
+      at: string;
+    }
+  | {
+      type: 'request-usage';
+      threadId: string;
+      turnId: string;
+      requestKey: string;
+      pid: number | undefined;
+      launch: number;
+      inputTokens: number;
+      cachedInputTokens: number;
+      cacheWriteInputTokens: number;
+      outputTokens: number;
+      at: string;
+    }
+  | {
       type: 'turn-completed';
       threadId: string;
       turnId: string;
@@ -118,4 +144,5 @@ export interface AgentSessionDriver {
     input: AgentRuntimeTurnInput,
   ): AgentRuntimeTurn;
   close(): Promise<void>;
+  dispose?(reason?: string): Promise<void>;
 }
