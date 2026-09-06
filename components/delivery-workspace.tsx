@@ -609,7 +609,7 @@ export function DeliveryWorkspace({
                 )}
               </div>
             </div>
-            <div className="flex flex-col items-end gap-2">
+            <div className="flex max-w-full flex-col items-end gap-2">
               {record &&
                 !record.lastWithdrawal &&
                 !record.acceptedHead &&
@@ -644,7 +644,7 @@ export function DeliveryWorkspace({
                 </Button>
               )}
               {record?.status === 'ready-to-run' && !running && (
-                <p className="max-w-64 text-right text-[11px] leading-4 text-muted-foreground">
+                <p className="max-w-full text-right text-[11px] leading-4 text-muted-foreground">
                   {t(
                     'Brief confirmed. Click Start delivery to begin implementation.',
                   )}
