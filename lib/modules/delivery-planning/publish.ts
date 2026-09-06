@@ -259,14 +259,32 @@ export async function submitDeliveryMapResult(
     kind: 'direct',
     runId: submission.runId,
   });
+  const runPath = await whatToDoRunDirectory(project, submission.runId, true);
+  const recordReceipt = async (
+    receipt: MaterializationReceipt,
+    sink: MaterializationLog,
+  ) => {
+    await writeFileAtomically(
+      path.join(runPath, 'materialization.json'),
+      `${JSON.stringify(receipt, null, 2)}\n`,
+    ).catch((error: unknown) =>
+      sink(
+        materializationLogEntry(
+          'materialization.publication.failed',
+          `publication: the Receipt was not recorded: ${error instanceof Error ? error.message : String(error)}`,
+          'ERROR',
+        ),
+      ),
+    );
+  };
   const guard = materializationGuard({
     log,
     identity,
     basis: { fingerprint: basis.fingerprint, preparedAt: basis.preparedAt },
     semanticResultHash: resultHash,
+    onReject: (receipt) => recordReceipt(receipt, log),
   });
   const publishedAt = submission.updatedAt ?? new Date().toISOString();
-  const runPath = await whatToDoRunDirectory(project, submission.runId, true);
   await guard('publication', () =>
     writeFileAtomically(
       path.join(runPath, 'semantic-result.json'),
@@ -323,15 +341,17 @@ export async function submitDeliveryMapResult(
         `Published the ${merged.outcome} outcome without a Delivery Map change.`,
       ),
     );
+    const receipt = receiptOf(
+      merged.outcome === 'map-proposal' ? 'canonical' : merged.outcome,
+      null,
+    );
+    await recordReceipt(receipt, log);
     return {
       runId: submission.runId,
       outcome: merged.outcome,
       map: null,
       contractPaths: {},
-      receipt: receiptOf(
-        merged.outcome === 'map-proposal' ? 'canonical' : merged.outcome,
-        null,
-      ),
+      receipt,
     };
   }
   const contractPaths = await guard('staging', () =>
@@ -352,11 +372,13 @@ export async function submitDeliveryMapResult(
       `Published the Delivery Map from Run ${map.runId}.`,
     ),
   );
+  const receipt = receiptOf('canonical', map);
+  await recordReceipt(receipt, log);
   return {
     runId: submission.runId,
     outcome: merged.outcome,
     map,
     contractPaths,
-    receipt: receiptOf('canonical', map),
+    receipt,
   };
 }

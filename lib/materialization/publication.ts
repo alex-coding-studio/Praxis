@@ -3,10 +3,12 @@ import type { ResultContract } from './contract.ts';
 import { contractIdentity } from './contract.ts';
 import { materializationLogEntry } from './log.ts';
 import {
+  attachRejectionReceipt,
   MaterializationError,
   type MaterializationFailureBoundary,
   type MaterializationReceipt,
 } from './receipt.ts';
+import { PublicApiError } from '../api-errors.ts';
 import type { ProducerKind } from './producer.ts';
 
 export type MaterializationLog = (entry: RunLogInput) => void;
@@ -76,17 +78,22 @@ export function materializationGuard(context: {
     try {
       return await step();
     } catch (error) {
+      const conflict = error instanceof PublicApiError && error.status === 409;
       const failure =
-        error instanceof MaterializationError
-          ? error
+        error instanceof MaterializationError || conflict
+          ? (error as MaterializationError | PublicApiError)
           : new MaterializationError(
               boundary,
               error instanceof Error ? error.message : String(error),
             );
+      const failedAt =
+        failure instanceof MaterializationError
+          ? failure.boundary
+          : ('stale-basis' as const);
       context.log(
         materializationLogEntry(
-          boundaryEvent(failure.boundary),
-          `${failure.boundary}: ${failure.message}`,
+          boundaryEvent(failedAt),
+          `${failedAt}: ${failure.message}`,
           'ERROR',
         ),
       );
@@ -101,11 +108,11 @@ export function materializationGuard(context: {
         outcome: 'rejected',
         affected: { ...NO_AFFECTED_IDENTITIES },
         publication: null,
-        failure: { boundary: failure.boundary, message: failure.message },
+        failure: { boundary: failedAt, message: failure.message },
       };
       if (context.onReject)
         await context.onReject(receipt).catch(() => undefined);
-      throw failure.withReceipt(receipt);
+      throw attachRejectionReceipt(failure, receipt);
     }
   };
 }

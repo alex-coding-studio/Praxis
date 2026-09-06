@@ -44,6 +44,33 @@ export type PublishedDomainModel = PublishedDomainModelBase &
 export const DOMAIN_MODEL_UNCHANGED_REASON =
   'The current Domain Model already represents this request.';
 
+async function recordReceipt(
+  project: RegisteredProject,
+  runId: string,
+  receipt: MaterializationReceipt,
+  log: MaterializationLog,
+) {
+  await (async () => {
+    const directory = await domainModelDirectory(
+      project,
+      ['runs', runId],
+      true,
+    );
+    await writeFileAtomically(
+      path.join(directory, 'materialization.json'),
+      `${JSON.stringify(receipt, null, 2)}\n`,
+    );
+  })().catch((error: unknown) =>
+    log(
+      materializationLogEntry(
+        'materialization.publication.failed',
+        `publication: the Receipt was not recorded: ${error instanceof Error ? error.message : String(error)}`,
+        'ERROR',
+      ),
+    ),
+  );
+}
+
 export async function publishDomainModelResult(
   project: RegisteredProject,
   basis: DomainModelBasis,
@@ -68,6 +95,7 @@ export async function publishDomainModelResult(
     identity,
     basis: { fingerprint: basis.fingerprint, preparedAt: basis.preparedAt },
     semanticResultHash: resultHash,
+    onReject: (receipt) => recordReceipt(project, producer.runId, receipt, log),
   });
   await (async () => {
     const directory = await domainModelDirectory(
@@ -86,12 +114,6 @@ export async function publishDomainModelResult(
         `publication: the semantic result was not recorded: ${error instanceof Error ? error.message : String(error)}`,
         'ERROR',
       ),
-    ),
-  );
-  log(
-    materializationLogEntry(
-      'materialization.validated',
-      `The ${result.outcome} result satisfies ${DOMAIN_MODEL_RESULT_CONTRACT.id} v${DOMAIN_MODEL_RESULT_CONTRACT.version}.`,
     ),
   );
   const receiptOf = (
@@ -115,8 +137,17 @@ export async function publishDomainModelResult(
       : null,
     failure: null,
   });
+  const validated = () =>
+    log(
+      materializationLogEntry(
+        'materialization.validated',
+        `The ${result.outcome} result satisfies ${DOMAIN_MODEL_RESULT_CONTRACT.id} v${DOMAIN_MODEL_RESULT_CONTRACT.version}.`,
+      ),
+    );
   if (result.outcome !== 'model-change') {
+    validated();
     const receipt = receiptOf(result.outcome, null, basis.stateVersion);
+    await recordReceipt(project, producer.runId, receipt, log);
     log(
       materializationLogEntry(
         'materialization.published',
@@ -132,7 +163,10 @@ export async function publishDomainModelResult(
       receipt,
     };
   }
-  const model = composeDomainModel(basis.model, result);
+  const model = await guard('validation', async () =>
+    composeDomainModel(basis.model, result),
+  );
+  validated();
   const applied = await guard('publication', () =>
     applyProposedDomainModel(project, {
       baseVersion: basis.stateVersion,
@@ -147,6 +181,7 @@ export async function publishDomainModelResult(
     applied.change,
     applied.model.stateVersion,
   );
+  await recordReceipt(project, producer.runId, receipt, log);
   log(
     materializationLogEntry(
       'materialization.published',

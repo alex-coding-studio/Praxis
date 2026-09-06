@@ -45,7 +45,6 @@ export type MaterializationReceipt = {
 export class MaterializationError extends Error {
   readonly boundary: MaterializationFailureBoundary;
   readonly status: 409 | 400;
-  receipt: MaterializationReceipt | null = null;
 
   constructor(boundary: MaterializationFailureBoundary, message: string) {
     super(message);
@@ -53,15 +52,22 @@ export class MaterializationError extends Error {
     this.boundary = boundary;
     this.status = boundary === 'stale-basis' ? 409 : 400;
   }
+}
 
-  withReceipt(receipt: MaterializationReceipt) {
-    this.receipt = receipt;
-    return this;
-  }
+const rejectionReceipts = new WeakMap<object, MaterializationReceipt>();
+
+export function attachRejectionReceipt<E>(
+  error: E,
+  receipt: MaterializationReceipt,
+): E {
+  if (error && typeof error === 'object') rejectionReceipts.set(error, receipt);
+  return error;
 }
 
 export function rejectionReceipt(error: unknown) {
-  return error instanceof MaterializationError ? error.receipt : null;
+  return error && typeof error === 'object'
+    ? (rejectionReceipts.get(error) ?? null)
+    : null;
 }
 
 export function isStaleBasisError(

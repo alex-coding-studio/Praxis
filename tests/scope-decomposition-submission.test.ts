@@ -18,6 +18,7 @@ import {
 import { semanticResultHash } from '../lib/materialization/hash.ts';
 import {
   MaterializationError,
+  rejectionReceipt,
   type MaterializationReceipt,
 } from '../lib/materialization/receipt.ts';
 import type { RegisteredProject } from '../lib/project-registry.ts';
@@ -401,8 +402,8 @@ void test('a rejected direct submission persists its rejection Receipt', async (
     ),
     (error: unknown) =>
       error instanceof MaterializationError &&
-      error.receipt?.outcome === 'rejected' &&
-      error.receipt.failure?.boundary === 'validation',
+      rejectionReceipt(error)?.outcome === 'rejected' &&
+      rejectionReceipt(error)?.failure?.boundary === 'validation',
   );
   assert.deepEqual(events, ['materialization.rejected']);
 

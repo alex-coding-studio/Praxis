@@ -16,7 +16,10 @@ import {
   type DeliveryMapResult,
 } from '../lib/modules/delivery-planning/contract.ts';
 import { semanticResultHash } from '../lib/materialization/hash.ts';
-import { MaterializationError } from '../lib/materialization/receipt.ts';
+import {
+  MaterializationError,
+  rejectionReceipt,
+} from '../lib/materialization/receipt.ts';
 import type { RegisteredProject } from '../lib/project-registry.ts';
 
 const RUN_ID = 'RUN-11111111-1111-4111-8111-111111111111';
@@ -183,8 +186,8 @@ void test('a self-dependent Contract is rejected without touching canonical stat
     await readdir(
       path.join(project.planningPath, 'what-to-do', 'runs', RUN_ID),
     ),
-    ['semantic-result.json'],
-    'a rejected submission keeps its semantic result and creates nothing else',
+    ['materialization.json', 'semantic-result.json'],
+    'a rejected submission keeps its evidence and creates nothing else',
   );
 });
 
@@ -600,6 +603,20 @@ void test('a direct publication records a Receipt and its semantic result', asyn
   ) as { semanticResultHash: string; result: DeliveryMapResult };
   assert.equal(semantic.semanticResultHash, receipt.semanticResultHash);
   assert.deepEqual(semantic.result, example);
+
+  const stored = JSON.parse(
+    await readFile(
+      path.join(
+        project.planningPath,
+        'what-to-do',
+        'runs',
+        RUN_ID,
+        'materialization.json',
+      ),
+      'utf8',
+    ),
+  ) as typeof receipt;
+  assert.deepEqual(stored, receipt);
 });
 
 void test('a rejected submission carries its boundary on the Receipt', async (t) => {
@@ -624,9 +641,9 @@ void test('a rejected submission carries its boundary on the Receipt', async (t)
     ),
     (error: unknown) =>
       error instanceof MaterializationError &&
-      error.receipt?.outcome === 'rejected' &&
-      error.receipt.publication === null &&
-      error.receipt.failure?.boundary === 'validation',
+      rejectionReceipt(error)?.outcome === 'rejected' &&
+      rejectionReceipt(error)?.publication === null &&
+      rejectionReceipt(error)?.failure?.boundary === 'validation',
   );
   assert.deepEqual(events, ['materialization.rejected']);
   const canonical = await readWhatToDoCurrentMapWithFingerprint(project);
