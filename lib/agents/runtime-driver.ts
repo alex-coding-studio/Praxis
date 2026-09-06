@@ -118,4 +118,5 @@ export interface AgentSessionDriver {
     input: AgentRuntimeTurnInput,
   ): AgentRuntimeTurn;
   close(): Promise<void>;
+  dispose?(reason?: string): Promise<void>;
 }
