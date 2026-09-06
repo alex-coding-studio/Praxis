@@ -404,7 +404,7 @@ function deliveryReferenceKey(reference: DeliveryContractReference) {
     : `contract:${reference.id}`;
 }
 
-export function validateDeliveryMapReferences(
+export function validateDeliveryMapPlan(
   basis: {
     operation: 'create-map' | 'adjust-map';
     currentMap: WhatToDoDeliveryMap | null;
@@ -426,9 +426,35 @@ export function validateDeliveryMapReferences(
       fail('A new Delivery Map cannot update an existing Source Claim.');
     if (result.contractDependencyUpdates?.length)
       fail('A new Delivery Map cannot update an existing Contract dependency.');
-  } else if (!result.recomposition)
-    fail('An adjusted Delivery Map requires Recompose effects.');
+  } else {
+    if (!result.recomposition)
+      fail('An adjusted Delivery Map requires Recompose effects.');
+    if ((basis.currentMap?.sourceClaims ?? []).length === 0)
+      fail('An adjusted Delivery Map requires previous Source Claims.');
+  }
+  for (const contract of result.contracts) {
+    if (contract.openDecisions.length > 0)
+      fail('A formal Delivery Map cannot contain an Open Decision.');
+    if (contract.domainImpact.kind === 'uncertain')
+      fail('A formal Delivery Map cannot contain uncertain Domain Impact.');
+    requireUnique(
+      contract.acceptanceCriteria.map((criterion) => criterion.id),
+      'Acceptance criterion identifiers must be unique within one Contract.',
+    );
+  }
 
+  if (basis.operation === 'create-map' && result.recomposition) {
+    const added = result.recomposition.effects.flatMap((effect) => {
+      if (effect.kind !== 'add' || effect.from.length > 0)
+        fail('A new Delivery Map cannot include Recompose effects.');
+      return effect.to.map(deliveryReferenceKey);
+    });
+    if (
+      new Set(added).size !== proposed.length ||
+      added.some((candidateId) => !proposed.includes(candidateId))
+    )
+      fail('A new Delivery Map cannot include Recompose effects.');
+  }
   const known = new Map(
     (basis.currentMap?.contracts ?? []).map((contract) => [
       `contract:${contract.id}`,
@@ -464,8 +490,34 @@ export function validateDeliveryMapReferences(
       .filter((effect) => effect.kind === 'retain')
       .flatMap((effect) => effect.from.map(deliveryReferenceKey)) ?? [],
   );
+  const outputs = new Set([...retained, ...proposed]);
+  const dependencyUpdates = result.contractDependencyUpdates ?? [];
+  requireUnique(
+    dependencyUpdates.map((update) => deliveryReferenceKey(update.contract)),
+    'Contract dependency update identifiers must be unique.',
+  );
+  for (const update of dependencyUpdates) {
+    if (!retained.has(deliveryReferenceKey(update.contract)))
+      fail('A Contract dependency update must target a retained Contract.');
+    if (
+      update.dependsOn.some(
+        (dependency) => !outputs.has(deliveryReferenceKey(dependency)),
+      )
+    )
+      fail(
+        'A Contract dependency update references an unknown output Contract.',
+      );
+  }
+  const claimUpdates = result.sourceClaimUpdates ?? [];
+  requireUnique(
+    claimUpdates.map((update) => update.claimId),
+    'Source Claim update identifiers must be unique.',
+  );
+  for (const update of claimUpdates)
+    if (result.sourceClaims.some((claim) => claim.claimId === update.claimId))
+      fail('A Source Claim cannot be replaced and updated together.');
   const updated = new Map(
-    (result.contractDependencyUpdates ?? []).map((update) => [
+    dependencyUpdates.map((update) => [
       deliveryReferenceKey(update.contract),
       update.dependsOn.map(deliveryReferenceKey),
     ]),
@@ -491,4 +543,35 @@ export function validateDeliveryMapReferences(
     })),
   ];
   validateCompleteMap(completeMap);
+  if (basis.operation !== 'adjust-map') return;
+  const selectedIds = [...known.keys()];
+  const knownCandidates = [...known].map(([candidateId, contract]) => ({
+    candidateId,
+    dependsOn:
+      updated.get(candidateId) ??
+      contract.dependsOn.map((dependency) => `contract:${dependency}`),
+  }));
+  try {
+    validateAgentGraphRecomposePlan({
+      selectedIds,
+      outputIds: [...outputs],
+      effects: (result.recomposition?.effects ?? []).map((effect) => ({
+        kind: effect.kind,
+        from: effect.from.map(deliveryReferenceKey),
+        to: effect.to.map(deliveryReferenceKey),
+      })),
+    });
+    validateAgentGraphRecomposeDependencies({
+      selectedIds,
+      retainedIds: [...retained],
+      outputCandidates: result.contracts.map((contract) => ({
+        candidateId: `proposal:${contract.localKey}`,
+        dependsOn: contract.dependsOn.map(deliveryReferenceKey),
+      })),
+      knownCandidates,
+    });
+  } catch (error) {
+    if (error instanceof MaterializationError) throw error;
+    fail(error instanceof Error ? error.message : String(error));
+  }
 }

@@ -215,3 +215,116 @@ void test('a new Delivery Map without a Contract is rejected', async (t) => {
   const canonical = await readWhatToDoCurrentMapWithFingerprint(project);
   assert.equal(canonical.fingerprint, 'absent');
 });
+
+void test('an adjusted Map that leaves an existing Contract unaccounted for is rejected', async (t) => {
+  const project = await fixture(t);
+  const created = await submitDeliveryMapResult(
+    project,
+    await emptyBasis(project),
+    {
+      ...example,
+      contracts: [
+        { ...example.contracts[0]!, localKey: 'first' },
+        { ...example.contracts[0]!, localKey: 'second' },
+      ],
+      sourceClaims: [
+        {
+          ...example.sourceClaims[0]!,
+          contracts: [
+            { kind: 'proposal', localKey: 'first' },
+            { kind: 'proposal', localKey: 'second' },
+          ],
+        },
+      ],
+    },
+    { runId: RUN_ID, ...evidence },
+    store,
+  );
+  assert.equal(created.map!.contracts.length, 2);
+  const published = await readWhatToDoCurrentMapWithFingerprint(project);
+  const retainedId = created.map!.contracts[0]!.id;
+
+  await assert.rejects(
+    submitDeliveryMapResult(
+      project,
+      await emptyBasis(project),
+      {
+        outcome: 'map-proposal',
+        contracts: [],
+        sourceClaims: [
+          {
+            ...example.sourceClaims[0]!,
+            contracts: [{ kind: 'contract', id: retainedId }],
+          },
+        ],
+        recomposition: {
+          effects: [
+            {
+              kind: 'retain',
+              from: [{ kind: 'contract', id: retainedId }],
+              to: [{ kind: 'contract', id: retainedId }],
+            },
+          ],
+        },
+      },
+      { runId: RUN_ID, ...evidence },
+      store,
+    ),
+    (error: unknown) =>
+      error instanceof MaterializationError &&
+      error.boundary === 'validation' &&
+      /must have exactly one effect/.test(error.message),
+  );
+
+  const after = await readWhatToDoCurrentMapWithFingerprint(project);
+  assert.equal(after.fingerprint, published.fingerprint);
+  assert.equal(after.map!.contracts.length, 2);
+});
+
+void test('a Contract carrying an Open Decision or uncertain impact is rejected', async (t) => {
+  const project = await fixture(t);
+  const basis = await emptyBasis(project);
+  await assert.rejects(
+    submitDeliveryMapResult(
+      project,
+      basis,
+      {
+        ...example,
+        contracts: [{ ...example.contracts[0]!, openDecisions: ['Undecided'] }],
+      },
+      { runId: RUN_ID, ...evidence },
+      store,
+    ),
+    (error: unknown) =>
+      error instanceof MaterializationError &&
+      error.message ===
+        'A formal Delivery Map cannot contain an Open Decision.',
+  );
+  await assert.rejects(
+    submitDeliveryMapResult(
+      project,
+      basis,
+      {
+        ...example,
+        contracts: [
+          {
+            ...example.contracts[0]!,
+            domainImpact: {
+              kind: 'uncertain',
+              reason: 'Unknown.',
+              evidencePaths: [],
+            },
+          },
+        ],
+      },
+      { runId: RUN_ID, ...evidence },
+      store,
+    ),
+    (error: unknown) =>
+      error instanceof MaterializationError &&
+      error.message ===
+        'A formal Delivery Map cannot contain uncertain Domain Impact.',
+  );
+  const canonical = await readWhatToDoCurrentMapWithFingerprint(project);
+  assert.equal(canonical.fingerprint, 'absent');
+});

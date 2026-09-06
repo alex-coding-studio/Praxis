@@ -16,7 +16,7 @@ import {
   type WhatToDoDeliveryMap,
   type WhatToDoMapSourceSnapshot,
 } from './map.ts';
-import { validateDeliveryMapReferences } from './validation.ts';
+import { validateDeliveryMapPlan } from './validation.ts';
 import {
   atomicWhatToDoText,
   readWhatToDoCurrentMapWithFingerprint,
@@ -207,8 +207,7 @@ export async function submitDeliveryMapResult(
       error instanceof Error ? error.message : String(error),
     );
   }
-  if (result.outcome === 'map-proposal')
-    validateDeliveryMapReferences(basis, result);
+  if (result.outcome === 'map-proposal') validateDeliveryMapPlan(basis, result);
   const map = computeDeliveryMap(
     basis,
     result,
