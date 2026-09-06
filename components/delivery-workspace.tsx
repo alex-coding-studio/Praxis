@@ -547,7 +547,7 @@ export function DeliveryWorkspace({
                   </span>
                 )}
               </div>
-              {record?.response && (
+              {record?.response && record.response.status !== 'completed' && (
                 <p className="mt-2 line-clamp-3 text-xs text-muted-foreground">
                   <span className="font-medium">
                     {t(record.response.title)} —{' '}
