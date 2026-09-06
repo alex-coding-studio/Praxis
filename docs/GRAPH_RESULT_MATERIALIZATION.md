@@ -1,6 +1,98 @@
 # Graph Result Materialization
 
-Status: Ready for implementation
+Status: Partially implemented. The completion audit below is the current remaining-work checklist; the original Definition of done is not yet satisfied.
+
+## Completion audit — 2026-09-05
+
+Audited against `0d40c7e`, including the graph materialization work through PR #221 and the independently merged delivery-runtime refactor in PR #214. This was a document-to-code boundary audit, not a new full test run. Existing passing suites and checkpoint reviews establish their covered behavior; they do not establish the unfinished boundaries below.
+
+The delivered work is useful and should be retained. It establishes versioned Result Contracts, producer adapters, shared graph references and identity allocation, shared Candidate document/promotion primitives, extracted module validation, frozen bases, stale-publication guards and parity goldens. It has not yet established a complete producer-neutral submission-to-publication service for every module.
+
+MCP transport and tools remain explicitly deferred. Their absence is not a finding against this document. The remaining work is inside Praxis so that a later MCP caller can use the same deterministic path as an internal Agent Run.
+
+### Current coverage
+
+| Area                           | Implemented                                                                                                                          | Still required                                                                                                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared foundation              | Contract identities, versions, hashes, schemas/examples, explicit reference kinds, basis/receipt types and dependency-direction gate | Wire the receipt and materialization log definitions into real operations; persist the independent semantic result                                            |
+| Product Exploration and Design | Agent adapter, neutral validation and Candidate identity resolution; shared document staging and Node promotion                      | Module-owned stage/publish orchestration that accepts a basis and semantic result without a `WhatsNextRunRecord` or producer envelope                         |
+| Scope Decomposition            | Adapter, neutral validation/materialization, recomposition reference resolution and shared graph primitives                          | The same independent stage/publish boundary, retaining append/revise/recompose behavior                                                                       |
+| Domain Modeling                | Frozen basis, adapter, pure model composition and existing canonical model application/commit receipt                                | A service connecting the neutral result and basis to validation/application and a materialization receipt, without reconstructing a Harness-shaped result     |
+| Delivery Planning              | Frozen current-map basis, stale-map protection, extracted proposal validation, normalized proposal computation and parity goldens    | Wire the neutral `DeliveryMapResult` adapter into the real flow; make map computation, staging and publication consume that result through one module service |
+
+### A. Complete the producer-neutral stage and publish boundary
+
+The graph Materializers currently return resolved Candidate records and aliases. Their Run services still combine those records back into producer results, organize artifact writes and publish Run state. Shared helpers are present, but a future caller still has to reproduce part of that Run settlement protocol.
+
+Evidence:
+
+- `lib/modules/product-discovery/materializer.ts`: `materializeProductExplorationResult` validates and allocates/resolves Candidate records; `runs.ts` still owns `ensureCandidateArtifacts` and the surrounding Run publication.
+- `lib/modules/scope-decomposition/materializer.ts`: `materializeScopeDecompositionResult` returns Candidates/aliases/effects; `runs.ts` still bridges them into its result and settlement lifecycle.
+- `lib/graph/proposal/stage.ts`: `stageCandidateDocuments` accepts a caller-supplied `runPath`; this is a lower-level helper, not the registry-confined public submission boundary described here.
+- `lib/modules/domain-modeling/runs.ts`: `settledDomainModelResult` composes the neutral result into a Harness-shaped result before `settle` invokes `applyProposedDomainModel`. Existing model application and its commit receipt must be reused, not replaced with another writer.
+
+Required work:
+
+1. Expose explicit module services for preparing, validating, staging and publishing a typed semantic result against a frozen basis. Services own their artifact locations and return structured outcomes and references.
+2. Keep producer parsing, raw response, reflection, usage and Session evidence in the Run/adapter layer. Do not require fake values for those fields to call deterministic services.
+3. Route existing Agent settlement through these services. The Run service may still orchestrate an Agent and record its evidence; it must not retain an alternative entity-publication implementation.
+4. Keep shared staging/promotion helpers where their invariants are identical. Do not introduce a generic repository that erases module lifecycle rules.
+5. Preserve the existing Candidate acceptance boundary. Completing this service does not authorize automatically accepting graph proposals.
+
+Acceptance: a test can prepare a basis, submit a valid typed result, obtain the published Candidate or canonical outcome and its references, and inspect that outcome without launching a provider, parsing an Agent response, or constructing a Harness/Session record. Equivalent internal Agent results still produce the existing golden outputs through that same path.
+
+### B. Finish Delivery Planning's result-contract integration
+
+The neutral Contract and adapter exist, but are not yet the input used by the production map materialization path.
+
+Evidence:
+
+- `lib/modules/delivery-planning/producer-adapter.ts` exports `toDeliveryMapSemanticResult`; production Run settlement does not call it.
+- `lib/modules/delivery-planning/runs.ts` parses the Harness result and passes that result to `materializeWhatToDoDeliveryMap`.
+- `lib/modules/delivery-planning/map.ts` still accepts `WhatToDoMapProposal`, together with caller-provided `runId`, `updatedAt` and source snapshot/storage metadata, rather than `DeliveryMapResult` and the complete frozen basis.
+- Contract artifact writes and `publishDeliveryMap` remain in `runs.ts`; the latter still defaults to the old Planning Card service. It is not a producer-neutral publication entry point merely because it is exported.
+
+Required work:
+
+1. Use the existing adapter in the Agent path and feed `DeliveryMapResult` into neutral validation/materialization. Existing formal Contract references must remain explicit; do not require a direct producer to recreate Candidate aliases, revisions or Harness fields.
+2. Put map computation, artifact staging and canonical publication behind the module service from A. The Host supplies publication identity and timestamps internally.
+3. Preserve the captured `currentMap`, its fingerprint and the stale-basis check inside the existing serialized publication boundary. Do not revert the fixes delivered in PRs #218–#221.
+4. Keep completed/unrelated Contract protection and atomic dependency replacement. Reconcile the old Planning Card synchronization consumer with the new DeliveryTarget protection introduced by PR #214; do not revive removed execution APIs or add a second synchronization path.
+
+Acceptance: the minimal neutral map example can reach a published map using only valid project/basis/context inputs, without translating back into `WhatToDoHarnessResult`. Cover a retained Contract and a redundant uncompleted Contract removed with its dependencies reconnected. Existing create/adjust goldens and stale-map conflict tests remain applicable.
+
+### C. Persist semantic results, receipts and Host materialization events
+
+`MaterializationReceipt` and `materializationLogEntry` are defined, but a repository-wide caller search at the audited revision finds no production use that emits those records/events. `semanticResultHash` is used for basis/source fingerprints; it is not persisted as a semantic-result receipt by the scoped Run services. A parsed or materialized result inside a producer-specific Run record does not satisfy independent semantic-result persistence.
+
+This does not mean the product has no logs or receipts. Existing Run logs, Latest Responses and the Domain Model commit receipt are real and must remain. The missing part is the additional producer-boundary evidence explicitly required by this document.
+
+Required work:
+
+- Persist the normalized, producer-neutral semantic result independently of the raw envelope, and bind its hash to the operation receipt.
+- Emit the Contract id/version/hash, basis fingerprint, actual producer provenance, outcome, affected identities and publication reference. Reuse the existing Domain commit receipt as publication evidence where appropriate.
+- Emit materialization validation, identity allocation, staging and publication events as `HOST`, using the shared event helper. Preserve Agent reasoning/tool events as `AGENT`.
+- Persist a rejected operation with its precise failure boundary without claiming publication. Do not require a caller to scan output directories to discover what happened.
+- Keep `agent-run` provenance truthful for current Run callers. Do not invent a provider Session for a direct deterministic call. Any future external-producer variant belongs to the later MCP design; this step must leave the deterministic service independent of Agent-specific evidence.
+
+Acceptance: successful and rejected operations expose independently readable semantic-result/receipt artifacts, their hashes agree, their affected IDs match the visible result, and their logs identify Host work. Neither a no-change result nor a validation rejection creates graph entities.
+
+### D. Close the remaining acceptance gap and update completion status
+
+Retain the current parity goldens, reference validation, identity preservation, stale-basis guards and dependency-direction tests. Add only the missing service-level checks from A–C, rather than repeating all gates or testing implementation constants.
+
+For the newly extracted publication boundary, verify a concrete staging/publication failure leaves existing visible state unchanged and cannot produce a successful receipt. This is completion evidence for the new boundary, not an assertion that every current writer is broken. Existing monotonic unused identity reservations remain permitted under the original rules below.
+
+Extend the dependency-direction gate's required-file coverage to the completed module services, including Delivery Planning's computation/publication ownership. Keep both runtime and type-only transitive checks. Do not call the work complete merely because the current gate passes while the remaining publication code lives outside its guarded service layer.
+
+Recommended remaining delivery sequence:
+
+1. Finish the graph-module service/publication seam and its receipt/artifact mechanism using Product Exploration, then reuse it for Scope Decomposition.
+2. Connect Domain Modeling's neutral result/basis to its existing state writer through the service boundary.
+3. Finish Delivery Planning's adapter-to-neutral-service wiring and publication split.
+4. Verify the cross-module Definition of done, update this status with actual completed evidence, and only then start the separate MCP exposure design.
+
+No one-time data migration, source graph rewrite, new UI, provider permission framework or execution refactor is required to close this checklist. Coordinate with the separate delivery-runtime cleanup only where the existing Delivery Map publication consumer crosses that boundary.
 
 ## Task summary
 
