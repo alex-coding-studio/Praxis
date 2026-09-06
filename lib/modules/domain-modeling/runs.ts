@@ -41,11 +41,7 @@ import {
   prepareDomainModelBasis,
   type DomainModelBasis,
 } from './basis.ts';
-import {
-  publishDomainModelResult,
-  DOMAIN_MODEL_UNCHANGED_REASON,
-  type PublishedDomainModel,
-} from './publish.ts';
+import { composeDomainModel } from './materializer.ts';
 import { toDomainModelSemanticResult } from './producer-adapter.ts';
 import type { DomainModelResult } from './contract.ts';
 import {
@@ -415,33 +411,29 @@ export async function listLatestDomainModelRuns(
 
 function settledDomainModelResult(
   envelope: DomainModelEnvelope,
-  published: PublishedDomainModel,
+  basis: DomainModelBasis,
+  semantic: DomainModelResult,
 ): DomainModelAgentResult {
   const identity = {
     harnessVersion: envelope.harnessVersion,
     requestId: envelope.requestId,
     baseVersion: envelope.baseVersion,
     inputFingerprint: envelope.inputFingerprint,
-    summary: published.summary,
+    summary: envelope.summary,
   };
-  if (published.outcome === 'clarification')
+  if (semantic.outcome === 'clarification')
     return {
       ...identity,
       outcome: 'clarification',
-      question: envelope.outcome === 'clarification' ? envelope.question : '',
+      question: semantic.question,
     };
-  if (published.outcome === 'no-change')
-    return {
-      ...identity,
-      outcome: 'no-change',
-      reason:
-        envelope.outcome === 'no-change'
-          ? envelope.reason
-          : DOMAIN_MODEL_UNCHANGED_REASON,
-    };
-  if (published.outcome !== 'model-change')
-    throw new Error('A settled Domain Model result must carry its model.');
-  return { ...identity, outcome: 'applied', model: published.model };
+  if (semantic.outcome === 'no-change')
+    return { ...identity, outcome: 'no-change', reason: semantic.reason };
+  return {
+    ...identity,
+    outcome: 'applied',
+    model: composeDomainModel(basis.model, semantic),
+  };
 }
 
 async function settle(
@@ -466,12 +458,28 @@ async function settle(
     selectedIds: request.selectedIds,
   });
   const semantic = toDomainModelSemanticResult(envelope);
-  const published = await publishDomainModelResult(project, basis, semantic, {
-    runId: original.id,
-    userInputPath: original.userInputPath ?? null,
-  });
-  const change = published.change;
-  const result = settledDomainModelResult(envelope, published);
+  let result = settledDomainModelResult(envelope, basis, semantic);
+  let change: DomainChange | null = null;
+  if (result.outcome === 'applied') {
+    const applied = await applyProposedDomainModel(project, {
+      baseVersion: basis.stateVersion,
+      runId: original.id,
+      userInputPath: original.userInputPath ?? null,
+      summary: result.summary,
+      proposed: result.model,
+    });
+    change = applied.change;
+    if (!change)
+      result = {
+        harnessVersion: result.harnessVersion,
+        requestId: result.requestId,
+        baseVersion: result.baseVersion,
+        inputFingerprint: result.inputFingerprint,
+        outcome: 'no-change',
+        summary: result.summary,
+        reason: 'The current Domain Model already represents this request.',
+      };
+  }
   const classification = classifyModuleRun(
     result.outcome === 'applied'
       ? { runState: 'settled', outcome: 'applied', summary: result.summary }
