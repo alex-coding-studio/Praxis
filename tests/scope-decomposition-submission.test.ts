@@ -221,3 +221,94 @@ void test('a direct Recompose supersedes the Candidates it selected', async (t) 
     'the replaced Candidate must leave the current working set',
   );
 });
+
+void test('a direct append keeps the earlier Candidates alongside the new one', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const first = await submitScopeDecompositionResult(
+    await basisFor(project, sourceNodeId),
+    { outcome: 'proposal', candidates: [candidate('capture', sourceNodeId)] },
+    { sourceNodeId },
+  );
+  const existing = first.candidates[0]!.candidateId;
+
+  const appended = await submitScopeDecompositionResult(
+    await prepareScopeDecompositionMaterializationBasis(project, {
+      operation: 'append-candidates',
+      intention: 'understanding',
+      motion: 'unspecified',
+      knownNodeIds: [sourceNodeId],
+      acceptedCandidateIds: [],
+      knownResourcePaths: [],
+      reservedCandidateIds: [existing],
+      currentCandidates: [
+        { candidateId: existing, revision: 1, dependsOn: [] },
+      ],
+    }),
+    { outcome: 'proposal', candidates: [candidate('render', sourceNodeId)] },
+    { sourceNodeId },
+  );
+
+  const added = appended.candidates[0]!.candidateId;
+  assert.notEqual(added, existing);
+  const runs = await listLatestTaskDecompositionRuns(project);
+  assert.deepEqual(
+    runs
+      .flatMap((run) =>
+        run.result?.outcome === 'proposal' ? run.result.candidates : [],
+      )
+      .map((entry) => entry.candidateId)
+      .sort(),
+    [existing, added].sort(),
+    'an appended submission must not displace the earlier Candidates',
+  );
+});
+
+void test('a direct revision keeps the Candidate identity and advances its revision', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const first = await submitScopeDecompositionResult(
+    await basisFor(project, sourceNodeId),
+    { outcome: 'proposal', candidates: [candidate('capture', sourceNodeId)] },
+    { sourceNodeId },
+  );
+  const original = first.candidates[0]!;
+
+  const revised = await submitScopeDecompositionResult(
+    await prepareScopeDecompositionMaterializationBasis(project, {
+      operation: 'revise-candidate',
+      revisionTarget: {
+        candidateId: original.candidateId,
+        revision: original.revision,
+        uid: original.uid,
+      },
+      intention: 'understanding',
+      motion: 'unspecified',
+      knownNodeIds: [sourceNodeId],
+      acceptedCandidateIds: [],
+      knownResourcePaths: [],
+      reservedCandidateIds: [],
+      currentCandidates: [
+        {
+          candidateId: original.candidateId,
+          revision: original.revision,
+          dependsOn: [],
+        },
+      ],
+    }),
+    {
+      outcome: 'proposal',
+      candidates: [
+        {
+          ...candidate(original.candidateId, sourceNodeId),
+          title: 'Capture the source precisely',
+        },
+      ],
+    },
+    { sourceNodeId },
+  );
+
+  const record = revised.candidates[0]!;
+  assert.equal(record.candidateId, original.candidateId);
+  assert.equal(record.uid, original.uid);
+  assert.equal(record.revision, original.revision + 1);
+  assert.equal(revised.candidateAliases, null);
+});
