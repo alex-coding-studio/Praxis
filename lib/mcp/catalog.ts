@@ -11,7 +11,10 @@ import {
   type ResponseOwner,
 } from '../execution-observability/types.ts';
 import { listTaskGraphNodes, type TaskGraphNode } from '../graph/task/nodes.ts';
-import { readDomainModelView } from '../modules/domain-modeling/model.ts';
+import {
+  readDomainModelCommitReceipt,
+  readDomainModelView,
+} from '../modules/domain-modeling/model.ts';
 import { readWhatToDoCurrentMapWithFingerprint } from '../modules/delivery-planning/storage.ts';
 import {
   isAcceptedPlanningShape,
@@ -579,6 +582,24 @@ async function readReceiptDocument(file: string) {
   };
 }
 
+async function readDomainCanonicalCommit(
+  project: RegisteredProject,
+  runId: string,
+) {
+  const committed = await readDomainModelCommitReceipt(project, runId).catch(
+    () => null,
+  );
+  if (!committed) return null;
+  return {
+    settledAt: committed.committedAt,
+    receipt: null,
+    outcome: {
+      kind: 'canonical',
+      summary: `The canonical state was updated to version ${committed.stateVersion}. The materialization receipt for this Run was not recorded, so the outcome is recovered from the committed state.`,
+    },
+  };
+}
+
 async function readCommittedRunReceipt(
   project: RegisteredProject,
   record: McpOperationRecord,
@@ -591,7 +612,11 @@ async function readCommittedRunReceipt(
     record.runId,
   );
   if (record.module === 'domain-modeling')
-    return readReceiptDocument(path.join(directory, 'materialization.json'));
+    return (
+      (await readReceiptDocument(
+        path.join(directory, 'materialization.json'),
+      )) ?? (await readDomainCanonicalCommit(project, record.runId))
+    );
   return readGraphRunReceipt(project, path.join(directory, 'run.json'));
 }
 

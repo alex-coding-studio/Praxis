@@ -280,6 +280,73 @@ void test('a publication conflict is classified as a stale Basis, not a failure'
   );
 });
 
+void test('a lost materialization receipt still recovers from the committed state', async (t) => {
+  const project = await fixture(t);
+  const { record } = await prepareDomainModelOperation(project, {
+    userInput: 'Name the reading list.',
+  });
+  await submitDomainModelOperation(
+    project,
+    record.operationId,
+    record.contract,
+    modelChange('Reading list'),
+  );
+  const published = (await findMcpOperation(project, record.operationId))!;
+
+  await rm(
+    path.join(
+      project.planningPath,
+      'domain-model',
+      'runs',
+      record.runId,
+      'materialization.json',
+    ),
+    { force: true },
+  );
+  await writeMcpOperation(project, {
+    ...published,
+    status: 'running',
+    settledAt: null,
+    outcome: null,
+    receipt: null,
+  });
+
+  const recovered = JSON.parse(
+    (await catalog.readOperationResource(project.id, record.operationId)).text,
+  ) as Record<string, unknown>;
+  assert.equal(
+    recovered.status,
+    'completed',
+    'the canonical committed state must settle the operation when its best-effort receipt is gone',
+  );
+  assert.equal(recovered.receipt, null);
+  assert.match(
+    (recovered.outcome as { summary: string }).summary,
+    /recovered from the committed state/,
+    'the projection must say the receipt was missing rather than imply one exists',
+  );
+});
+
+void test('an operation whose Run never committed stays unsettled', async (t) => {
+  const project = await fixture(t);
+  const { record } = await prepareDomainModelOperation(project, {
+    userInput: 'Name the reading list.',
+  });
+  await writeMcpOperation(project, {
+    ...record,
+    status: 'running',
+    admittedAt: new Date().toISOString(),
+    admittedHostPid: 2 ** 22,
+    semanticResultHash: 'never-committed',
+  });
+  const projection = JSON.parse(
+    (await catalog.readOperationResource(project.id, record.operationId)).text,
+  ) as Record<string, unknown>;
+  assert.equal(projection.status, 'interrupted');
+  assert.equal(projection.receipt, null);
+  assert.equal(projection.outcome, null);
+});
+
 void test('a Domain operation cannot be submitted through another module tool', async (t) => {
   const project = await fixture(t);
   const { submitScopeDecompositionOperation } =
