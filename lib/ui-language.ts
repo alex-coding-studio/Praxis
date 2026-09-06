@@ -5,6 +5,11 @@ export function isUiLanguage(value: unknown): value is UiLanguage {
 }
 
 export const chineseUi: Record<string, string> = {
+  'Confirm the delivery brief first.': '请先确认交付简报。',
+  'Record a review decision for the current commit.':
+    '当前提交尚未完成审查判定。',
+  'Independent code review is pending.': '独立代码审查尚未完成。',
+  'Technical evidence is incomplete: {id}': '技术验证尚未完成：{id}',
   'Loading task document…': '正在加载任务文档…',
   'What should this delivery focus on? Add any requirements or scope changes here.':
     '这次交付有什么重点？在这里补充要求或调整范围。',

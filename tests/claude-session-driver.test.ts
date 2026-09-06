@@ -443,7 +443,7 @@ void test('every Claude Host-tool call emits activity before validation so the c
   );
 });
 
-void test('coordinator thread instructions reach the real CLI arguments and only the first process', async (t) => {
+void test('coordinator thread instructions reach both initial and resumed CLI processes', async (t) => {
   const f = await fixture(t, 'echo');
   const thread = await f.driver.startThread({
     profile: { agent: 'claude', model: 'fixture', effort: 'low' },
@@ -468,9 +468,10 @@ void test('coordinator thread instructions reach the real CLI arguments and only
     'project and user customizations stay disabled',
   );
   assert.ok(!runs[0].args.includes('--safe-mode'));
-  assert.ok(
-    !runs[1].args.includes('--append-system-prompt'),
-    'a resumed session already carries its instructions',
+  assert.equal(
+    runs[1].args[runs[1].args.indexOf('--append-system-prompt') + 1],
+    coordinatorThreadInstructions,
+    'a resumed process receives current instructions',
   );
 });
 

@@ -64,6 +64,10 @@ void test('briefing persists its result, excludes implementation delegation, and
     async startThread(input) {
       starts++;
       assert.equal(input.access, 'read-only');
+      assert.match(
+        input.instructions ?? '',
+        /Delivery principles shared by every role/,
+      );
       return {
         ...input,
         provider: 'codex',

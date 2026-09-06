@@ -31,11 +31,16 @@ import {
 } from './publication.ts';
 import { deliveryGit, prepareDeliveryWorkspace } from './workspace.ts';
 import {
+  DELIVERY_PRINCIPLES,
   ORCHESTRATOR_INSTRUCTIONS,
   REVIEWER_INSTRUCTIONS,
   WORKER_INSTRUCTIONS,
 } from './instructions.ts';
-import type { DeliveryRecord, DeliveryRun } from './record.ts';
+import {
+  deliveryTechnicalReady,
+  type DeliveryRecord,
+  type DeliveryRun,
+} from './record.ts';
 import { claimDeliveryTarget } from './ownership.ts';
 import { recognizeExistingDelivery } from './existing-delivery.ts';
 
@@ -271,7 +276,7 @@ async function executeDelivery(
         run.kind === 'brief' || role === 'REVIEWER'
           ? ('read-only' as const)
           : ('workspace-write' as const),
-      instructions,
+      instructions: `${DELIVERY_PRINCIPLES}\n\n${instructions}`,
       hostJobs: run.kind !== 'brief' && role !== 'REVIEWER',
       advertiseHostJobs: role === 'ORCHESTRATOR',
     };
@@ -499,6 +504,7 @@ async function executeDelivery(
             !args.required &&
             value.review?.head === head &&
             value.review.disposition === 'required' &&
+            value.review.reviewerSessionId &&
             !value.review.approved
           )
             throw new PublicApiError(
@@ -517,7 +523,7 @@ async function executeDelivery(
     ),
     hostTool(
       'save_delivery_brief',
-      'Save the proposed outcome and acceptance for user confirmation.',
+      'Save the proposed outcome for confirmation. Criteria contain only technical checks; place subjective visual or experience judgments in userAcceptance, never in technical gates.',
       {
         outcome: { type: 'string' },
         included: { type: 'array', items: { type: 'string' } },
@@ -536,6 +542,7 @@ async function executeDelivery(
           },
         },
         openDecisions: { type: 'array', items: { type: 'string' } },
+        userAcceptance: { type: 'array', items: { type: 'string' } },
       },
       async (args) => {
         assertActive();
@@ -561,6 +568,10 @@ async function executeDelivery(
             excluded: strings(args.excluded, 'Excluded'),
             criteria,
             openDecisions: strings(args.openDecisions, 'Open decisions'),
+            userAcceptance: strings(
+              args.userAcceptance ?? [],
+              'User acceptance',
+            ),
             confirmedAt: null,
           };
           current.checks = [];
@@ -831,15 +842,7 @@ async function executeDelivery(
       run.kind !== 'brief' &&
       delivered.publication?.draft &&
       delivered.response?.status !== 'fail' &&
-      delivered.brief?.confirmedAt &&
-      delivered.progress.length > 0 &&
-      delivered.progress.every((item) => item.status === 'completed') &&
-      delivered.checks.some((check) => check.status === 'passed') &&
-      delivered.checks.every(
-        (check) =>
-          check.head === delivered.publication!.head &&
-          check.status !== 'failed',
-      )
+      deliveryTechnicalReady(delivered, delivered.publication.head)
     ) {
       await readyDeliveryForReview(project, uid);
       log.append({

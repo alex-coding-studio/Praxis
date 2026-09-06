@@ -100,26 +100,60 @@ export function deliveryCandidateReady(record: DeliveryRecord, head: string) {
 }
 
 export function deliveryEvidenceReady(record: DeliveryRecord, head: string) {
+  return deliveryEvidenceBlockers(record, head).length === 0;
+}
+
+export function deliveryTechnicalReady(record: DeliveryRecord, head: string) {
+  return Boolean(
+    record.brief?.confirmedAt &&
+    !record.brief.openDecisions.length &&
+    record.brief.criteria.length &&
+    record.brief.criteria.every((criterion) =>
+      record.checks.some(
+        (check) =>
+          check.id === criterion.id &&
+          check.head === head &&
+          check.status === 'passed' &&
+          check.evidence.trim(),
+      ),
+    ),
+  );
+}
+
+export function deliveryEvidenceBlockers(
+  record: DeliveryRecord,
+  head: string,
+): Array<{ message: string; id?: string }> {
+  const blockers: Array<{ message: string; id?: string }> = [];
   if (!record.brief?.confirmedAt || record.brief.openDecisions.length)
-    return false;
+    blockers.push({ message: 'Confirm the delivery brief first.' });
   if (
     !record.review ||
     record.review.head !== head ||
     !record.review.reason.trim()
   )
-    return false;
+    blockers.push({
+      message: 'Record a review decision for the current commit.',
+    });
   if (
-    record.review.disposition === 'required' &&
+    record.review?.disposition === 'required' &&
     (!record.review.approved || !record.review.reviewerSessionId)
   )
-    return false;
-  return record.brief.criteria.every((criterion) =>
-    record.checks.some(
-      (check) =>
-        check.id === criterion.id &&
-        check.head === head &&
-        check.status === 'passed' &&
-        check.evidence.trim(),
-    ),
-  );
+    blockers.push({ message: 'Independent code review is pending.' });
+  for (const criterion of record.brief?.criteria ?? []) {
+    if (
+      !record.checks.some(
+        (check) =>
+          check.id === criterion.id &&
+          check.head === head &&
+          check.status === 'passed' &&
+          check.evidence.trim(),
+      )
+    )
+      blockers.push({
+        message: 'Technical evidence is incomplete: {id}',
+        id: criterion.id,
+      });
+  }
+  return blockers;
 }

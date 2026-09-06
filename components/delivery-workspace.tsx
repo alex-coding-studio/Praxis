@@ -64,6 +64,7 @@ import type {
 import {
   deliveryCandidateReady,
   deliveryEvidenceReady,
+  deliveryEvidenceBlockers,
   type DeliveryRecord,
 } from '@/lib/modules/delivery/record';
 import { cn } from '@/lib/utils';
@@ -216,19 +217,53 @@ export function DeliveryWorkspace({
   initialWorkspace,
   folders,
   initialTarget,
+  initialLayer,
 }: {
   projectId: string;
   initialWorkspace: Workspace;
   folders: ContextBrowserFolder[];
   initialTarget?: string;
+  initialLayer?: string;
 }) {
   const { t } = useUiText();
   const [workspace, setWorkspace] = useState<Workspace>(initialWorkspace);
   const [layer, setLayer] = useState<DeliverySourceKind>(
     initialWorkspace.targets.find((entry) => entry.sourceUid === initialTarget)
-      ?.sourceKind ?? 'mvp',
+      ?.sourceKind ??
+      (layers.some((item) => item.id === initialLayer)
+        ? (initialLayer as DeliverySourceKind)
+        : 'mvp'),
   );
   const [uid, setUid] = useState<string | null>(initialTarget ?? null);
+  function selectDelivery(
+    nextUid: string | null,
+    nextLayer: DeliverySourceKind = layer,
+  ) {
+    setUid(nextUid);
+    setLayer(nextLayer);
+    const url = new URL(window.location.href);
+    url.searchParams.set('layer', nextLayer);
+    if (nextUid) url.searchParams.set('target', nextUid);
+    else url.searchParams.delete('target');
+    window.history.pushState(null, '', url);
+  }
+  useEffect(() => {
+    const restore = () => {
+      const search = new URL(window.location.href).searchParams;
+      const nextUid = search.get('target');
+      const nextLayer = search.get('layer');
+      setUid(nextUid);
+      setLayer(
+        workspace.targets.find((item) => item.sourceUid === nextUid)
+          ?.sourceKind ??
+          (layers.some((item) => item.id === nextLayer)
+            ? (nextLayer as DeliverySourceKind)
+            : 'mvp'),
+      );
+    };
+    window.addEventListener('popstate', restore);
+    return () => window.removeEventListener('popstate', restore);
+  }, [workspace.targets]);
   const [input, setInput] = useState('');
   const [files, setFiles] = useState<Array<{ name: string; base64: string }>>(
     [],
@@ -480,7 +515,7 @@ export function DeliveryWorkspace({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                onClick={() => setUid(null)}
+                onClick={() => selectDelivery(null)}
                 aria-label={t('Back')}
               >
                 <ArrowLeft />
@@ -533,7 +568,7 @@ export function DeliveryWorkspace({
                 <Button
                   key={item.id}
                   variant={layer === item.id ? 'secondary' : 'ghost'}
-                  onClick={() => setLayer(item.id)}
+                  onClick={() => selectDelivery(null, item.id)}
                 >
                   {t(item.label)}
                   <span
@@ -560,7 +595,7 @@ export function DeliveryWorkspace({
               nodesDraggable={false}
               nodesConnectable={false}
               onNodeClick={(_, node) => {
-                setUid(node.id);
+                selectDelivery(node.id);
                 setInput('');
               }}
               fitView
@@ -830,6 +865,24 @@ export function DeliveryWorkspace({
                     </Button>
                   )}
               </div>
+              {!running &&
+                record?.publication &&
+                record.status !== 'completed' &&
+                deliveryEvidenceBlockers(record, record.publication.head)
+                  .length > 0 && (
+                  <section className="basis-full border-t border-border pt-3">
+                    <ul className="flex flex-wrap gap-x-5 gap-y-2 text-[11px] leading-4 text-muted-foreground">
+                      {deliveryEvidenceBlockers(
+                        record,
+                        record.publication.head,
+                      ).map((blocker) => (
+                        <li key={`${blocker.message}:${blocker.id ?? ''}`}>
+                          {t(blocker.message, { id: blocker.id ?? '' })}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
             </ExecutionStickyHeaderFrame>
           ) : null}
           {record?.brief && (
@@ -874,8 +927,10 @@ export function DeliveryWorkspace({
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      setUid(prerequisite.sourceUid);
-                      setLayer(prerequisite.sourceKind);
+                      selectDelivery(
+                        prerequisite.sourceUid,
+                        prerequisite.sourceKind,
+                      );
                     }}
                   >
                     {prerequisite.title}
