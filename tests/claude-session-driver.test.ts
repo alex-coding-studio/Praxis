@@ -5,6 +5,34 @@ import path from 'node:path';
 import test from 'node:test';
 import { readLocalAgentActivity } from '../lib/agents/activity.ts';
 
+void test('Claude tool activity describes commands and file paths without file bodies or command credentials', () => {
+  const activity = (name: string, input: Record<string, unknown>) =>
+    readLocalAgentActivity({
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', name, input }] },
+    })!.summary;
+  assert.equal(
+    activity('Read', { file_path: 'Locus/ComponentsView.swift' }),
+    'Running tool: Read — Locus/ComponentsView.swift',
+  );
+  assert.equal(
+    activity('Write', {
+      file_path: 'Locus/Path.swift',
+      content: 'private file body',
+    }),
+    'Running tool: Write — Locus/Path.swift',
+  );
+  assert.equal(
+    activity('Bash', { command: './scripts/build.sh\necho private-body' }),
+    'Running tool: Bash — ./scripts/build.sh',
+  );
+  assert.equal(
+    activity('Bash', { command: 'tool --token "private credential"' }),
+    'Running tool: Bash — tool --token [redacted]',
+  );
+  assert.equal(activity('Unknown', {}), 'Running tool: Unknown');
+});
+
 void test('Claude error results remain errors even when their subtype is success', () => {
   assert.equal(
     readLocalAgentActivity({
