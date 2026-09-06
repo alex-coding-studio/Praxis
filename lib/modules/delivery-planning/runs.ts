@@ -76,6 +76,7 @@ import {
 } from '../implementation/planning-service.ts';
 import { deliveryContractPlanningSource } from '../implementation/planning-sources.ts';
 import { withDeliveryState } from '../../delivery-state-lock.ts';
+import { toDeliveryMapSemanticResult } from './producer-adapter.ts';
 import { MaterializationError } from '../../materialization/receipt.ts';
 import { prepareDeliveryMapBasis, type DeliveryMapBasis } from './basis.ts';
 
@@ -448,8 +449,16 @@ function settleLater(
           : {}),
       });
       const endedAt = new Date().toISOString();
+      const semantic = toDeliveryMapSemanticResult(result, {
+        formalContractIdByCandidateId: Object.fromEntries(
+          (basis?.currentMap?.contracts ?? []).map((contract) => [
+            whatToDoContractCandidateId(contract),
+            contract.id,
+          ]),
+        ),
+      });
       const map =
-        result.outcome === 'map-proposal'
+        semantic.outcome === 'map-proposal'
           ? materializeWhatToDoDeliveryMap({
               runId: run.id,
               updatedAt: endedAt,
@@ -457,8 +466,14 @@ function settleLater(
                 ...(basis?.currentMap?.sourceUids ?? []),
                 ...run.sourceUids,
               ],
-              result,
-              basis: { currentMap: basis?.currentMap ?? null },
+              result: semantic,
+              basis: {
+                currentMap: basis?.currentMap ?? null,
+                userInput: {
+                  path: prepared.userInput.path,
+                  sha256: prepared.userInput.sha256,
+                },
+              },
               sourceSnapshots: prepared.sourceSnapshots,
             })
           : null;

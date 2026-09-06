@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  DeliveryContractReference,
+  DeliveryMapResult,
   WhatToDoContractCandidate,
-  WhatToDoMapProposal,
   WhatToDoSourceClaim,
 } from './contract.ts';
 
@@ -16,10 +17,21 @@ export type WhatToDoDeliveryContract = Omit<
   outputPath: string;
 };
 
-export type WhatToDoMapSourceClaim = Omit<
-  WhatToDoSourceClaim,
-  'contractCandidateIds'
-> & { contractIds: string[] };
+export type WhatToDoMapSourceClaim = {
+  claimId: string;
+  sourcePath: string;
+  sourceSha256: string;
+  anchor: string;
+  summary: string;
+  disposition: 'in-scope' | 'out-of-scope';
+  contractIds: string[];
+  exclusionReason: string | null;
+  exclusionAuthority: {
+    userInputPath: string;
+    userInputSha256: string;
+    anchor: string;
+  } | null;
+};
 
 export type WhatToDoMapSourceSnapshot = {
   logicalPath: string;
@@ -113,13 +125,38 @@ export function whatToDoCurrentMapPromptView(map: WhatToDoDeliveryMap) {
   };
 }
 
+function contractIdentityKey(id: string) {
+  return `contract:${id}`;
+}
+
+function contractReferenceKey(reference: DeliveryContractReference) {
+  return reference.kind === 'proposal'
+    ? `proposal:${reference.localKey}`
+    : contractIdentityKey(reference.id);
+}
+
+function requireIdentity(
+  identities: Map<string, { uid: string; id: string }>,
+  reference: DeliveryContractReference,
+) {
+  const identity = identities.get(contractReferenceKey(reference));
+  if (!identity)
+    throw new Error(
+      `Delivery Contract reference is unresolved: ${contractReferenceKey(reference)}.`,
+    );
+  return identity;
+}
+
 export function materializeWhatToDoDeliveryMap(
   input: {
     runId: string;
     updatedAt: string;
     sourceUids: string[];
-    result: WhatToDoMapProposal;
-    basis: { currentMap: WhatToDoDeliveryMap | null };
+    result: Extract<DeliveryMapResult, { outcome: 'map-proposal' }>;
+    basis: {
+      currentMap: WhatToDoDeliveryMap | null;
+      userInput: { path: string; sha256: string };
+    };
     sourceSnapshots: WhatToDoMapSourceSnapshot[];
   },
   createUid: () => string = randomUUID,
@@ -130,21 +167,21 @@ export function materializeWhatToDoDeliveryMap(
   const retainedCandidateIds = new Set(
     input.result.recomposition?.effects
       .filter((effect) => effect.kind === 'retain')
-      .flatMap((effect) => effect.from) ?? [],
+      .flatMap((effect) => effect.from.map(contractReferenceKey)) ?? [],
   );
   const identities = new Map([
     ...(input.basis.currentMap?.contracts ?? [])
       .filter((contract) =>
-        retainedCandidateIds.has(whatToDoContractCandidateId(contract)),
+        retainedCandidateIds.has(contractIdentityKey(contract.id)),
       )
       .map(
         (contract) =>
           [
-            whatToDoContractCandidateId(contract),
+            contractIdentityKey(contract.id),
             { uid: contract.uid, id: contract.id },
           ] as const,
       ),
-    ...input.result.candidates.map((candidate) => {
+    ...input.result.contracts.map((contract) => {
       const uid = createUid();
       const compact = uid.replaceAll('-', '');
       let id = '';
@@ -157,21 +194,24 @@ export function materializeWhatToDoDeliveryMap(
         }
       }
       if (!id) throw new Error('Cannot allocate a Delivery Contract identity.');
-      return [candidate.candidateId, { uid, id }] as const;
+      return [
+        contractReferenceKey({ kind: 'proposal', localKey: contract.localKey }),
+        { uid, id },
+      ] as const;
     }),
   ]);
   const retainedContracts = (input.basis.currentMap?.contracts ?? [])
     .filter((contract) =>
-      retainedCandidateIds.has(whatToDoContractCandidateId(contract)),
+      retainedCandidateIds.has(contractIdentityKey(contract.id)),
     )
     .map((contract) => {
-      const candidateId = whatToDoContractCandidateId(contract);
+      const candidateId = contractIdentityKey(contract.id);
       const update = input.result.contractDependencyUpdates?.find(
-        (item) => item.candidateId === candidateId,
+        (item) => contractReferenceKey(item.contract) === candidateId,
       );
       if (!update) return contract;
       const dependencyIdentities = update.dependsOn.map((dependency) =>
-        identities.get(dependency)!,
+        requireIdentity(identities, dependency),
       );
       return {
         ...contract,
@@ -183,17 +223,15 @@ export function materializeWhatToDoDeliveryMap(
         outputPath: `what-to-do/runs/${input.runId}/contracts/${contract.id}/output.md`,
       };
     });
-  const newContracts = input.result.candidates.map((candidate) => {
-    const identity = identities.get(candidate.candidateId)!;
-    const dependencyIdentities = candidate.dependsOn.map((dependency) =>
-      identities.get(dependency)!,
+  const newContracts = input.result.contracts.map((proposed) => {
+    const identity = requireIdentity(identities, {
+      kind: 'proposal',
+      localKey: proposed.localKey,
+    });
+    const dependencyIdentities = proposed.dependsOn.map((dependency) =>
+      requireIdentity(identities, dependency),
     );
-    const {
-      candidateId: _candidateId,
-      revision: _revision,
-      dependsOn: _dependsOn,
-      ...content
-    } = candidate;
+    const { localKey: _localKey, dependsOn: _dependsOn, ...content } = proposed;
     return {
       ...content,
       id: identity.id,
@@ -207,11 +245,15 @@ export function materializeWhatToDoDeliveryMap(
     };
   });
   const contracts = [...retainedContracts, ...newContracts].map((contract) => {
-    const candidateId = whatToDoContractCandidateId(contract);
+    const candidateId = contractIdentityKey(contract.id);
     return {
       ...contract,
       sourceClaimIds: input.result.sourceClaims
-        .filter((claim) => claim.contractCandidateIds.includes(candidateId))
+        .filter((claim) =>
+          claim.contracts.some(
+            (reference) => contractReferenceKey(reference) === candidateId,
+          ),
+        )
         .map((claim) => claim.claimId),
     };
   });
@@ -222,7 +264,7 @@ export function materializeWhatToDoDeliveryMap(
     ].map((snapshot) => [snapshot.logicalPath, snapshot]),
   );
   const sourcePaths = new Set(
-    input.result.sourceClaims.map((claim) => claim.sourcePath),
+    input.result.sourceClaims.map((claim) => claim.source.path),
   );
   const sourceSnapshots = [...sourcePaths].map((sourcePath) => {
     const snapshot = snapshotByPath.get(sourcePath);
@@ -237,11 +279,23 @@ export function materializeWhatToDoDeliveryMap(
     sourceUids: [...new Set(input.sourceUids)],
     contracts,
     sourceClaims: input.result.sourceClaims.map((claim) => {
-      const { contractCandidateIds, ...content } = claim;
+      const { contracts: claimContracts, source, ...content } = claim;
+      const snapshot = snapshotByPath.get(source.path);
+      if (!snapshot)
+        throw new Error(`Source Snapshot is unavailable: ${source.path}`);
       return {
         ...content,
-        contractIds: contractCandidateIds.map(
-          (candidateId) => identities.get(candidateId)!.id,
+        sourcePath: source.path,
+        sourceSha256: snapshot.sha256,
+        exclusionAuthority: claim.exclusionAuthority
+          ? {
+              userInputPath: input.basis.userInput.path,
+              userInputSha256: input.basis.userInput.sha256,
+              anchor: claim.exclusionAuthority.anchor,
+            }
+          : null,
+        contractIds: claimContracts.map(
+          (reference) => requireIdentity(identities, reference).id,
         ),
       };
     }),
