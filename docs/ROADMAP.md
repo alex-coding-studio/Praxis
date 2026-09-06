@@ -1,13 +1,15 @@
 # Roadmap
 
-## Current focus — graph result materialization boundary
+## Delivered — graph result materialization boundary
 
-As of 2026-09-05, the graph-oriented modules are being refactored so that
-validation, identity allocation, reference resolution, Candidate staging, and
-canonical publication are deterministic services separate from Agent
-generation. See [GRAPH_RESULT_MATERIALIZATION.md](GRAPH_RESULT_MATERIALIZATION.md)
-for the ordered pull requests. MCP exposure and external producers remain out
-of scope until that boundary is proven through the existing Agent flows.
+As of 2026-09-06, validation, identity allocation, reference resolution,
+Candidate staging and canonical publication are deterministic services separate
+from Agent generation in all four graph-oriented modules. Each owns a versioned
+Result Contract, a frozen Basis and a publish service that a producer with a
+typed semantic result can call without an Agent, and each records a
+Materialization Receipt for what it published or refused. See
+[GRAPH_RESULT_MATERIALIZATION.md](GRAPH_RESULT_MATERIALIZATION.md) for the
+closure record. MCP exposure and external producers remain a separate design.
 
 ## Current implementation update — real Planning connected
 
