@@ -22,7 +22,7 @@ export function renderTaskDecompositionSummaryMarkdown(
 export function renderTaskDecompositionResponseMarkdown(
   result: TaskDecompositionHarnessResult,
 ) {
-  const impact = result.impactReview.notes.length
+  const impact = result.impactReview?.notes?.length
     ? result.impactReview.notes.map((note) => `- ${note}`).join('\n')
     : '- No additional graph impact was reported.';
   if (result.outcome === 'proposal') {
