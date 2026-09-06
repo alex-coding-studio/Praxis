@@ -26,7 +26,6 @@ export function AgentRunControls({
   extraInfoCount = 0,
   extraInfoLabel = 'Extra info',
   agents,
-  showProfileSelector = true,
 }: {
   value: AgentProfile;
   onChange: (profile: AgentProfile) => void;
@@ -41,7 +40,6 @@ export function AgentRunControls({
   extraInfoCount?: number;
   extraInfoLabel?: string;
   agents?: readonly AgentProfile['agent'][];
-  showProfileSelector?: boolean;
 }) {
   const { t } = useUiText();
   return (
@@ -69,16 +67,14 @@ export function AgentRunControls({
         </Popover>
       ) : null}
       <div className="ml-auto flex items-stretch gap-2">
-        {showProfileSelector && (
-          <AgentProfileSelector
-            value={value}
-            onChange={onChange}
-            mode={mode}
-            label={label}
-            showStatus={false}
-            agents={agents}
-          />
-        )}
+        <AgentProfileSelector
+          value={value}
+          onChange={onChange}
+          mode={mode}
+          label={label}
+          showStatus={false}
+          agents={agents}
+        />
         <Button
           type={actionType}
           size="icon"

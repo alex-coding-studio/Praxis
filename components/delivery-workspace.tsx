@@ -872,7 +872,6 @@ export function DeliveryWorkspace({
                 }
                 extraInfoCount={contextRefs.length + files.length}
                 extraInfoLabel="Optional sources"
-                showProfileSelector={false}
                 value={record?.models.orchestrator ?? models.orchestrator}
                 onChange={(profile) => {
                   if (record)
