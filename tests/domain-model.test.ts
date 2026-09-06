@@ -710,22 +710,20 @@ void test('the Harness binds responses to one exact model state', () => {
     },
     previousSummary: '',
   });
-  const result = composedResult(
-    JSON.stringify({
-      harnessVersion: 2,
-      requestId: request.requestId,
-      baseVersion: 0,
-      inputFingerprint: request.inputFingerprint,
-      outcome: 'applied',
-      summary: 'Created the model.',
-      model: initialProposal(),
-    }),
-    request,
-  );
+  const envelope = {
+    harnessVersion: 2,
+    requestId: request.requestId,
+    baseVersion: 0,
+    inputFingerprint: request.inputFingerprint,
+    outcome: 'applied',
+    summary: 'Created the model.',
+    model: initialProposal(),
+  };
+  const result = composedResult(JSON.stringify(envelope), request);
   assert.equal(result.outcome, 'applied');
   assert.throws(
     () =>
-      composedResult(JSON.stringify({ ...result, baseVersion: 1 }), request),
+      composedResult(JSON.stringify({ ...envelope, baseVersion: 1 }), request),
     /does not match/,
   );
 });
