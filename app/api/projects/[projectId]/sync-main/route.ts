@@ -2,7 +2,7 @@ import { apiErrorResponse } from '@/lib/api-errors';
 import { getProject } from '@/lib/project-registry';
 import { guardRequest } from '@/lib/request-boundary';
 import { runHostOperation } from '@/lib/execution-observability/host-operations';
-import { syncProjectMain } from '@/lib/modules/implementation/sync-main';
+import { syncProjectMain } from '@/lib/sync-project-main';
 
 export const runtime = 'nodejs';
 export async function POST(

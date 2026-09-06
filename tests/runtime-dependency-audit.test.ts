@@ -269,7 +269,7 @@ void test('the real audit runs offline and is deterministic', () => {
   assert.match(printed, /runtime strongly connected components: \d+/);
 });
 
-void test('the earlier reported modules form no runtime component but do form type-only ones', () => {
+void test('the earlier reported modules remain analyzed and free of runtime cycles', () => {
   const graph = runAudit(PROJECT_ROOT);
   const reported = [
     'lib/modules/implementation/execution-types.ts',
@@ -294,17 +294,6 @@ void test('the earlier reported modules form no runtime component but do form ty
         !reported.includes(file),
         `${file} must not be in a runtime component`,
       );
-
-  const withTypeOnly = stronglyConnectedComponents(graph.modules, [
-    ...graph.runtimeEdges,
-    ...graph.typeOnlyEdges,
-  ]);
-  const covered = new Set(withTypeOnly.flat());
-  for (const reportedModule of reported)
-    assert.ok(
-      covered.has(reportedModule),
-      `${reportedModule} should appear once type-only edges are included`,
-    );
 });
 
 void test('lib keeps provider and business code inside module directories', async () => {

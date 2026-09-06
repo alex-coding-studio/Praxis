@@ -1,6 +1,5 @@
 import { getProject } from '@/lib/project-registry';
-import { planningService } from '@/lib/modules/implementation/planning-service';
-import { contractDeliveryStates } from '@/lib/modules/delivery-planning/completion';
+import { readDeliveryWorkspace } from '@/lib/modules/delivery/service';
 import { apiErrorResponse } from '@/lib/api-errors';
 
 export const dynamic = 'force-dynamic';
@@ -12,12 +11,18 @@ export async function GET(
   if (!project)
     return Response.json({ error: 'Project not found.' }, { status: 404 });
   try {
-    const [cards, sources] = await Promise.all([
-      planningService.list(project),
-      planningService.sources(project),
-    ]);
+    const { targets } = await readDeliveryWorkspace(project);
     return Response.json(
-      { states: contractDeliveryStates(cards, sources) },
+      {
+        states: Object.fromEntries(
+          targets
+            .filter((target) => target.delivery)
+            .map((target) => [
+              target.sourceUid,
+              target.status === 'completed' ? 'completed' : 'in-progress',
+            ]),
+        ),
+      },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {

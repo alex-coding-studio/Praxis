@@ -3,7 +3,13 @@ import path from 'node:path';
 import { PublicApiError } from '../../api-errors.ts';
 import { readDomainModel } from '../domain-modeling/model.ts';
 import type { PlanningCard } from '../implementation/planning-service.ts';
-import { readPlanningFile } from '../implementation/planning-sources.ts';
+import { readDeliveryRecord } from '../delivery/storage.ts';
+import { ensureDeliveryArtifacts } from '../delivery/artifacts.ts';
+import {
+  renderDeliveryBrief,
+  renderDeliveryOutput,
+} from '../delivery/documents.ts';
+import { readPlanningFile } from '../../planning-documents.ts';
 import {
   readCardWorkDocument,
   readCardWorklog,
@@ -39,6 +45,31 @@ export async function resolveProductContextResource(
   resourcePath: string,
   excludeSections: readonly string[] = [],
 ): Promise<ResolvedProductContextResource | null> {
+  const delivery = resourcePath.match(
+    /^delivery\/targets\/([0-9a-f-]{36})\/(brief|output)\.md$/i,
+  );
+  if (delivery) {
+    const record = await readDeliveryRecord(project, delivery[1]);
+    const section = 'task-execution';
+    if (
+      !record ||
+      excludeSections.includes(section) ||
+      !(delivery[2] === 'brief'
+        ? record.brief?.confirmedAt
+        : record.status === 'completed')
+    )
+      return null;
+    await ensureDeliveryArtifacts(project, record);
+    return {
+      section,
+      path: resourcePath,
+      fileName: path.basename(resourcePath),
+      markdown:
+        delivery[2] === 'brief'
+          ? renderDeliveryBrief(record)
+          : renderDeliveryOutput(record),
+    };
+  }
   const section = await currentProductContextSection(project, resourcePath);
   if (!section || excludeSections.includes(section)) return null;
   return {
@@ -101,7 +132,6 @@ async function currentProductContextSection(
 
   if (!isAcceptedPlanningShape(resourcePath, PRODUCT_CONTEXT_DOCUMENT_SHAPES))
     return null;
-
   const node = resourcePath.match(
     /^(whats-next|task-graph)\/nodes\/(NODE-[0-9a-f]{8,32})\/output\.md$/i,
   );

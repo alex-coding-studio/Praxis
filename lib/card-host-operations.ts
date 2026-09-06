@@ -11,11 +11,11 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { actionPublicationBranch } from './modules/implementation/action-publication.ts';
+import { actionPublicationBranch } from './publication-workspace.ts';
 import {
   verifyCardWorkspace,
   type CardWorkspace,
-} from './modules/implementation/worktree.ts';
+} from './publication-workspace.ts';
 
 const exec = promisify(execFile);
 
@@ -96,7 +96,7 @@ export type CandidatePublication = {
 export type HostCommandRunner = (
   command: string,
   arguments_: string[],
-  options?: { cwd?: string; env?: NodeJS.ProcessEnv },
+  options?: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number },
 ) => Promise<string>;
 
 const commandRunner: HostCommandRunner = async (command, arguments_, options) =>
@@ -104,7 +104,7 @@ const commandRunner: HostCommandRunner = async (command, arguments_, options) =>
     await exec(command, arguments_, {
       cwd: options?.cwd,
       env: options?.env ?? process.env,
-      timeout: 30000,
+      timeout: options?.timeoutMs ?? 30000,
       maxBuffer: 2_000_000,
     })
   ).stdout.trim();
@@ -198,7 +198,11 @@ export async function prepareCardEnvironment(
   const roles = {
     ...request.roles,
     expectedGitHubLogin:
-      request.roles.expectedGitHubLogin ?? previous?.roles.expectedGitHubLogin,
+      request.roles.expectedGitHubLogin ??
+      previous?.roles.expectedGitHubLogin ??
+      (request.roles.delivery === 'bot'
+        ? process.env.PRAXIS_BOT_GITHUB_LOGIN?.trim() || 'cunqi-bot'
+        : undefined),
   };
   if (
     remoteUrl &&
@@ -256,6 +260,18 @@ export async function prepareCardEnvironment(
 export async function publishCardCandidate(
   request: CandidatePublishRequest,
   runner: HostCommandRunner = commandRunner,
+): Promise<CandidatePublication> {
+  return withGitHubPublicationIdentity(
+    runner,
+    request.environment.workspace.path,
+    request.environment.roles.expectedGitHubLogin,
+    (identityRunner) => publishCardCandidateUnlocked(request, identityRunner),
+  );
+}
+
+async function publishCardCandidateUnlocked(
+  request: CandidatePublishRequest,
+  runner: HostCommandRunner,
 ): Promise<CandidatePublication> {
   const { environment } = request;
   await verifyCardWorkspace(environment.workspace);
@@ -522,25 +538,12 @@ export async function publishCardCandidate(
     );
     pr.isDraft = true;
   }
-  await git(runner, workspace, 'push', 'origin', `HEAD:refs/heads/${branch}`);
-  if (pr) {
-    const refreshed = JSON.parse(
-      await runner(
-        'gh',
-        [
-          'pr',
-          'view',
-          String(pr.number),
-          '--repo',
-          repository,
-          '--json',
-          'number,url,state,isDraft,headRefOid',
-        ],
-        { cwd: workspace, env: githubEnvironment },
-      ),
-    ) as typeof pr;
-    pr = refreshed;
-  }
+  const publishedRef = `refs/heads/${branch}`;
+  const remoteHead = (
+    await git(runner, workspace, 'ls-remote', '--heads', 'origin', publishedRef)
+  ).split(/\s+/)[0];
+  if (remoteHead !== request.headSha)
+    await git(runner, workspace, 'push', 'origin', `HEAD:${publishedRef}`);
   if (!pr) {
     const temporaryDirectory = await mkdtemp(
       path.join(os.tmpdir(), 'praxis-pr-'),
@@ -570,10 +573,24 @@ export async function publishCardCandidate(
     } finally {
       await rm(temporaryDirectory, { recursive: true, force: true });
     }
-    const created = JSON.parse(
-      await runner(
-        'gh',
-        [
+  }
+  const observationDeadline = Date.now() + 10_000;
+  const delays = [0, 200, 400, 800, 1600];
+  let observedHead: string | undefined;
+  let confirmed = false;
+  for (const delay of delays) {
+    if (delay)
+      await new Promise((resolve) =>
+        setTimeout(
+          resolve,
+          Math.min(delay, Math.max(0, observationDeadline - Date.now())),
+        ),
+      );
+    const remaining = observationDeadline - Date.now();
+    if (remaining <= 0) break;
+    const query = pr
+      ? ['pr', 'view', String(pr.number), '--repo', repository]
+      : [
           'pr',
           'list',
           '--repo',
@@ -581,21 +598,41 @@ export async function publishCardCandidate(
           '--head',
           branch,
           '--state',
-          'open',
+          'all',
           '--limit',
           '2',
-          '--json',
-          'number,url,state,isDraft,headRefOid',
-        ],
-        { cwd: workspace, env: githubEnvironment },
+        ];
+    const value = JSON.parse(
+      await runner(
+        'gh',
+        [...query, '--json', 'number,url,state,isDraft,headRefOid'],
+        {
+          cwd: workspace,
+          env: githubEnvironment,
+          timeoutMs: Math.min(remaining, 2500),
+        },
       ),
-    ) as typeof existing;
-    if (created.length !== 1)
-      throw new Error('Created PR could not be resolved.');
-    pr = created[0];
+    ) as typeof pr | typeof existing;
+    if (Array.isArray(value) && value.length > 1)
+      throw new Error(
+        'Candidate branch has ambiguous pull request state after publication.',
+      );
+    pr = Array.isArray(value) ? value[0] : value;
+    if (!pr) continue;
+    if (pr.state !== 'OPEN')
+      throw new Error(
+        `PR #${pr.number} is ${pr.state.toLowerCase()}; published commit ${request.headSha} is retained.`,
+      );
+    observedHead = pr.headRefOid;
+    if (observedHead === request.headSha) {
+      confirmed = true;
+      break;
+    }
   }
-  if (pr.headRefOid !== request.headSha)
-    throw new Error('Pull request HEAD does not match the candidate.');
+  if (!pr || !confirmed)
+    throw new Error(
+      `Published commit ${request.headSha} to ${repository}:${branch}, but PR ${pr?.url ?? '(not visible yet)'} did not confirm it within the observation window. Expected HEAD ${request.headSha}; observed HEAD ${observedHead ?? '(unavailable)'}. The commit and push are retained; resume publication without repeating implementation or validation.`,
+    );
   if (!request.draft && pr.isDraft) {
     await runner(
       'gh',
@@ -629,6 +666,95 @@ export async function publishCardCandidate(
     },
     publishedAt: new Date().toISOString(),
   };
+}
+
+export async function withGitHubPublicationIdentity<T>(
+  runner: HostCommandRunner,
+  workspace: string,
+  expectedLogin: string | undefined,
+  work: (runner: HostCommandRunner) => Promise<T>,
+) {
+  if (!expectedLogin) return work(runner);
+  const githubEnvironment = { ...process.env, GH_PROMPT_DISABLED: '1' };
+  const invoke = (arguments_: string[]) =>
+    runner('gh', arguments_, { cwd: workspace, env: githubEnvironment });
+  const initialLogin = await invoke(['api', 'user', '--jq', '.login']);
+  if (initialLogin === expectedLogin) return work(runner);
+  const status = JSON.parse(
+    await invoke([
+      'auth',
+      'status',
+      '--hostname',
+      'github.com',
+      '--json',
+      'hosts',
+    ]),
+  ) as {
+    hosts?: Record<
+      string,
+      Array<{ login?: string; active?: boolean; state?: string }>
+    >;
+  };
+  const accounts = status.hosts?.['github.com'] ?? [];
+  const initialAccount = accounts.find(
+    (account) => account.active && account.state === 'success',
+  )?.login;
+  if (!initialAccount)
+    throw new Error('The active GitHub CLI account could not be identified.');
+  let selectedAccount: string | null = null;
+  let result: T | undefined;
+  let failure: unknown;
+  try {
+    for (const account of accounts) {
+      if (
+        account.state !== 'success' ||
+        !account.login ||
+        account.login === initialAccount
+      )
+        continue;
+      await invoke([
+        'auth',
+        'switch',
+        '--hostname',
+        'github.com',
+        '--user',
+        account.login,
+      ]);
+      if ((await invoke(['api', 'user', '--jq', '.login'])) === expectedLogin) {
+        selectedAccount = account.login;
+        break;
+      }
+    }
+    if (!selectedAccount)
+      throw new Error(
+        `No authenticated GitHub CLI account matches the required ${expectedLogin} identity.`,
+      );
+    result = await work(runner);
+  } catch (error) {
+    failure = error;
+  }
+  try {
+    await invoke([
+      'auth',
+      'switch',
+      '--hostname',
+      'github.com',
+      '--user',
+      initialAccount,
+    ]);
+    const restored = await invoke(['api', 'user', '--jq', '.login']);
+    if (restored !== initialLogin)
+      throw new Error('The original GitHub identity could not be restored.');
+  } catch (restoreError) {
+    if (failure)
+      throw new AggregateError(
+        [failure, restoreError],
+        'GitHub publication failed and the original identity could not be restored.',
+      );
+    throw restoreError;
+  }
+  if (failure) throw failure;
+  return result as T;
 }
 
 export async function deliverCardCandidate(

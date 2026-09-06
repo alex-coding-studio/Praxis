@@ -23,6 +23,7 @@ import {
   type AgentGraphActivityRecorder,
 } from '../../graph/agent/run.ts';
 import { PublicApiError } from '../../api-errors.ts';
+import { assertDeliveryMapPreservesTargets } from '../delivery/map-boundary.ts';
 import {
   startLocalAgentRun,
   type LocalAgentRun,
@@ -608,6 +609,7 @@ export async function publishDeliveryMap(
   basis: DeliveryMapBasis | null = null,
 ) {
   await withDeliveryState(project, async () => {
+    await assertDeliveryMapPreservesTargets(project, map);
     if (basis) {
       const { fingerprint } =
         await readWhatToDoCurrentMapWithFingerprint(project);

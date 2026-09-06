@@ -9,6 +9,8 @@ export type AgentRuntimeCapabilities = {
   turnInterrupt: boolean;
 };
 export type AgentRuntimeThread = {
+  instructions?: string;
+  hostJobs?: boolean;
   provider: AgentRuntimeProvider;
   threadId: string;
   profile: AgentProfile;
@@ -95,6 +97,7 @@ export type AgentRuntimeTurn = {
   interrupt: () => void;
 };
 export type AgentRuntimeThreadInput = {
+  advertiseHostJobs?: boolean;
   profile: AgentProfile;
   workingDirectory: string;
   access: 'read-only' | 'workspace-write' | 'full-access';

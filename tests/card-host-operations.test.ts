@@ -16,11 +16,54 @@ import {
   deliverCardCandidate,
   prepareCardEnvironment,
   publishCardCandidate,
+  withGitHubPublicationIdentity,
   type HostCommandRunner,
 } from '../lib/card-host-operations.ts';
 import type { CardWorkspace } from '../lib/modules/implementation/worktree.ts';
 
 const execute = promisify(execFile);
+
+void test('GitHub publication switches to the required API identity and restores the caller account', async () => {
+  let activeAccount = 'Cunqi';
+  const apiLogins: Record<string, string> = {
+    Cunqi: 'human-user',
+    xiaocq203: 'cunqi-bot',
+  };
+  const switches: string[] = [];
+  const runner: HostCommandRunner = async (command, arguments_) => {
+    assert.equal(command, 'gh');
+    if (arguments_.join(' ') === 'api user --jq .login')
+      return apiLogins[activeAccount]!;
+    if (arguments_[0] === 'auth' && arguments_[1] === 'status')
+      return JSON.stringify({
+        hosts: {
+          'github.com': Object.keys(apiLogins).map((login) => ({
+            login,
+            active: login === activeAccount,
+            state: 'success',
+          })),
+        },
+      });
+    if (arguments_[0] === 'auth' && arguments_[1] === 'switch') {
+      activeAccount = arguments_[arguments_.indexOf('--user') + 1]!;
+      switches.push(activeAccount);
+      return '';
+    }
+    throw new Error(`Unexpected command: ${arguments_.join(' ')}`);
+  };
+  const result = await withGitHubPublicationIdentity(
+    runner,
+    '/tmp/workspace',
+    'cunqi-bot',
+    async () => {
+      assert.equal(activeAccount, 'xiaocq203');
+      return 'published';
+    },
+  );
+  assert.equal(result, 'published');
+  assert.equal(activeAccount, 'Cunqi');
+  assert.deepEqual(switches, ['xiaocq203', 'Cunqi']);
+});
 
 async function fixture(
   t: { after: (callback: () => Promise<void>) => void },
@@ -90,10 +133,18 @@ async function fixture(
 function runner(state: {
   headSha?: string;
   created?: boolean;
+  remoteHead?: string;
 }): HostCommandRunner {
   return async (command, arguments_, options) => {
     if (command === 'git') {
-      if (arguments_.includes('push')) return '';
+      if (arguments_.includes('push')) {
+        state.remoteHead = state.headSha;
+        return '';
+      }
+      if (arguments_.includes('ls-remote'))
+        return state.remoteHead
+          ? `${state.remoteHead}\t${arguments_.at(-1)}`
+          : '';
       return (
         await execute(command, arguments_, {
           cwd: options?.cwd,
@@ -194,7 +245,8 @@ void test('Candidate Publisher handles multiple commits as one idempotent HEAD',
     'origin',
     'https://github.com/example/repository.git',
   ]);
-  const state: { headSha?: string; created?: boolean } = {};
+  const state: { headSha?: string; created?: boolean; remoteHead?: string } =
+    {};
   const intercepted = runner(state);
   const environment = await prepareCardEnvironment(
     {
@@ -277,6 +329,7 @@ void test('Candidate Publisher handles multiple commits as one idempotent HEAD',
     f.workspace.branch,
   );
   const transitions: string[] = [];
+  state.remoteHead = f.baseSha;
   await publishCardCandidate(request, async (command, args, options) => {
     transitions.push(args.join(' '));
     if (command === 'gh' && args[0] === 'pr' && args[1] === 'list')
@@ -296,6 +349,66 @@ void test('Candidate Publisher handles multiple commits as one idempotent HEAD',
     transitions.findIndex((call) => call.includes('--undo')) <
       transitions.findIndex((call) => call.includes('push origin')),
   );
+  state.remoteHead = f.baseSha;
+  let pushes = 0;
+  let observations = 0;
+  let readyCalls = 0;
+  const delayed = await publishCardCandidate(
+    { ...request, draft: false },
+    async (command, args, options) => {
+      if (command === 'git' && args.includes('push')) pushes++;
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view') {
+        observations++;
+        return JSON.stringify({
+          number: 7,
+          url: publication.pullRequest.url,
+          state: 'OPEN',
+          isDraft: true,
+          headRefOid: observations < 3 ? f.baseSha : state.headSha,
+        });
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'ready') {
+        assert.equal(observations, 3);
+        readyCalls++;
+        return '';
+      }
+      return intercepted(command, args, options);
+    },
+  );
+  assert.equal(delayed.pullRequest.headSha, state.headSha);
+  assert.equal(delayed.pullRequest.draft, false);
+  assert.equal(pushes, 1);
+  assert.equal(readyCalls, 1);
+  observations = 0;
+  pushes = 0;
+  await assert.rejects(
+    publishCardCandidate(
+      { ...request, draft: false },
+      async (command, args, options) => {
+        if (command === 'git' && args.includes('push')) pushes++;
+        if (command === 'gh' && args[0] === 'pr' && args[1] === 'view') {
+          observations++;
+          return JSON.stringify({
+            number: 7,
+            url: publication.pullRequest.url,
+            state: 'OPEN',
+            isDraft: true,
+            headRefOid: f.baseSha,
+          });
+        }
+        if (command === 'gh' && args[0] === 'pr' && args[1] === 'ready')
+          throw new Error('Must not promote an unconfirmed HEAD');
+        return intercepted(command, args, options);
+      },
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message.includes(
+        `Expected HEAD ${state.headSha}; observed HEAD ${f.baseSha}`,
+      ),
+  );
+  assert.equal(observations, 5);
+  assert.equal(pushes, 0);
   await execute('git', [
     '-C',
     f.workspace.path,
@@ -323,6 +436,7 @@ void test('Candidate Publisher rejects generated output before GitHub writes', a
         commit: 'agent-bot',
         delivery: 'bot',
         approval: 'user',
+        expectedGitHubLogin: 'agent-bot',
       },
     },
     async (command, arguments_, options) => {

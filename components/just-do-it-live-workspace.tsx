@@ -1,4 +1,5 @@
 'use client';
+import { ExecutionStickyHeaderFrame } from '@/components/execution-sticky-header';
 
 import { summarizeGitHub } from '@/lib/github-delivery-summary';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -843,12 +844,7 @@ export function JustDoItLiveWorkspace({ projectId }: { projectId: string }) {
                   aria-hidden="true"
                   className="h-px"
                 />
-                <header
-                  className={cn(
-                    'sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border border-border bg-background/95 p-4 shadow-sm backdrop-blur transition-[border-radius] duration-150',
-                    planHeaderStuck ? 'rounded-b-xl border-t-0' : 'rounded-xl',
-                  )}
-                >
+                <ExecutionStickyHeaderFrame stuck={planHeaderStuck}>
                   <div className="min-w-0 flex-1">
                     {finalized ? (
                       <div
@@ -935,7 +931,7 @@ export function JustDoItLiveWorkspace({ projectId }: { projectId: string }) {
                       </>
                     )}
                   </div>
-                </header>
+                </ExecutionStickyHeaderFrame>
                 <div className="grid items-start gap-4 xl:grid-cols-[238px_minmax(0,1fr)]">
                   <aside className="rounded-2xl border border-border bg-card p-3">
                     <h2 className="px-2 py-2 text-xs text-muted-foreground">

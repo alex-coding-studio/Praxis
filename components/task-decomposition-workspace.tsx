@@ -1,4 +1,5 @@
 'use client';
+import { useDeliveryStates } from '@/hooks/use-delivery-states';
 import { useUiText } from '@/components/ui-language-provider';
 
 import {
@@ -166,6 +167,7 @@ export function TaskDecompositionWorkspace({
   };
 }) {
   const { t } = useUiText();
+  const deliveryStates = useDeliveryStates(projectId);
   const [nodes, setNodes] = useState(initialNodes);
   const [runs, setRuns] = useState(initialRuns);
   const [startIdea, setStartIdea] = useState('');
@@ -1358,7 +1360,13 @@ export function TaskDecompositionWorkspace({
             </div>
           ) : (
             <TaskGraphCanvas
-              nodes={nodes}
+              nodes={nodes.map((node) => ({
+                ...node,
+                metadata: {
+                  ...node.metadata,
+                  deliveryState: deliveryStates[node.uid ?? ''],
+                },
+              }))}
               previews={requestPreviews}
               focusedNodeId={focusedNodeId}
               locateRequest={locateRequest}

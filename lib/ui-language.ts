@@ -5,6 +5,49 @@ export function isUiLanguage(value: unknown): value is UiLanguage {
 }
 
 export const chineseUi: Record<string, string> = {
+  'Delivery withdrawn': '本次交付已撤销',
+  'This unaccepted attempt was withdrawn. Prepare a new brief; the next execution will start from latest main. Previously merged code is unchanged.':
+    '本次未验收交付已撤销。可以重新准备交付简报，下一次执行将从最新 main 开始；已合并代码不受影响。',
+  'Withdraw delivery': '撤销本次交付',
+  'Withdraw this unaccepted delivery? Running work will stop, unaccepted workspace changes will be discarded, and any open delivery PR will be closed. Other targets and merged code are unchanged.':
+    '撤销本次未验收交付？正在运行的任务会先停止，当前工作区的未验收改动会被丢弃，已有未合并 PR 会被关闭。其他任务和已合并代码不受影响。',
+  'Orchestrator model': 'Orchestrator 编排模型',
+  'Understands the target, delegates tasks and brings the delivery together.':
+    '负责理解目标、分配任务和汇总交付。',
+  'Remove model': '移除模型',
+  'Undelivered targets: {count}': '未交付节点：{count}',
+  Models: '模型',
+  You: '你',
+  'Independent review not needed': '无需独立审查',
+  'Review approved': '审查已通过',
+  'Review pending': '等待审查',
+  'Confirm existing delivery': '确认已有交付',
+  'Development Delivery instructions': '开发交付指令',
+  'Prepare delivery brief': '准备交付简报',
+  'Continue delivery': '继续交付',
+  'Development Delivery': '开发交付',
+  'Delivery Contracts': '交付 Contract',
+  'Ready to deliver': '可准备交付',
+  'Preparing delivery brief': '正在准备交付简报',
+  'In review': '审查中',
+  'Waiting for feedback': '等待反馈',
+  'Delivery settings': '交付设置',
+  'Worker models': 'Worker 模型池',
+  'Reviewer models': 'Reviewer 模型池',
+  'Add model': '添加模型',
+  'Delivery brief': '交付简报',
+  'Confirm delivery brief': '确认交付简报',
+  'Delivery feedback': '交付反馈',
+  'Discuss delivery': '讨论交付目标',
+  'Accepted executable targets appear here automatically.':
+    '正式接受的可执行目标会自动出现在这里。',
+  'Prepare this target with your selected models.':
+    '使用所选模型准备这个交付目标。',
+  'Describe the outcome or your feedback.': '描述交付目标或你的反馈。',
+  'Accept this delivery and merge its pull request?':
+    '确认验收本次交付并合并对应 PR？',
+  'Accept and merge': '验收并合并',
+  'Target is no longer available.': '此目标已不再可用。',
   'Product Discovery & Design': '产品探索与设计',
   'Product Discovery & Design instructions': '产品探索与设计指令',
   'Delivery Planning instructions': '交付规划指令',

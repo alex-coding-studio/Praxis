@@ -169,6 +169,8 @@ export class ClaudeSessionDriver implements AgentSessionDriver {
       profile: input.profile,
       workingDirectory: input.workingDirectory,
       access: input.access,
+      instructions: input.instructions,
+      hostJobs: input.hostJobs,
     };
     this.threads.set(threadId, {
       thread,
@@ -187,7 +189,8 @@ export class ClaudeSessionDriver implements AgentSessionDriver {
       this.threads.set(thread.threadId, {
         thread,
         token: randomUUID(),
-        hostJobs: true,
+        hostJobs: thread.hostJobs !== false,
+        instructions: thread.instructions,
         sessionStarted: true,
         broker: this.options.brokerFactory({
           profile: thread.profile,

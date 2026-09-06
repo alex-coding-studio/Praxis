@@ -1,8 +1,10 @@
 import { readdir } from 'node:fs/promises';
+import { listDeliveryRecords } from '../delivery/storage.ts';
+import { ensureDeliveryArtifacts } from '../delivery/artifacts.ts';
 import path from 'node:path';
 import { readDomainModel } from '../domain-modeling/model.ts';
 import type { PlanningCard } from '../implementation/planning-service.ts';
-import { readPlanningFile } from '../implementation/planning-sources.ts';
+import { readPlanningFile } from '../../planning-documents.ts';
 import {
   PRODUCT_CONTEXT_DOCUMENT_SHAPES,
   isAcceptedPlanningShape,
@@ -293,6 +295,16 @@ async function readSystemProductContext(
       summary: contract.summary,
     });
 
+  for (const record of await listDeliveryRecords(project)) {
+    for (const artifact of await ensureDeliveryArtifacts(project, record)) {
+      await add('task-execution', {
+        path: artifact.path,
+        fileName: `${record.sourceUid}-${artifact.kind}.md`,
+        title: `${record.source.title} · ${artifact.kind === 'brief' ? 'Delivery Brief' : 'Delivery'}`,
+        summary: record.brief?.outcome,
+      });
+    }
+  }
   for (const card of cards) {
     if (card.plan?.status === 'finalized' && card.planRef)
       await add('task-execution', {
