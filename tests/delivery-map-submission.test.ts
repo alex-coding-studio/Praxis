@@ -328,3 +328,93 @@ void test('a Contract carrying an Open Decision or uncertain impact is rejected'
   const canonical = await readWhatToDoCurrentMapWithFingerprint(project);
   assert.equal(canonical.fingerprint, 'absent');
 });
+
+void test('an adjustment that omits Source Claims preserves the published ones', async (t) => {
+  const project = await fixture(t);
+  const created = await submitDeliveryMapResult(
+    project,
+    await emptyBasis(project),
+    example,
+    { runId: RUN_ID, ...evidence },
+    store,
+  );
+  const retainedId = created.map!.contracts[0]!.id;
+
+  const adjusted = await submitDeliveryMapResult(
+    project,
+    await emptyBasis(project),
+    {
+      outcome: 'map-proposal',
+      contracts: [],
+      sourceClaims: [],
+      recomposition: {
+        effects: [
+          {
+            kind: 'retain',
+            from: [{ kind: 'contract', id: retainedId }],
+            to: [{ kind: 'contract', id: retainedId }],
+          },
+        ],
+      },
+    },
+    { runId: RUN_ID, ...evidence },
+    store,
+  );
+
+  assert.deepEqual(
+    adjusted.map!.sourceClaims,
+    created.map!.sourceClaims.map((claim) => ({
+      ...claim,
+      contractIds: [retainedId],
+    })),
+  );
+  assert.deepEqual(adjusted.map!.sourceSnapshots, created.map!.sourceSnapshots);
+  assert.deepEqual(adjusted.map!.contracts[0]!.sourceClaimIds, ['claim-1']);
+});
+
+void test('an adjustment applies a Source Claim update to the preserved Claim', async (t) => {
+  const project = await fixture(t);
+  const created = await submitDeliveryMapResult(
+    project,
+    await emptyBasis(project),
+    example,
+    { runId: RUN_ID, ...evidence },
+    store,
+  );
+  const retainedId = created.map!.contracts[0]!.id;
+
+  await assert.rejects(
+    submitDeliveryMapResult(
+      project,
+      await emptyBasis(project),
+      {
+        outcome: 'map-proposal',
+        contracts: [],
+        sourceClaims: [],
+        sourceClaimUpdates: [
+          {
+            claimId: 'missing-claim',
+            disposition: 'in-scope',
+            contracts: [{ kind: 'contract', id: retainedId }],
+            exclusionReason: null,
+            exclusionAuthority: null,
+          },
+        ],
+        recomposition: {
+          effects: [
+            {
+              kind: 'retain',
+              from: [{ kind: 'contract', id: retainedId }],
+              to: [{ kind: 'contract', id: retainedId }],
+            },
+          ],
+        },
+      },
+      { runId: RUN_ID, ...evidence },
+      store,
+    ),
+    (error: unknown) =>
+      error instanceof MaterializationError &&
+      error.message === 'Source Claim update missing-claim does not exist.',
+  );
+});

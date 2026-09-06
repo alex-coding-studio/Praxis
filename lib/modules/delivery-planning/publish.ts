@@ -16,7 +16,10 @@ import {
   type WhatToDoDeliveryMap,
   type WhatToDoMapSourceSnapshot,
 } from './map.ts';
-import { validateDeliveryMapPlan } from './validation.ts';
+import {
+  mergeDeliveryMapClaims,
+  validateDeliveryMapPlan,
+} from './validation.ts';
 import {
   atomicWhatToDoText,
   readWhatToDoCurrentMapWithFingerprint,
@@ -207,10 +210,14 @@ export async function submitDeliveryMapResult(
       error instanceof Error ? error.message : String(error),
     );
   }
-  if (result.outcome === 'map-proposal') validateDeliveryMapPlan(basis, result);
+  const merged =
+    result.outcome === 'map-proposal'
+      ? mergeDeliveryMapClaims(basis, result)
+      : result;
+  if (merged.outcome === 'map-proposal') validateDeliveryMapPlan(basis, merged);
   const map = computeDeliveryMap(
     basis,
-    result,
+    merged,
     {
       runId: submission.runId,
       updatedAt: submission.updatedAt ?? new Date().toISOString(),
@@ -220,7 +227,7 @@ export async function submitDeliveryMapResult(
   if (!map)
     return {
       runId: submission.runId,
-      outcome: result.outcome,
+      outcome: merged.outcome,
       map: null,
       contractPaths: {},
     };
@@ -232,7 +239,7 @@ export async function submitDeliveryMapResult(
   await publishDeliveryMap(project, map, host, basis);
   return {
     runId: submission.runId,
-    outcome: result.outcome,
+    outcome: merged.outcome,
     map,
     contractPaths,
   };

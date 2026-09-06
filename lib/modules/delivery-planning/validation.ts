@@ -7,6 +7,7 @@ import type { WhatToDoDeliveryMap } from './map.ts';
 import type {
   DeliveryContractReference,
   DeliveryMapResult,
+  DeliveryMapSourceClaim,
   WhatToDoContractCandidate,
   WhatToDoContractDependencyUpdate,
   WhatToDoMapProposal,
@@ -474,8 +475,6 @@ export function validateDeliveryMapPlan(
   for (const contract of result.contracts)
     requireResolvable(contract.dependsOn);
   for (const claim of result.sourceClaims) requireResolvable(claim.contracts);
-  for (const update of result.sourceClaimUpdates ?? [])
-    requireResolvable(update.contracts);
   for (const update of result.contractDependencyUpdates ?? []) {
     requireResolvable([update.contract]);
     requireResolvable(update.dependsOn);
@@ -508,14 +507,6 @@ export function validateDeliveryMapPlan(
         'A Contract dependency update references an unknown output Contract.',
       );
   }
-  const claimUpdates = result.sourceClaimUpdates ?? [];
-  requireUnique(
-    claimUpdates.map((update) => update.claimId),
-    'Source Claim update identifiers must be unique.',
-  );
-  for (const update of claimUpdates)
-    if (result.sourceClaims.some((claim) => claim.claimId === update.claimId))
-      fail('A Source Claim cannot be replaced and updated together.');
   const updated = new Map(
     dependencyUpdates.map((update) => [
       deliveryReferenceKey(update.contract),
@@ -543,6 +534,64 @@ export function validateDeliveryMapPlan(
     })),
   ];
   validateCompleteMap(completeMap);
+
+  const claimIds = new Set(result.sourceClaims.map((claim) => claim.claimId));
+  const assignments = new Map(
+    result.sourceClaims.map((claim) => [
+      claim.claimId,
+      new Set(claim.contracts.map(deliveryReferenceKey)),
+    ]),
+  );
+  for (const contract of result.contracts)
+    for (const claimId of contract.sourceClaimIds) {
+      if (!claimIds.has(claimId))
+        fail('A Contract Candidate references an unknown Source Claim.');
+      if (!assignments.get(claimId)?.has(`proposal:${contract.localKey}`))
+        fail('Source Claim assignment must be bidirectional.');
+    }
+  const previousClaims = new Map(
+    (basis.currentMap?.sourceClaims ?? []).map((claim) => [
+      claim.claimId,
+      claim,
+    ]),
+  );
+  for (const claim of result.sourceClaims) {
+    if (
+      claim.contracts.some(
+        (reference) => !outputs.has(deliveryReferenceKey(reference)),
+      )
+    )
+      fail('A Source Claim references an unknown Contract Candidate.');
+    if (claim.disposition === 'in-scope') {
+      if (
+        claim.contracts.length === 0 ||
+        claim.exclusionReason ||
+        claim.exclusionAuthority
+      )
+        fail('An in-scope Source Claim must be assigned without an exclusion.');
+    } else if (
+      claim.contracts.length > 0 ||
+      !claim.exclusionReason ||
+      !claim.exclusionAuthority
+    )
+      fail(
+        'An out-of-scope Source Claim requires current User Input authority and no Contract.',
+      );
+    const previous = previousClaims.get(claim.claimId);
+    if (
+      previous &&
+      (claim.source.path !== previous.sourcePath ||
+        claim.anchor !== previous.anchor ||
+        claim.summary !== previous.summary)
+    )
+      fail(
+        `Previously acknowledged Source Claim ${claim.claimId} changed identity.`,
+      );
+  }
+  for (const claimId of previousClaims.keys())
+    if (!claimIds.has(claimId))
+      fail(`Previously acknowledged Source Claim ${claimId} is missing.`);
+
   if (basis.operation !== 'adjust-map') return;
   const selectedIds = [...known.keys()];
   const knownCandidates = [...known].map(([candidateId, contract]) => ({
@@ -574,4 +623,49 @@ export function validateDeliveryMapPlan(
     if (error instanceof MaterializationError) throw error;
     fail(error instanceof Error ? error.message : String(error));
   }
+}
+
+export function mergeDeliveryMapClaims(
+  basis: {
+    operation: 'create-map' | 'adjust-map';
+    currentMap: WhatToDoDeliveryMap | null;
+  },
+  result: Extract<DeliveryMapResult, { outcome: 'map-proposal' }>,
+): Extract<DeliveryMapResult, { outcome: 'map-proposal' }> {
+  if (basis.operation !== 'adjust-map') return result;
+  const claims = new Map<string, DeliveryMapSourceClaim>(
+    (basis.currentMap?.sourceClaims ?? []).map((claim) => [
+      claim.claimId,
+      {
+        claimId: claim.claimId,
+        source: { kind: 'source', path: claim.sourcePath },
+        anchor: claim.anchor,
+        summary: claim.summary,
+        disposition: claim.disposition,
+        contracts: claim.contractIds.map((id) => ({
+          kind: 'contract' as const,
+          id,
+        })),
+        exclusionReason: claim.exclusionReason,
+        exclusionAuthority: claim.exclusionAuthority
+          ? { anchor: claim.exclusionAuthority.anchor }
+          : null,
+      },
+    ]),
+  );
+  for (const claim of result.sourceClaims) claims.set(claim.claimId, claim);
+  const updates = result.sourceClaimUpdates ?? [];
+  requireUnique(
+    updates.map((update) => update.claimId),
+    'Source Claim update identifiers must be unique.',
+  );
+  for (const update of updates) {
+    if (result.sourceClaims.some((claim) => claim.claimId === update.claimId))
+      fail('A Source Claim cannot be replaced and updated together.');
+    const current = claims.get(update.claimId);
+    if (!current) fail(`Source Claim update ${update.claimId} does not exist.`);
+    claims.set(update.claimId, { ...current, ...update });
+  }
+  const { sourceClaimUpdates: _updates, ...rest } = result;
+  return { ...rest, sourceClaims: [...claims.values()] };
 }
