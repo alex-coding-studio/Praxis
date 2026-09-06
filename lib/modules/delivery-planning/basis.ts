@@ -13,6 +13,18 @@ export type DeliveryMapBasis = MaterializationBasisCore & {
   currentMapFingerprint: string;
 };
 
+function deepFreeze<T>(value: T): T {
+  if (Array.isArray(value)) {
+    for (const entry of value) deepFreeze(entry);
+    return Object.freeze(value);
+  }
+  if (value && typeof value === 'object') {
+    for (const entry of Object.values(value)) deepFreeze(entry);
+    return Object.freeze(value);
+  }
+  return value;
+}
+
 export function prepareDeliveryMapBasis(
   project: RegisteredProject,
   input: {
@@ -21,7 +33,7 @@ export function prepareDeliveryMapBasis(
   },
   now: () => string = () => new Date().toISOString(),
 ): DeliveryMapBasis {
-  return Object.freeze({
+  return deepFreeze({
     project: { id: project.id, planningPath: project.planningPath },
     module: 'what-to-do' as const,
     operation:

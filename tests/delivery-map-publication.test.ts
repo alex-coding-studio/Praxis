@@ -208,4 +208,10 @@ void test('the basis freezes the Map that computation and the guard both use', a
   const reread = await readWhatToDoCurrentMapWithFingerprint(project);
   assert.notEqual(reread.fingerprint, basis.currentMapFingerprint);
   assert.equal(basis.currentMap?.contracts.length, map.contracts.length);
+  assert.throws(() => {
+    basis.currentMap!.contracts.length = 0;
+  }, 'the basis Map must not be reachable for mutation');
+  assert.throws(() => {
+    basis.currentMap!.contracts[0]!.title = 'changed';
+  });
 });
