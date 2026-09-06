@@ -47,6 +47,7 @@ function MarkdownReaderContent({
   showFocusButton = true,
   deleting = false,
   onAddFeedback,
+  initialAnnotationsEnabled,
   feedbackMarkers = [],
   onEditFeedback,
   compact = false,
@@ -61,6 +62,7 @@ function MarkdownReaderContent({
   showFocusButton?: boolean;
   deleting?: boolean;
   onAddFeedback?: (selection: MarkdownFeedbackSelection) => void;
+  initialAnnotationsEnabled?: boolean;
   feedbackMarkers?: MarkdownFeedbackMarker[];
   onEditFeedback?: (feedbackId: string) => void;
   compact?: boolean;
@@ -76,7 +78,7 @@ function MarkdownReaderContent({
   const contentRef = useRef<HTMLDivElement>(null);
   const readerRef = useRef<HTMLElement>(null);
   const [annotationsEnabled, setAnnotationsEnabled] = useState(
-    Boolean(onAddFeedback),
+    initialAnnotationsEnabled ?? Boolean(onAddFeedback),
   );
   const [feedbackPosition, setFeedbackPosition] = useState<{
     left: number;

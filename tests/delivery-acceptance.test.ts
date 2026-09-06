@@ -4,7 +4,10 @@ import test from 'node:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { acceptDelivery } from '../lib/modules/delivery/publication.ts';
+import {
+  acceptDelivery,
+  readyDeliveryForReview,
+} from '../lib/modules/delivery/publication.ts';
 import { claimDeliveryTarget } from '../lib/modules/delivery/ownership.ts';
 import {
   createDeliveryRecord,
@@ -107,6 +110,39 @@ async function fixture(t: test.TestContext) {
   });
   return { project, uid, record };
 }
+
+void test('preparing review promotes the verified PR once without accepting or merging it', async (t) => {
+  const { project, uid } = await fixture(t);
+  let draft = true;
+  const calls: string[] = [];
+  const dependencies = {
+    git: async (_cwd: string, ...args: string[]) =>
+      args[0] === 'status' ? '' : 'head',
+    runner: (async (_command, args) => {
+      calls.push(args.join(' '));
+      if (args[0] === 'api') return 'cunqi-bot';
+      if (args[1] === 'view')
+        return JSON.stringify({
+          state: 'OPEN',
+          headRefOid: 'head',
+          isDraft: draft,
+        });
+      if (args[1] === 'ready') draft = false;
+      return '';
+    }) as HostCommandRunner,
+  };
+  await readyDeliveryForReview(project, uid, dependencies);
+  await readyDeliveryForReview(project, uid, dependencies);
+  const record = (await readDeliveryRecord(project, uid))!;
+  assert.equal(record.publication!.draft, false);
+  assert.equal(record.acceptedHead, null);
+  assert.notEqual(record.status, 'completed');
+  assert.equal(calls.filter((call) => call.startsWith('pr ready')).length, 1);
+  assert.equal(
+    calls.some((call) => call.startsWith('pr merge')),
+    false,
+  );
+});
 
 void test('acceptance merges only the verified head and tolerates a retry after GitHub already merged', async (t) => {
   const { project, uid, record } = await fixture(t);

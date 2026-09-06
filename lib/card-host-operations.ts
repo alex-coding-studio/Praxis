@@ -195,6 +195,21 @@ export async function prepareCardEnvironment(
     '--short',
     'refs/remotes/origin/HEAD',
   );
+  const advertisedHead =
+    remoteUrl && !originHead
+      ? await optionalGit(
+          runner,
+          request.workspace.path,
+          'ls-remote',
+          '--symref',
+          'origin',
+          'HEAD',
+        )
+      : null;
+  const defaultBranch =
+    originHead?.replace(/^origin\//, '') ??
+    advertisedHead?.match(/^ref: refs\/heads\/([^\s]+)\s+HEAD$/m)?.[1] ??
+    null;
   const roles = {
     ...request.roles,
     expectedGitHubLogin:
@@ -231,7 +246,7 @@ export async function prepareCardEnvironment(
     repository: {
       remote: remoteUrl ? 'origin' : null,
       remoteUrl,
-      defaultBranch: originHead?.replace(/^origin\//, '') ?? null,
+      defaultBranch,
     },
     git: {
       authorName: await optionalGit(

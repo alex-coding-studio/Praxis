@@ -5,6 +5,22 @@ export function isUiLanguage(value: unknown): value is UiLanguage {
 }
 
 export const chineseUi: Record<string, string> = {
+  'Confirm the delivery brief first.': '请先确认交付简报。',
+  'Record a review decision for the current commit.':
+    '当前提交尚未完成审查判定。',
+  'Independent code review is pending.': '独立代码审查尚未完成。',
+  'Technical evidence is incomplete: {id}': '技术验证尚未完成：{id}',
+  'Loading task document…': '正在加载任务文档…',
+  'What should this delivery focus on? Add any requirements or scope changes here.':
+    '这次交付有什么重点？在这里补充要求或调整范围。',
+  'Add a Worker model before starting delivery. Save your settings, then click Start delivery again.':
+    '开始交付前，请先添加一个 Worker 模型。保存后，再点击“开始交付”。',
+  'Start delivery': '开始交付',
+  'Brief confirmed. Click Start delivery to begin implementation.':
+    '交付简报已确认。点击“开始交付”后，将启动 Agent 执行。',
+  'Resolve {count} open decisions in the composer before confirming.':
+    '还有 {count} 项待决定，请先在右下角回复，再确认简报。',
+  'View task document': '查看任务文档',
   'Delivery withdrawn': '本次交付已撤销',
   'This unaccepted attempt was withdrawn. Prepare a new brief; the next execution will start from latest main. Previously merged code is unchanged.':
     '本次未验收交付已撤销。可以重新准备交付简报，下一次执行将从最新 main 开始；已合并代码不受影响。',
@@ -609,7 +625,7 @@ export const chineseUi: Record<string, string> = {
   'Add a goal': '添加目标',
   'All goals': '全部目标',
   'Needs attention': '等你处理',
-  'In progress': '推进中',
+  'In progress': '进行中',
   Completed: '已完成',
   'Drop files or choose local files': '拖入文件或选择本地文件',
   'GitHub repository or code URL': 'GitHub 仓库或代码链接',

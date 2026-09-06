@@ -8,7 +8,11 @@ import {
   readDeliveryRecord,
   updateDeliveryRecord,
 } from '../lib/modules/delivery/storage.ts';
-import { deliveryCandidateReady } from '../lib/modules/delivery/record.ts';
+import {
+  deliveryCandidateReady,
+  deliveryEvidenceBlockers,
+  deliveryTechnicalReady,
+} from '../lib/modules/delivery/record.ts';
 import { ensureDeliveryArtifacts } from '../lib/modules/delivery/artifacts.ts';
 import { resolveProductContextResource } from '../lib/modules/product-context/resource.ts';
 import type { RegisteredProject } from '../lib/project-registry.ts';
@@ -104,8 +108,19 @@ void test('merge eligibility accepts a justified review skip and rejects stale c
     reviewerSessionId: null,
   };
   assert.equal(deliveryCandidateReady(record, 'abc'), true);
+  record.brief.userAcceptance = [
+    'The user decides whether the demo looks and feels right.',
+  ];
+  assert.equal(deliveryCandidateReady(record, 'abc'), true);
+  record.checks[0].status = 'not-run';
+  assert.deepEqual(deliveryEvidenceBlockers(record, 'abc'), [
+    { message: 'Technical evidence is incomplete: {id}', id: 'AC1' },
+  ]);
+  record.checks[0].status = 'passed';
   assert.equal(deliveryCandidateReady(record, 'new-head'), false);
   record.review.disposition = 'required';
+  assert.deepEqual(record.progress, []);
+  assert.equal(deliveryTechnicalReady(record, 'abc'), true);
   assert.equal(deliveryCandidateReady(record, 'abc'), false);
   record.review.approved = true;
   record.review.reviewerSessionId = 'independent';

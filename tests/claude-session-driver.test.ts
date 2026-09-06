@@ -3,6 +3,55 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { readLocalAgentActivity } from '../lib/agents/activity.ts';
+
+void test('Claude tool activity describes commands and file paths without file bodies or command credentials', () => {
+  const activity = (name: string, input: Record<string, unknown>) =>
+    readLocalAgentActivity({
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', name, input }] },
+    })!.summary;
+  assert.equal(
+    activity('Read', { file_path: 'Locus/ComponentsView.swift' }),
+    'Running tool: Read — Locus/ComponentsView.swift',
+  );
+  assert.equal(
+    activity('Write', {
+      file_path: 'Locus/Path.swift',
+      content: 'private file body',
+    }),
+    'Running tool: Write — Locus/Path.swift',
+  );
+  assert.equal(
+    activity('Bash', { command: './scripts/build.sh\necho private-body' }),
+    'Running tool: Bash — ./scripts/build.sh',
+  );
+  assert.equal(
+    activity('Bash', { command: 'tool --token "private credential"' }),
+    'Running tool: Bash — tool --token [redacted]',
+  );
+  assert.equal(activity('Unknown', {}), 'Running tool: Unknown');
+});
+
+void test('Claude error results remain errors even when their subtype is success', () => {
+  assert.equal(
+    readLocalAgentActivity({
+      type: 'result',
+      subtype: 'success',
+      is_error: true,
+      terminal_reason: 'api_error',
+    })?.summary,
+    'Agent reported an execution error.',
+  );
+  assert.equal(
+    readLocalAgentActivity({
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+    })?.summary,
+    'Agent call completed.',
+  );
+});
 import {
   ClaudeSessionDriver,
   buildClaudeSessionArguments,
@@ -394,7 +443,7 @@ void test('every Claude Host-tool call emits activity before validation so the c
   );
 });
 
-void test('coordinator thread instructions reach the real CLI arguments and only the first process', async (t) => {
+void test('coordinator thread instructions reach both initial and resumed CLI processes', async (t) => {
   const f = await fixture(t, 'echo');
   const thread = await f.driver.startThread({
     profile: { agent: 'claude', model: 'fixture', effort: 'low' },
@@ -419,9 +468,10 @@ void test('coordinator thread instructions reach the real CLI arguments and only
     'project and user customizations stay disabled',
   );
   assert.ok(!runs[0].args.includes('--safe-mode'));
-  assert.ok(
-    !runs[1].args.includes('--append-system-prompt'),
-    'a resumed session already carries its instructions',
+  assert.equal(
+    runs[1].args[runs[1].args.indexOf('--append-system-prompt') + 1],
+    coordinatorThreadInstructions,
+    'a resumed process receives current instructions',
   );
 });
 

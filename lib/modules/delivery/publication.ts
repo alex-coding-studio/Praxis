@@ -85,6 +85,68 @@ export async function publishDeliveryCandidate(
   return result;
 }
 
+export async function readyDeliveryForReview(
+  project: RegisteredProject,
+  uid: string,
+  dependencies: { runner?: HostCommandRunner; git?: typeof deliveryGit } = {},
+) {
+  return serializeCandidatePublication(async () => {
+    const record = await readDeliveryRecord(project, uid);
+    if (!record?.workspace || !record.publication)
+      throw new PublicApiError(
+        'Publish the delivery candidate before requesting review.',
+      );
+    await assertCurrentDeliverySource(project, record);
+    const git = dependencies.git ?? deliveryGit;
+    const head = await git(record.workspace.path, 'rev-parse', 'HEAD');
+    if (
+      head !== record.publication.head ||
+      (await git(
+        record.workspace.path,
+        'status',
+        '--porcelain',
+        '--untracked-files=all',
+      ))
+    )
+      throw new PublicApiError(
+        'Publish the current workspace before requesting review.',
+        409,
+      );
+    const match = record.publication.url.match(
+      /^https:\/\/github.com\/([^/]+\/[^/]+)\/pull\/(\d+)$/,
+    );
+    if (!match) throw new PublicApiError('Invalid delivery pull request.');
+    await withGitHubPublicationIdentity(
+      dependencies.runner ?? runner,
+      record.workspace.path,
+      process.env.PRAXIS_BOT_GITHUB_LOGIN ?? 'cunqi-bot',
+      async (gh) => {
+        const observed = JSON.parse(
+          await gh('gh', [
+            'pr',
+            'view',
+            match[2],
+            '--repo',
+            match[1],
+            '--json',
+            'headRefOid,state,isDraft',
+          ]),
+        );
+        if (observed.state !== 'OPEN' || observed.headRefOid !== head)
+          throw new PublicApiError(
+            'The pull request changed before review preparation.',
+            409,
+          );
+        if (observed.isDraft)
+          await gh('gh', ['pr', 'ready', match[2], '--repo', match[1]]);
+      },
+    );
+    return updateDeliveryRecord(project, uid, (current) => {
+      current.publication!.draft = false;
+    });
+  });
+}
+
 export async function acceptDelivery(
   project: RegisteredProject,
   uid: string,

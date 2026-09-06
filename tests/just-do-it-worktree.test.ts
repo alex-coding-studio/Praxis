@@ -982,7 +982,7 @@ void test('Sync Up fetches main without disturbing another branch or dirty files
   assert.equal(await git(workspace.path, 'status', '--porcelain'), '');
 });
 
-void test('Sync Up materializes merged files in a clean main checkout even when origin was already fetched', async (t) => {
+void test('Sync Up materializes merged files while preserving unrelated untracked references even when origin was already fetched', async (t) => {
   const f = await fixture(t);
   const { publisher } = await initializeRemoteFixture(f.project);
   await writeFile(
@@ -994,6 +994,10 @@ void test('Sync Up materializes merged files in a clean main checkout even when 
   await git(publisher, 'commit', '-m', 'delivered');
   await git(publisher, 'push', 'origin', 'main');
   await git(f.project.rootPath, 'fetch', 'origin');
+  await writeFile(
+    path.join(f.project.rootPath, 'design-notes.md'),
+    'local reference\n',
+  );
   const result = await syncProjectMain(f.project.rootPath);
   assert.equal(result.checkoutUpdated, true);
   assert.equal(
@@ -1001,4 +1005,28 @@ void test('Sync Up materializes merged files in a clean main checkout even when 
     'delivered\n',
   );
   assert.equal(await git(f.project.rootPath, 'rev-parse', 'HEAD'), result.head);
+  assert.equal(
+    await readFile(path.join(f.project.rootPath, 'design-notes.md'), 'utf8'),
+    'local reference\n',
+  );
+});
+
+void test('Sync Up reports an untracked-file collision without overwriting user content', async (t) => {
+  const f = await fixture(t);
+  const { publisher } = await initializeRemoteFixture(f.project);
+  const previous = await git(f.project.rootPath, 'rev-parse', 'HEAD');
+  await writeFile(path.join(publisher, 'shared-name.txt'), 'remote\n');
+  await git(publisher, 'add', 'shared-name.txt');
+  await git(publisher, 'commit', '-m', 'delivered');
+  await git(publisher, 'push', 'origin', 'main');
+  await writeFile(
+    path.join(f.project.rootPath, 'shared-name.txt'),
+    'local reference\n',
+  );
+  await assert.rejects(syncProjectMain(f.project.rootPath), /overwritten/);
+  assert.equal(await git(f.project.rootPath, 'rev-parse', 'HEAD'), previous);
+  assert.equal(
+    await readFile(path.join(f.project.rootPath, 'shared-name.txt'), 'utf8'),
+    'local reference\n',
+  );
 });

@@ -580,6 +580,34 @@ void test('initial publication creates a private remote and a Draft before Ready
   const create = calls.findIndex((call) => call.startsWith('pr create '));
   assert.ok(calls[create].includes('--draft'));
   assert.ok(calls.findIndex((call) => call.startsWith('pr ready ')) > create);
+  const repeatRunner: HostCommandRunner = async (command, args, options) => {
+    if (
+      command === 'git' &&
+      args.includes('ls-remote') &&
+      args.includes('--symref')
+    )
+      return `ref: refs/heads/main\tHEAD\n${f.baseSha}\tHEAD`;
+    return initialRunner(command, args, options);
+  };
+  const refreshedEnvironment = await prepareCardEnvironment(
+    {
+      cardId: 'card-fixture',
+      projectId: 'project-fixture',
+      workspace: f.workspace,
+      roles: environment.roles,
+    },
+    repeatRunner,
+  );
+  assert.equal(refreshedEnvironment.repository.defaultBranch, 'main');
+  const repeated = await deliverCardCandidate(
+    { ...request, environment: refreshedEnvironment },
+    repeatRunner,
+  );
+  assert.equal(repeated.pullRequest.number, result.pullRequest.number);
+  assert.equal(
+    calls.filter((call) => call.startsWith('repo create ')).length,
+    1,
+  );
   await assert.rejects(
     publishCardCandidate(request, async (command, args, options) => {
       if (command === 'git' && args.includes('ls-remote'))
