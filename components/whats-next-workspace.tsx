@@ -1178,861 +1178,942 @@ function WhatsNextCanvas({
   }
 
   return (
-    <div className="relative h-full">
-      <TaskGraphCanvas
-        nodes={visibleNodes.map((node) => ({
-          ...node,
-          metadata: {
-            ...node.metadata,
-            deliveryState: deliveryStates[node.uid ?? ''],
-          },
-        }))}
-        previews={visiblePreviews}
-        focusedNodeId={focusedNodeId}
-        locateRequest={locateRequest}
-        fitRequest={fitRequest}
-        selectedNodeIds={combineIds}
-        edgeAlignedOverlays
-        avoidBottomRightPanel={combineIds.length >= 1}
-        projectedRootId={
-          activeLayer === 'product-design' ? sharedSourceId : undefined
-        }
-        selectionEnabled
-        onToggleSelection={toggleSelection}
-        onFocusNode={setFocusedNodeId}
-        onInspectNode={setInspectorId}
-        onSelectPreview={setInspectorId}
-        onDecompose={() => {}}
-        onCancelRun={(runId) => void cancelRun(runId)}
-      />
-
-      <div className="absolute top-4 right-4 z-10 flex rounded-xl border border-border bg-background/95 p-1 shadow-sm backdrop-blur">
+    <div className="flex h-full min-h-0 flex-col">
+      <nav className="flex shrink-0 gap-2 border-b border-border px-5 py-3">
         {(['discovery', 'product-design'] as const).map((layer) => (
-          <button
+          <Button
             key={layer}
-            type="button"
-            className={cn(
-              'rounded-lg px-3 py-1.5 text-xs font-medium transition',
-              activeLayer === layer
-                ? 'bg-foreground text-background'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
+            variant={activeLayer === layer ? 'secondary' : 'ghost'}
+            aria-pressed={activeLayer === layer}
             onClick={() => {
               setActiveLayer(layer);
               setFocusedNodeId('');
             }}
           >
             {layer === 'discovery' ? t('Discovery') : t('Product Design')}
-          </button>
+          </Button>
         ))}
-      </div>
+      </nav>
+      <div className="relative min-h-0 flex-1">
+        <TaskGraphCanvas
+          nodes={visibleNodes.map((node) => ({
+            ...node,
+            metadata: {
+              ...node.metadata,
+              deliveryState: deliveryStates[node.uid ?? ''],
+            },
+          }))}
+          previews={visiblePreviews}
+          focusedNodeId={focusedNodeId}
+          locateRequest={locateRequest}
+          fitRequest={fitRequest}
+          selectedNodeIds={combineIds}
+          edgeAlignedOverlays
+          avoidBottomRightPanel={combineIds.length >= 1}
+          projectedRootId={
+            activeLayer === 'product-design' ? sharedSourceId : undefined
+          }
+          selectionEnabled
+          onToggleSelection={toggleSelection}
+          onFocusNode={setFocusedNodeId}
+          onInspectNode={setInspectorId}
+          onSelectPreview={setInspectorId}
+          onDecompose={() => {}}
+          onCancelRun={(runId) => void cancelRun(runId)}
+        />
 
-      <ProposalWorkspaceStatus
-        className="absolute top-[4.25rem] right-4 z-10"
-        formalCount={visibleNodes.length}
-        candidateCount={visibleCandidateIds.size}
-        activeProposalCount={activeProposalNodeIds.length}
-        onFocusProposal={() =>
-          setProposalFocusSequence((current) => current + 1)
-        }
-      />
+        <ProposalWorkspaceStatus
+          className="absolute top-4 right-4 z-10"
+          formalCount={visibleNodes.length}
+          candidateCount={visibleCandidateIds.size}
+          activeProposalCount={activeProposalNodeIds.length}
+          onFocusProposal={() =>
+            setProposalFocusSequence((current) => current + 1)
+          }
+        />
 
-      {moduleResponse.document ? (
-        <LatestResponseCard
-          document={moduleResponse.document}
-          collapsed={responseCollapsed}
-          onCollapsedChange={setResponseCollapsed}
-          onCancel={() => void cancelRun(moduleResponse.document!.runId)}
-          className="w-[min(320px,calc(100%-2rem))]"
-        >
-          {latestResponse &&
-          latestResponsePresentation &&
-          latestResponse.runId === moduleResponse.document.runId ? (
-            <LatestResponseActions
-              responseLabel={t('Response')}
-              summaryLabel={t('Summary')}
-              onOpenResponse={() =>
-                setPreview({
-                  title: t('Latest Response'),
-                  path: `whats-next/runs/${latestResponse.runId}/response.md`,
-                  markdown: latestResponse.result
-                    ? renderWhatsNextResponseMarkdown(latestResponse.result)
-                    : `# ${t('Response')}\n\n${t(latestResponsePresentation.summary)}\n`,
-                })
-              }
-              onOpenSummary={() =>
-                void openMarkdown(
-                  `whats-next/runs/${latestResponse.runId}/summary.md`,
-                  t('Summary'),
-                )
-              }
-            />
-          ) : null}
-        </LatestResponseCard>
-      ) : null}
-
-      <div className="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2">
-        {error ? (
-          <p className="pointer-events-auto rounded-full bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
-            {error}
-          </p>
+        {moduleResponse.document ? (
+          <LatestResponseCard
+            document={moduleResponse.document}
+            collapsed={responseCollapsed}
+            onCollapsedChange={setResponseCollapsed}
+            onCancel={() => void cancelRun(moduleResponse.document!.runId)}
+            className="w-[min(320px,calc(100%-2rem))]"
+          >
+            {latestResponse &&
+            latestResponsePresentation &&
+            latestResponse.runId === moduleResponse.document.runId ? (
+              <LatestResponseActions
+                responseLabel={t('Response')}
+                summaryLabel={t('Summary')}
+                onOpenResponse={() =>
+                  setPreview({
+                    title: t('Latest Response'),
+                    path: `whats-next/runs/${latestResponse.runId}/response.md`,
+                    markdown: latestResponse.result
+                      ? renderWhatsNextResponseMarkdown(latestResponse.result)
+                      : `# ${t('Response')}\n\n${t(latestResponsePresentation.summary)}\n`,
+                  })
+                }
+                onOpenSummary={() =>
+                  void openMarkdown(
+                    `whats-next/runs/${latestResponse.runId}/summary.md`,
+                    t('Summary'),
+                  )
+                }
+              />
+            ) : null}
+          </LatestResponseCard>
         ) : null}
-      </div>
 
-      {combineIds.length >= 1 ? (
-        <AgentGraphComposerCard
-          title={`${combineIds.length} ${combineIds.length === 1 ? t('card') : t('cards')} ${t('selected')}`}
-          running={moduleResponse.running}
-          collapsed={composerCollapsed}
-          onCollapsedChange={setComposerCollapsed}
-        >
-          <div className="grid grid-cols-2 gap-2">
-            <AgentGraphIntentionSelect
-              profiles={whatsNextIntentionRegistry.profiles}
-              value={intention}
-              onChange={changeIntention}
-              label="Exploration purpose"
-              showDescription={false}
-            />
-            <AgentGraphMotionSelect
-              profiles={whatsNextMotionRegistry.profiles}
-              value={motion}
-              onChange={setMotion}
-            />
-          </div>
-
-          {intention === 'product-design-completion' ? (
-            <p className="mt-2 text-[10px] leading-4 text-muted-foreground">
-              {t(
-                'The Product Source and all current Product Design Features are included automatically.',
-              )}
+        <div className="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2">
+          {error ? (
+            <p className="pointer-events-auto rounded-full bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
+              {error}
             </p>
           ) : null}
+        </div>
 
-          <div className="mt-3 flex max-h-40 flex-col gap-0.5 overflow-y-auto">
-            {combineNodes.map((node) => (
-              <span
-                key={node.id}
-                className="flex shrink-0 items-center gap-2 rounded-lg bg-secondary px-2.5 py-2 text-xs"
-              >
-                <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate">{node.title}</span>
-                <button
-                  type="button"
-                  className="text-muted-foreground transition hover:text-foreground"
-                  aria-label={`Remove ${node.title}`}
-                  onClick={() =>
-                    setCombineIds((current) => {
-                      const next = toggle(current, node.id);
-                      if (next.length === 0) {
-                        setCombineInstruction('');
-                        setCombineRefs([]);
-                        setCombineFiles([]);
-                      }
-                      return next;
-                    })
-                  }
-                >
-                  <X className="size-3" />
-                </button>
-              </span>
-            ))}
-          </div>
-
-          {canOpenInWhatToDo ? (
-            <Button
-              className="mt-3 w-full"
-              variant="outline"
-              onClick={() => {
-                const query = new URLSearchParams();
-                for (const node of selectedProductFeatures)
-                  query.append('feature', node.uid!);
-                router.push(
-                  `/projects/${projectId}/what-to-do?${query.toString()}`,
-                );
-              }}
-            >
-              {t('Open in Delivery Planning')}
-              <ArrowRight className="size-3.5" />
-            </Button>
-          ) : null}
-
-          <AgentComposerAttachments
-            className="mt-3"
-            label={t('Optional sources')}
-            items={[
-              ...combineRefs.map((ref) => ({
-                id: ref,
-                label: contextAttachmentTitle(folders, ref),
-                onRemove: () =>
-                  setCombineRefs((current) =>
-                    current.filter((item) => item !== ref),
-                  ),
-              })),
-              ...combineFiles.map((file, index) => ({
-                id: `${file.name}:${index}`,
-                label: file.name,
-                onRemove: () =>
-                  setCombineFiles((current) =>
-                    current.filter((_, item) => item !== index),
-                  ),
-              })),
-            ]}
-          />
-
-          <AgentComposerShell
-            className="mt-3"
-            controls={
-              <AgentRunControls
-                extraInfo={
-                  <ContextAttachmentPicker
-                    embedded
-                    folders={folders}
-                    folderPath={combineFolderPath}
-                    onFolderPath={setCombineFolderPath}
-                    refs={combineRefs}
-                    onToggleRef={(ref) =>
-                      setCombineRefs((current) => toggle(current, ref))
-                    }
-                    files={combineFiles}
-                    onAddFiles={(added) =>
-                      setCombineFiles((current) => [...current, ...added])
-                    }
-                    onRemoveFile={(index) =>
-                      setCombineFiles((current) =>
-                        current.filter((_, item) => item !== index),
-                      )
-                    }
-                    label={t('Optional sources')}
-                  />
-                }
-                extraInfoCount={combineRefs.length + combineFiles.length}
-                extraInfoLabel="Optional sources"
-                value={agentProfile}
-                onChange={setAgentProfile}
-                mode={developmentPreview ? 'demo' : 'live'}
-                disabled={!combineInstruction.trim() || developmentPreview}
-                onRun={() => void submitCombine()}
-              />
-            }
+        {combineIds.length >= 1 ? (
+          <AgentGraphComposerCard
+            title={`${combineIds.length} ${combineIds.length === 1 ? t('card') : t('cards')} ${t('selected')}`}
+            running={moduleResponse.running}
+            collapsed={composerCollapsed}
+            onCollapsedChange={setComposerCollapsed}
           >
-            <Textarea
-              value={combineInstruction}
-              onChange={(event) => setCombineInstruction(event.target.value)}
-              rows={3}
-              required
-              placeholder={t('Describe the result you want from these cards.')}
-              className="resize-none text-sm"
-              aria-label={t('What to do with the selected cards')}
-            />
-          </AgentComposerShell>
-        </AgentGraphComposerCard>
-      ) : moduleResponse.running ? (
-        <AgentGraphComposerCard title="" running />
-      ) : null}
-
-      <Dialog
-        open={growSource !== null}
-        onOpenChange={(open) => {
-          if (!open) closeGrow();
-        }}
-      >
-        <DialogContent className="max-h-[88vh] overflow-y-auto pb-0 sm:max-w-2xl">
-          {growSource ? (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void submitGrow();
-              }}
-              className="space-y-6"
-            >
-              <div>
-                <h2 className="text-sm font-semibold">
-                  {redoProposal
-                    ? t('Redo proposal from')
-                    : continuingGrow
-                      ? t('Continue from')
-                      : t('Explore from')}{' '}
-                  {growSource.id}
-                </h2>
-                <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                  {redoProposal
-                    ? t(
-                        'Re-propose discards the current directions to system Trash and immediately generates a new proposal. Cancellation or failure does not restore discarded directions.',
-                      )
-                    : continuingGrow
-                      ? t(
-                          '{agent} continues the same line of inquiry with only this round’s changes.',
-                          { agent: AGENT_LABELS[selectedAgent] },
-                        )
-                      : t(
-                          '{agent} responds with a Reflection and supported next directions.',
-                          { agent: AGENT_LABELS[selectedAgent] },
-                        )}{' '}
-                  {t(
-                    'Inherited Resources stay on the source Node; additions apply only to this request.',
-                  )}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-border p-3">
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={!redoProposal ? 'default' : 'outline'}
-                    onClick={() => setRedoProposal(false)}
-                  >
-                    {t('Explore more')}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={redoProposal ? 'default' : 'outline'}
-                    onClick={() => void enableRedoProposal()}
-                    disabled={
-                      Boolean(redoBoundary.reason) || loadingRedoUserInput
-                    }
-                    title={
-                      redoBoundary.reason ||
-                      t('Redo all unaccepted directions from this parent')
-                    }
-                  >
-                    <RotateCcw className="size-3.5" />
-                    {t('Redo proposal')}
-                  </Button>
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {redoBoundary.reason ||
-                    (redoProposal
-                      ? t(
-                          '{count} directions will be reconsidered together. No Formal Nodes will be changed.',
-                          { count: redoBoundary.count },
-                        )
-                      : t(
-                          'Explore more adds directions without replacing the current proposal.',
-                        ))}
-                </p>
-              </div>
-
-              <AgentProfileSelector
-                value={agentProfile}
-                onChange={setAgentProfile}
-                mode={developmentPreview ? 'demo' : 'live'}
-                disabled={submittingGrow}
+            <div className="grid grid-cols-2 gap-2">
+              <AgentGraphIntentionSelect
+                profiles={whatsNextIntentionRegistry.profiles}
+                value={intention}
+                onChange={changeIntention}
+                label="Exploration purpose"
+                showDescription={false}
               />
+              <AgentGraphMotionSelect
+                profiles={whatsNextMotionRegistry.profiles}
+                value={motion}
+                onChange={setMotion}
+              />
+            </div>
 
-              {redoProposal && redoBoundary.context ? (
-                <section
-                  aria-label={t('Previous proposal context')}
-                  className="space-y-3 rounded-xl border border-border p-3"
+            {intention === 'product-design-completion' ? (
+              <p className="mt-2 text-[10px] leading-4 text-muted-foreground">
+                {t(
+                  'The Product Source and all current Product Design Features are included automatically.',
+                )}
+              </p>
+            ) : null}
+
+            <div className="mt-3 flex max-h-40 flex-col gap-0.5 overflow-y-auto">
+              {combineNodes.map((node) => (
+                <span
+                  key={node.id}
+                  className="flex shrink-0 items-center gap-2 rounded-lg bg-secondary px-2.5 py-2 text-xs"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-xs font-medium">
-                      {t('Previous proposal')}
-                    </h3>
-                    <span className="text-[10px] text-muted-foreground">
-                      {t('Included automatically')}
-                    </span>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-medium text-muted-foreground">
-                      {t('Previous User Input')}
-                    </p>
-                    <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-xs leading-5">
-                      {redoBoundary.context.userInput ||
-                        t('No User Input was recorded for this proposal.')}
-                    </p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[11px] font-medium text-muted-foreground">
-                      {t('Previous outputs ·')}
-                      {redoBoundary.context.outputs.length}
-                    </p>
-                    {redoBoundary.context.outputs.map((output) => (
-                      <button
-                        key={output.path}
-                        type="button"
-                        onClick={() => setPreview(output)}
-                        className="flex w-full items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-left text-xs hover:bg-secondary/70"
-                        aria-label={t('Read previous output: {title}', {
-                          title: output.title,
-                        })}
-                      >
-                        <FileText className="size-3.5 shrink-0" />
-                        <span className="min-w-0 flex-1 truncate">
-                          {output.title}
-                        </span>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">
-                          {t('Revision')}
-                          {output.revision}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                  <Button
+                  <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate">{node.title}</span>
+                  <button
                     type="button"
-                    size="sm"
-                    variant="outline"
+                    className="text-muted-foreground transition hover:text-foreground"
+                    aria-label={`Remove ${node.title}`}
                     onClick={() =>
-                      setPreview({
-                        title: 'Last response',
-                        path: 'previous-proposal.md',
-                        markdown: redoBoundary.context!.responseMarkdown,
+                      setCombineIds((current) => {
+                        const next = toggle(current, node.id);
+                        if (next.length === 0) {
+                          setCombineInstruction('');
+                          setCombineRefs([]);
+                          setCombineFiles([]);
+                        }
+                        return next;
                       })
                     }
                   >
-                    {t('Read full last response')}
-                  </Button>
-                </section>
-              ) : null}
+                    <X className="size-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
 
-              <div className="space-y-2">
-                <label
-                  htmlFor="whats-next-instruction"
-                  className="text-xs font-medium"
-                >
-                  {redoProposal ? t('Correction') : t('User Input')}{' '}
-                  <span className="font-normal text-muted-foreground">
-                    {redoProposal ? t('required') : t('optional')}
-                  </span>
-                </label>
-                <Textarea
-                  id="whats-next-instruction"
-                  value={growInstruction}
-                  placeholder={
-                    redoProposal
-                      ? t(
-                          'What did this proposal misunderstand, and what do you want instead?',
+            {canOpenInWhatToDo ? (
+              <Button
+                className="mt-3 w-full"
+                variant="outline"
+                onClick={() => {
+                  const query = new URLSearchParams();
+                  for (const node of selectedProductFeatures)
+                    query.append('feature', node.uid!);
+                  router.push(
+                    `/projects/${projectId}/what-to-do?${query.toString()}`,
+                  );
+                }}
+              >
+                {t('Open in Delivery Planning')}
+                <ArrowRight className="size-3.5" />
+              </Button>
+            ) : null}
+
+            <AgentComposerAttachments
+              className="mt-3"
+              label={t('Optional sources')}
+              items={[
+                ...combineRefs.map((ref) => ({
+                  id: ref,
+                  label: contextAttachmentTitle(folders, ref),
+                  onRemove: () =>
+                    setCombineRefs((current) =>
+                      current.filter((item) => item !== ref),
+                    ),
+                })),
+                ...combineFiles.map((file, index) => ({
+                  id: `${file.name}:${index}`,
+                  label: file.name,
+                  onRemove: () =>
+                    setCombineFiles((current) =>
+                      current.filter((_, item) => item !== index),
+                    ),
+                })),
+              ]}
+            />
+
+            <AgentComposerShell
+              className="mt-3"
+              controls={
+                <AgentRunControls
+                  extraInfo={
+                    <ContextAttachmentPicker
+                      embedded
+                      folders={folders}
+                      folderPath={combineFolderPath}
+                      onFolderPath={setCombineFolderPath}
+                      refs={combineRefs}
+                      onToggleRef={(ref) =>
+                        setCombineRefs((current) => toggle(current, ref))
+                      }
+                      files={combineFiles}
+                      onAddFiles={(added) =>
+                        setCombineFiles((current) => [...current, ...added])
+                      }
+                      onRemoveFile={(index) =>
+                        setCombineFiles((current) =>
+                          current.filter((_, item) => item !== index),
                         )
-                      : t(
-                          'Steer this round, or let the Agent respond from the current Node.',
-                        )
+                      }
+                      label={t('Optional sources')}
+                    />
                   }
-                  className="min-h-28"
-                  onChange={(event) => setGrowInstruction(event.target.value)}
+                  extraInfoCount={combineRefs.length + combineFiles.length}
+                  extraInfoLabel="Optional sources"
+                  value={agentProfile}
+                  onChange={setAgentProfile}
+                  mode={developmentPreview ? 'demo' : 'live'}
+                  disabled={!combineInstruction.trim() || developmentPreview}
+                  onRun={() => void submitCombine()}
                 />
-              </div>
+              }
+            >
+              <Textarea
+                value={combineInstruction}
+                onChange={(event) => setCombineInstruction(event.target.value)}
+                rows={3}
+                required
+                placeholder={t(
+                  'Describe the result you want from these cards.',
+                )}
+                className="resize-none text-sm"
+                aria-label={t('What to do with the selected cards')}
+              />
+            </AgentComposerShell>
+          </AgentGraphComposerCard>
+        ) : moduleResponse.running ? (
+          <AgentGraphComposerCard title="" running />
+        ) : null}
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-medium">
-                    {t('Input from')}
+        <Dialog
+          open={growSource !== null}
+          onOpenChange={(open) => {
+            if (!open) closeGrow();
+          }}
+        >
+          <DialogContent className="max-h-[88vh] overflow-y-auto pb-0 sm:max-w-2xl">
+            {growSource ? (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submitGrow();
+                }}
+                className="space-y-6"
+              >
+                <div>
+                  <h2 className="text-sm font-semibold">
+                    {redoProposal
+                      ? t('Redo proposal from')
+                      : continuingGrow
+                        ? t('Continue from')
+                        : t('Explore from')}{' '}
                     {growSource.id}
+                  </h2>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                    {redoProposal
+                      ? t(
+                          'Re-propose discards the current directions to system Trash and immediately generates a new proposal. Cancellation or failure does not restore discarded directions.',
+                        )
+                      : continuingGrow
+                        ? t(
+                            '{agent} continues the same line of inquiry with only this round’s changes.',
+                            { agent: AGENT_LABELS[selectedAgent] },
+                          )
+                        : t(
+                            '{agent} responds with a Reflection and supported next directions.',
+                            { agent: AGENT_LABELS[selectedAgent] },
+                          )}{' '}
+                    {t(
+                      'Inherited Resources stay on the source Node; additions apply only to this request.',
+                    )}
                   </p>
-                  <span className="text-[10px] text-muted-foreground">
-                    {t('always included')}
-                  </span>
                 </div>
-                <div className="max-h-40 divide-y divide-border overflow-y-auto rounded-xl border border-border bg-muted/30">
-                  {growSource.resources.map((resource) => (
-                    <div
-                      key={`${resource.kind}:${resource.path}`}
-                      className="flex items-center gap-2.5 px-3 py-2.5"
+
+                <div className="rounded-xl border border-border p-3">
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={!redoProposal ? 'default' : 'outline'}
+                      onClick={() => setRedoProposal(false)}
                     >
-                      <Checkbox
-                        checked
-                        disabled
-                        aria-label={t('{name} is always included', {
-                          name: resourceName(resource.path),
-                        })}
-                      />
-                      <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate text-[11px]">
-                        {resourceName(resource.path)}
-                      </span>
-                      <span className="text-[9px] uppercase tracking-wide text-muted-foreground">
-                        {resource.kind}
+                      {t('Explore more')}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={redoProposal ? 'default' : 'outline'}
+                      onClick={() => void enableRedoProposal()}
+                      disabled={
+                        Boolean(redoBoundary.reason) || loadingRedoUserInput
+                      }
+                      title={
+                        redoBoundary.reason ||
+                        t('Redo all unaccepted directions from this parent')
+                      }
+                    >
+                      <RotateCcw className="size-3.5" />
+                      {t('Redo proposal')}
+                    </Button>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {redoBoundary.reason ||
+                      (redoProposal
+                        ? t(
+                            '{count} directions will be reconsidered together. No Formal Nodes will be changed.',
+                            { count: redoBoundary.count },
+                          )
+                        : t(
+                            'Explore more adds directions without replacing the current proposal.',
+                          ))}
+                  </p>
+                </div>
+
+                <AgentProfileSelector
+                  value={agentProfile}
+                  onChange={setAgentProfile}
+                  mode={developmentPreview ? 'demo' : 'live'}
+                  disabled={submittingGrow}
+                />
+
+                {redoProposal && redoBoundary.context ? (
+                  <section
+                    aria-label={t('Previous proposal context')}
+                    className="space-y-3 rounded-xl border border-border p-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-xs font-medium">
+                        {t('Previous proposal')}
+                      </h3>
+                      <span className="text-[10px] text-muted-foreground">
+                        {t('Included automatically')}
                       </span>
                     </div>
-                  ))}
-                  {growSource.resources.length === 0 ? (
-                    <p className="px-3 py-2.5 text-[11px] text-muted-foreground">
-                      {t('This Node carries no Resources yet.')}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-
-              <SourcePicker
-                folders={folders}
-                folderPath={growFolderPath}
-                onFolderPath={setGrowFolderPath}
-                refs={growRefs}
-                onToggleRef={(refPath) =>
-                  setGrowRefs((current) => toggle(current, refPath))
-                }
-                files={growFiles}
-                onAddFiles={(added) =>
-                  setGrowFiles((current) => [...current, ...added])
-                }
-                onRemoveFile={(index) =>
-                  setGrowFiles((current) =>
-                    current.filter((_, value) => value !== index),
-                  )
-                }
-                label={t('Run-only context')}
-              />
-
-              <div className="sticky bottom-0 -mx-4 border-t border-border bg-popover px-4 py-4">
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={
-                    developmentPreview ||
-                    submittingGrow ||
-                    (redoProposal &&
-                      (!growInstruction.trim() || Boolean(redoBoundary.reason)))
-                  }
-                >
-                  <Sparkles className="size-4" />
-                  {submittingGrow
-                    ? t('Starting…')
-                    : redoProposal
-                      ? t('Re-propose')
-                      : continuingGrow
-                        ? t('Continue exploration')
-                        : t('Start exploration')}
-                </Button>
-                {error ? (
-                  <p className="mt-2 text-xs text-destructive">{error}</p>
+                    <div>
+                      <p className="text-[11px] font-medium text-muted-foreground">
+                        {t('Previous User Input')}
+                      </p>
+                      <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-xs leading-5">
+                        {redoBoundary.context.userInput ||
+                          t('No User Input was recorded for this proposal.')}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium text-muted-foreground">
+                        {t('Previous outputs ·')}
+                        {redoBoundary.context.outputs.length}
+                      </p>
+                      {redoBoundary.context.outputs.map((output) => (
+                        <button
+                          key={output.path}
+                          type="button"
+                          onClick={() => setPreview(output)}
+                          className="flex w-full items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-left text-xs hover:bg-secondary/70"
+                          aria-label={t('Read previous output: {title}', {
+                            title: output.title,
+                          })}
+                        >
+                          <FileText className="size-3.5 shrink-0" />
+                          <span className="min-w-0 flex-1 truncate">
+                            {output.title}
+                          </span>
+                          <span className="shrink-0 text-[10px] text-muted-foreground">
+                            {t('Revision')}
+                            {output.revision}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setPreview({
+                          title: 'Last response',
+                          path: 'previous-proposal.md',
+                          markdown: redoBoundary.context!.responseMarkdown,
+                        })
+                      }
+                    >
+                      {t('Read full last response')}
+                    </Button>
+                  </section>
                 ) : null}
-              </div>
-            </form>
-          ) : null}
-        </DialogContent>
-      </Dialog>
 
-      <Dialog
-        open={editStart !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setEditStartId('');
-            setEditText('');
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-lg">
-          {editStart ? (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void saveStart();
-              }}
-              className="space-y-5"
-            >
-              <div>
-                <h2 className="text-sm font-semibold">{t('Edit source')}</h2>
-                <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                  {t('This rewrites the Markdown carried by')}
-                  {editStart.id}
-                  {t(
-                    '. Existing directions and dependencies remain unchanged.',
-                  )}
-                </p>
-              </div>
-              <Textarea
-                value={editText}
-                onChange={(event) => setEditText(event.target.value)}
-                rows={10}
-                className="text-sm"
-                aria-label={t('Source Markdown')}
-              />
-              <div className="flex justify-end">
-                <Button
-                  type="submit"
-                  disabled={!editText.trim() || savingStart}
-                >
-                  {savingStart ? (
-                    <LoaderCircle className="size-4 animate-spin" />
-                  ) : null}
-                  {t('Save')}
-                </Button>
-              </div>
-              {error ? (
-                <p className="text-xs text-destructive">{error}</p>
-              ) : null}
-            </form>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+                <div className="space-y-2">
+                  <label
+                    htmlFor="whats-next-instruction"
+                    className="text-xs font-medium"
+                  >
+                    {redoProposal ? t('Correction') : t('User Input')}{' '}
+                    <span className="font-normal text-muted-foreground">
+                      {redoProposal ? t('required') : t('optional')}
+                    </span>
+                  </label>
+                  <Textarea
+                    id="whats-next-instruction"
+                    value={growInstruction}
+                    placeholder={
+                      redoProposal
+                        ? t(
+                            'What did this proposal misunderstand, and what do you want instead?',
+                          )
+                        : t(
+                            'Steer this round, or let the Agent respond from the current Node.',
+                          )
+                    }
+                    className="min-h-28"
+                    onChange={(event) => setGrowInstruction(event.target.value)}
+                  />
+                </div>
 
-      <Sheet
-        open={Boolean(inspectorId)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setInspectorId('');
-            setRevisionTarget(null);
-            setReviseNote('');
-            setFeedbackDraft(null);
-            setPendingFeedback([]);
-          }
-        }}
-      >
-        <SheetContent className="w-full sm:max-w-2xl">
-          {selectedCandidate ? (
-            <>
-              <SheetHeader>
-                <SheetTitle>{selectedCandidate.title}</SheetTitle>
-                <SheetDescription>
-                  {selectedCandidate.candidateId} {t('· revision')}{' '}
-                  {selectedCandidate.revision} {t('· unaccepted direction')}
-                </SheetDescription>
-              </SheetHeader>
-              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 pb-4 text-sm">
-                <MarkdownReader
-                  title={selectedCandidate.title}
-                  filePath={selectedCandidatePreview?.outputPath ?? 'output.md'}
-                  markdown={
-                    'outputMarkdown' in selectedCandidate &&
-                    typeof selectedCandidate.outputMarkdown === 'string'
-                      ? selectedCandidate.outputMarkdown
-                      : `# ${selectedCandidate.title}\n\n${selectedCandidate.summary}`
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-medium">
+                      {t('Input from')}
+                      {growSource.id}
+                    </p>
+                    <span className="text-[10px] text-muted-foreground">
+                      {t('always included')}
+                    </span>
+                  </div>
+                  <div className="max-h-40 divide-y divide-border overflow-y-auto rounded-xl border border-border bg-muted/30">
+                    {growSource.resources.map((resource) => (
+                      <div
+                        key={`${resource.kind}:${resource.path}`}
+                        className="flex items-center gap-2.5 px-3 py-2.5"
+                      >
+                        <Checkbox
+                          checked
+                          disabled
+                          aria-label={t('{name} is always included', {
+                            name: resourceName(resource.path),
+                          })}
+                        />
+                        <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate text-[11px]">
+                          {resourceName(resource.path)}
+                        </span>
+                        <span className="text-[9px] uppercase tracking-wide text-muted-foreground">
+                          {resource.kind}
+                        </span>
+                      </div>
+                    ))}
+                    {growSource.resources.length === 0 ? (
+                      <p className="px-3 py-2.5 text-[11px] text-muted-foreground">
+                        {t('This Node carries no Resources yet.')}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <SourcePicker
+                  folders={folders}
+                  folderPath={growFolderPath}
+                  onFolderPath={setGrowFolderPath}
+                  refs={growRefs}
+                  onToggleRef={(refPath) =>
+                    setGrowRefs((current) => toggle(current, refPath))
                   }
-                  compact
-                  feedbackMarkers={pendingFeedback}
-                  onAddFeedback={(selection) =>
-                    setFeedbackDraft({ selection, instruction: '' })
+                  files={growFiles}
+                  onAddFiles={(added) =>
+                    setGrowFiles((current) => [...current, ...added])
                   }
-                  onEditFeedback={editPendingFeedback}
+                  onRemoveFile={(index) =>
+                    setGrowFiles((current) =>
+                      current.filter((_, value) => value !== index),
+                    )
+                  }
+                  label={t('Run-only context')}
                 />
 
-                {selectedCandidatePreview?.previousOutputPath &&
-                selectedCandidatePreview.outputPath ? (
+                <div className="sticky bottom-0 -mx-4 border-t border-border bg-popover px-4 py-4">
                   <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      void openComparison(
-                        selectedCandidate.title,
-                        selectedCandidatePreview.previousOutputPath!,
-                        selectedCandidatePreview.outputPath!,
-                        selectedCandidatePreview.previousMarkdown,
-                        'outputMarkdown' in selectedCandidate &&
-                          typeof selectedCandidate.outputMarkdown === 'string'
-                          ? selectedCandidate.outputMarkdown
-                          : undefined,
-                      )
+                    type="submit"
+                    className="w-full"
+                    disabled={
+                      developmentPreview ||
+                      submittingGrow ||
+                      (redoProposal &&
+                        (!growInstruction.trim() ||
+                          Boolean(redoBoundary.reason)))
                     }
                   >
-                    {t('Compare with previous revision')}
+                    <Sparkles className="size-4" />
+                    {submittingGrow
+                      ? t('Starting…')
+                      : redoProposal
+                        ? t('Re-propose')
+                        : continuingGrow
+                          ? t('Continue exploration')
+                          : t('Start exploration')}
                   </Button>
+                  {error ? (
+                    <p className="mt-2 text-xs text-destructive">{error}</p>
+                  ) : null}
+                </div>
+              </form>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={editStart !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setEditStartId('');
+              setEditText('');
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-lg">
+            {editStart ? (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void saveStart();
+                }}
+                className="space-y-5"
+              >
+                <div>
+                  <h2 className="text-sm font-semibold">{t('Edit source')}</h2>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                    {t('This rewrites the Markdown carried by')}
+                    {editStart.id}
+                    {t(
+                      '. Existing directions and dependencies remain unchanged.',
+                    )}
+                  </p>
+                </div>
+                <Textarea
+                  value={editText}
+                  onChange={(event) => setEditText(event.target.value)}
+                  rows={10}
+                  className="text-sm"
+                  aria-label={t('Source Markdown')}
+                />
+                <div className="flex justify-end">
+                  <Button
+                    type="submit"
+                    disabled={!editText.trim() || savingStart}
+                  >
+                    {savingStart ? (
+                      <LoaderCircle className="size-4 animate-spin" />
+                    ) : null}
+                    {t('Save')}
+                  </Button>
+                </div>
+                {error ? (
+                  <p className="text-xs text-destructive">{error}</p>
                 ) : null}
+              </form>
+            ) : null}
+          </DialogContent>
+        </Dialog>
 
-                <details className="rounded-xl border border-border p-3">
-                  <summary className="cursor-pointer text-xs font-medium">
-                    {t('Graph details')}
-                  </summary>
-                  <div className="mt-3 space-y-3">
-                    {candidateRelationshipSections.map((section) => (
-                      <RelationshipColumns
-                        key={section.layer}
-                        title={t(layerLabel(section.layer))}
-                        leftLabel={t('Grew from')}
-                        leftIds={section.derivedFrom}
-                        rightLabel={t('Depends on')}
-                        rightIds={section.dependsOn}
-                        onSelect={locateGraphNode}
-                      />
-                    ))}
-                  </div>
-                </details>
+        <Sheet
+          open={Boolean(inspectorId)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setInspectorId('');
+              setRevisionTarget(null);
+              setReviseNote('');
+              setFeedbackDraft(null);
+              setPendingFeedback([]);
+            }
+          }}
+        >
+          <SheetContent className="w-full sm:max-w-2xl">
+            {selectedCandidate ? (
+              <>
+                <SheetHeader>
+                  <SheetTitle>{selectedCandidate.title}</SheetTitle>
+                  <SheetDescription>
+                    {selectedCandidate.candidateId} {t('· revision')}{' '}
+                    {selectedCandidate.revision} {t('· unaccepted direction')}
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 pb-4 text-sm">
+                  <MarkdownReader
+                    title={selectedCandidate.title}
+                    filePath={
+                      selectedCandidatePreview?.outputPath ?? 'output.md'
+                    }
+                    markdown={
+                      'outputMarkdown' in selectedCandidate &&
+                      typeof selectedCandidate.outputMarkdown === 'string'
+                        ? selectedCandidate.outputMarkdown
+                        : `# ${selectedCandidate.title}\n\n${selectedCandidate.summary}`
+                    }
+                    compact
+                    feedbackMarkers={pendingFeedback}
+                    onAddFeedback={(selection) =>
+                      setFeedbackDraft({ selection, instruction: '' })
+                    }
+                    onEditFeedback={editPendingFeedback}
+                  />
 
-                <CandidateResourceList
-                  resources={selectedCandidate.resources}
-                  onOpen={(path) =>
-                    void openMarkdown(path, path.split('/').at(-1) ?? path)
-                  }
-                />
+                  {selectedCandidatePreview?.previousOutputPath &&
+                  selectedCandidatePreview.outputPath ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        void openComparison(
+                          selectedCandidate.title,
+                          selectedCandidatePreview.previousOutputPath!,
+                          selectedCandidatePreview.outputPath!,
+                          selectedCandidatePreview.previousMarkdown,
+                          'outputMarkdown' in selectedCandidate &&
+                            typeof selectedCandidate.outputMarkdown === 'string'
+                            ? selectedCandidate.outputMarkdown
+                            : undefined,
+                        )
+                      }
+                    >
+                      {t('Compare with previous revision')}
+                    </Button>
+                  ) : null}
 
-                <CandidateMetadataSections
-                  metadata={selectedCandidate.metadata}
-                />
-
-                <Dialog
-                  open={feedbackDraft !== null}
-                  onOpenChange={(open) => {
-                    if (!open) setFeedbackDraft(null);
-                  }}
-                >
-                  <DialogContent className="sm:max-w-lg">
-                    {feedbackDraft ? (
-                      <div className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-3">
-                        <p className="text-[11px] font-medium">
-                          {t('Lines')}
-                          {feedbackDraft.selection.startLine}–
-                          {feedbackDraft.selection.endLine}
-                        </p>
-                        <p className="mt-1 line-clamp-3 text-[11px] leading-5 text-muted-foreground">
-                          “{feedbackDraft.selection.excerpt}”
-                        </p>
-                        <Textarea
-                          value={feedbackDraft.instruction}
-                          onChange={(event) =>
-                            setFeedbackDraft((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    instruction: event.target.value,
-                                  }
-                                : null,
-                            )
-                          }
-                          rows={3}
-                          placeholder={t(
-                            'What should the Agent reconsider here?',
-                          )}
-                          className="mt-3 resize-none text-sm"
-                          aria-label={t('Inline feedback')}
+                  <details className="rounded-xl border border-border p-3">
+                    <summary className="cursor-pointer text-xs font-medium">
+                      {t('Graph details')}
+                    </summary>
+                    <div className="mt-3 space-y-3">
+                      {candidateRelationshipSections.map((section) => (
+                        <RelationshipColumns
+                          key={section.layer}
+                          title={t(layerLabel(section.layer))}
+                          leftLabel={t('Grew from')}
+                          leftIds={section.derivedFrom}
+                          rightLabel={t('Depends on')}
+                          rightIds={section.dependsOn}
+                          onSelect={locateGraphNode}
                         />
-                        <div className="mt-2 flex justify-end gap-2">
-                          {feedbackDraft.feedbackId ? (
+                      ))}
+                    </div>
+                  </details>
+
+                  <CandidateResourceList
+                    resources={selectedCandidate.resources}
+                    onOpen={(path) =>
+                      void openMarkdown(path, path.split('/').at(-1) ?? path)
+                    }
+                  />
+
+                  <CandidateMetadataSections
+                    metadata={selectedCandidate.metadata}
+                  />
+
+                  <Dialog
+                    open={feedbackDraft !== null}
+                    onOpenChange={(open) => {
+                      if (!open) setFeedbackDraft(null);
+                    }}
+                  >
+                    <DialogContent className="sm:max-w-lg">
+                      {feedbackDraft ? (
+                        <div className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-3">
+                          <p className="text-[11px] font-medium">
+                            {t('Lines')}
+                            {feedbackDraft.selection.startLine}–
+                            {feedbackDraft.selection.endLine}
+                          </p>
+                          <p className="mt-1 line-clamp-3 text-[11px] leading-5 text-muted-foreground">
+                            “{feedbackDraft.selection.excerpt}”
+                          </p>
+                          <Textarea
+                            value={feedbackDraft.instruction}
+                            onChange={(event) =>
+                              setFeedbackDraft((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      instruction: event.target.value,
+                                    }
+                                  : null,
+                              )
+                            }
+                            rows={3}
+                            placeholder={t(
+                              'What should the Agent reconsider here?',
+                            )}
+                            className="mt-3 resize-none text-sm"
+                            aria-label={t('Inline feedback')}
+                          />
+                          <div className="mt-2 flex justify-end gap-2">
+                            {feedbackDraft.feedbackId ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="mr-auto text-destructive hover:text-destructive"
+                                onClick={() =>
+                                  removePendingFeedback(
+                                    feedbackDraft.feedbackId!,
+                                  )
+                                }
+                              >
+                                {t('Delete feedback')}
+                              </Button>
+                            ) : null}
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
-                              className="mr-auto text-destructive hover:text-destructive"
-                              onClick={() =>
-                                removePendingFeedback(feedbackDraft.feedbackId!)
-                              }
+                              onClick={() => setFeedbackDraft(null)}
                             >
-                              {t('Delete feedback')}
+                              {t('Cancel')}
                             </Button>
-                          ) : null}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setFeedbackDraft(null)}
-                          >
-                            {t('Cancel')}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={!feedbackDraft.instruction.trim()}
-                            onClick={() => void savePendingFeedback()}
-                          >
-                            {feedbackDraft.feedbackId
-                              ? t('Save feedback')
-                              : t('Add feedback')}
-                          </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={!feedbackDraft.instruction.trim()}
+                              onClick={() => void savePendingFeedback()}
+                            >
+                              {feedbackDraft.feedbackId
+                                ? t('Save feedback')
+                                : t('Add feedback')}
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    ) : null}
-                  </DialogContent>
-                </Dialog>
+                      ) : null}
+                    </DialogContent>
+                  </Dialog>
 
-                {pendingFeedback.length > 0 ? (
-                  <div className="space-y-2">
-                    <p className="text-[11px] font-medium text-muted-foreground">
-                      {t('Feedback for this Refine')}
-                    </p>
-                    {pendingFeedback.map((feedback) => (
-                      <div
-                        key={feedback.feedbackId}
-                        className="flex items-start gap-3 rounded-xl bg-secondary px-3 py-2.5"
-                      >
-                        <button
-                          type="button"
-                          className="min-w-0 flex-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-                          aria-label={t('Edit feedback')}
-                          onClick={() =>
-                            editPendingFeedback(feedback.feedbackId)
-                          }
+                  {pendingFeedback.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-medium text-muted-foreground">
+                        {t('Feedback for this Refine')}
+                      </p>
+                      {pendingFeedback.map((feedback) => (
+                        <div
+                          key={feedback.feedbackId}
+                          className="flex items-start gap-3 rounded-xl bg-secondary px-3 py-2.5"
                         >
-                          <p className="text-[10px] text-muted-foreground">
-                            {t('Lines')}
-                            {feedback.startLine}–{feedback.endLine}
-                          </p>
-                          <p className="mt-1 text-xs leading-5">
-                            {feedback.instruction}
-                          </p>
-                        </button>
-                        <button
-                          type="button"
-                          className="text-muted-foreground hover:text-foreground"
-                          aria-label={t('Edit feedback')}
-                          onClick={() =>
-                            editPendingFeedback(feedback.feedbackId)
-                          }
-                        >
-                          <Pencil className="size-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          className="text-muted-foreground hover:text-foreground"
-                          aria-label={t('Remove inline feedback')}
-                          onClick={() =>
-                            removePendingFeedback(feedback.feedbackId)
-                          }
-                        >
-                          <X className="size-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-              <SheetFooter className="shrink-0 border-t border-border px-6 py-4">
-                {revisionTarget ? (
-                  <div className="w-full">
-                    <p className="text-[11px] font-medium">
-                      {t('Refine this Markdown')}
-                    </p>
-                    <Textarea
-                      value={reviseNote}
-                      onChange={(event) => setReviseNote(event.target.value)}
-                      rows={3}
-                      placeholder={t('Describe what should change…')}
-                      className="mt-2 resize-none text-sm"
-                      aria-label={t('Revision note')}
-                    />
-                    <div className="mt-3">
-                      <AgentProfileSelector
-                        value={agentProfile}
-                        onChange={setAgentProfile}
-                        mode={developmentPreview ? 'demo' : 'live'}
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                            aria-label={t('Edit feedback')}
+                            onClick={() =>
+                              editPendingFeedback(feedback.feedbackId)
+                            }
+                          >
+                            <p className="text-[10px] text-muted-foreground">
+                              {t('Lines')}
+                              {feedback.startLine}–{feedback.endLine}
+                            </p>
+                            <p className="mt-1 text-xs leading-5">
+                              {feedback.instruction}
+                            </p>
+                          </button>
+                          <button
+                            type="button"
+                            className="text-muted-foreground hover:text-foreground"
+                            aria-label={t('Edit feedback')}
+                            onClick={() =>
+                              editPendingFeedback(feedback.feedbackId)
+                            }
+                          >
+                            <Pencil className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            className="text-muted-foreground hover:text-foreground"
+                            aria-label={t('Remove inline feedback')}
+                            onClick={() =>
+                              removePendingFeedback(feedback.feedbackId)
+                            }
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <SheetFooter className="shrink-0 border-t border-border px-6 py-4">
+                  {revisionTarget ? (
+                    <div className="w-full">
+                      <p className="text-[11px] font-medium">
+                        {t('Refine this Markdown')}
+                      </p>
+                      <Textarea
+                        value={reviseNote}
+                        onChange={(event) => setReviseNote(event.target.value)}
+                        rows={3}
+                        placeholder={t('Describe what should change…')}
+                        className="mt-2 resize-none text-sm"
+                        aria-label={t('Revision note')}
                       />
+                      <div className="mt-3">
+                        <AgentProfileSelector
+                          value={agentProfile}
+                          onChange={setAgentProfile}
+                          mode={developmentPreview ? 'demo' : 'live'}
+                        />
+                      </div>
+                      <div className="mt-2 flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setRevisionTarget(null);
+                            setReviseNote('');
+                          }}
+                        >
+                          {t('Cancel')}
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={
+                            developmentPreview ||
+                            (!reviseNote.trim() && pendingFeedback.length === 0)
+                          }
+                          onClick={() => void reviseCandidate()}
+                        >
+                          {developmentPreview
+                            ? t('Preview only')
+                            : t('Send Refine')}
+                        </Button>
+                      </div>
                     </div>
-                    <div className="mt-2 flex justify-end gap-2">
+                  ) : (
+                    <div className="flex w-full gap-2">
                       <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setRevisionTarget(null);
-                          setReviseNote('');
-                        }}
+                        type="button"
+                        variant="destructive"
+                        size="icon"
+                        disabled={accepting || discarding || developmentPreview}
+                        aria-label={t('Discard this direction')}
+                        title={t('Discard this direction')}
+                        onClick={() => void updateCandidate('discard')}
                       >
-                        {t('Cancel')}
+                        {discarding ? (
+                          <LoaderCircle className="animate-spin" />
+                        ) : (
+                          <Trash2 />
+                        )}
                       </Button>
                       <Button
-                        size="sm"
+                        type="button"
+                        variant="outline"
+                        className="flex-1"
                         disabled={
-                          developmentPreview ||
-                          (!reviseNote.trim() && pendingFeedback.length === 0)
+                          accepting || discarding || Boolean(revisionTarget)
                         }
-                        onClick={() => void reviseCandidate()}
+                        onClick={() =>
+                          setRevisionTarget({
+                            runId: selectedCandidatePreview!.runId!,
+                            candidateId: selectedCandidate.candidateId,
+                          })
+                        }
                       >
-                        {developmentPreview
-                          ? t('Preview only')
-                          : t('Send Refine')}
+                        <Pencil /> {t('Refine')}
+                      </Button>
+                      <Button
+                        type="button"
+                        className="flex-1"
+                        disabled={accepting || discarding || developmentPreview}
+                        onClick={() => void updateCandidate('accept')}
+                      >
+                        {accepting ? t('Accepting…') : t('Accept')}
                       </Button>
                     </div>
-                  </div>
-                ) : (
+                  )}
+                </SheetFooter>
+              </>
+            ) : selectedNode ? (
+              <>
+                <SheetHeader>
+                  <SheetTitle>{selectedNode.title}</SheetTitle>
+                  <SheetDescription>
+                    {selectedNode.id} · {selectedNode.role} ·{' '}
+                    {selectedNode.type}
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 text-sm">
+                  {selectedNode.summary ? (
+                    <p className="leading-6 text-muted-foreground">
+                      {selectedNode.summary}
+                    </p>
+                  ) : null}
+                  <Fact
+                    label={t('Grew from')}
+                    value={selectedNode.derivedFrom?.join(', ') || 'Nothing'}
+                  />
+                  <NodeResourceSections
+                    node={selectedNode}
+                    onOpen={(path) =>
+                      void openMarkdown(path, resourceName(path))
+                    }
+                  />
+                  <NodeProvenanceFacts node={selectedNode} />
+                </div>
+                <SheetFooter className="shrink-0 border-t border-border px-6 py-4">
                   <div className="flex w-full gap-2">
                     <Button
                       type="button"
                       variant="destructive"
                       size="icon"
-                      disabled={accepting || discarding || developmentPreview}
-                      aria-label={t('Discard this direction')}
-                      title={t('Discard this direction')}
-                      onClick={() => void updateCandidate('discard')}
+                      disabled={
+                        deletionBlockers.length > 0 ||
+                        deletingNodeId === selectedNode.id
+                      }
+                      aria-label={t('Delete this card')}
+                      title={
+                        deletionBlockers.length > 0
+                          ? t('Delete the referencing cards first')
+                          : t('Move this card to Trash')
+                      }
+                      onClick={() => void deleteNode(selectedNode.id)}
                     >
-                      {discarding ? (
+                      {deletingNodeId === selectedNode.id ? (
                         <LoaderCircle className="animate-spin" />
                       ) : (
                         <Trash2 />
@@ -2042,176 +2123,101 @@ function WhatsNextCanvas({
                       type="button"
                       variant="outline"
                       className="flex-1"
-                      disabled={
-                        accepting || discarding || Boolean(revisionTarget)
-                      }
-                      onClick={() =>
-                        setRevisionTarget({
-                          runId: selectedCandidatePreview!.runId!,
-                          candidateId: selectedCandidate.candidateId,
-                        })
-                      }
-                    >
-                      <Pencil /> {t('Refine')}
-                    </Button>
-                    <Button
-                      type="button"
-                      className="flex-1"
-                      disabled={accepting || discarding || developmentPreview}
-                      onClick={() => void updateCandidate('accept')}
-                    >
-                      {accepting ? t('Accepting…') : t('Accept')}
-                    </Button>
-                  </div>
-                )}
-              </SheetFooter>
-            </>
-          ) : selectedNode ? (
-            <>
-              <SheetHeader>
-                <SheetTitle>{selectedNode.title}</SheetTitle>
-                <SheetDescription>
-                  {selectedNode.id} · {selectedNode.role} · {selectedNode.type}
-                </SheetDescription>
-              </SheetHeader>
-              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 text-sm">
-                {selectedNode.summary ? (
-                  <p className="leading-6 text-muted-foreground">
-                    {selectedNode.summary}
-                  </p>
-                ) : null}
-                <Fact
-                  label={t('Grew from')}
-                  value={selectedNode.derivedFrom?.join(', ') || 'Nothing'}
-                />
-                <NodeResourceSections
-                  node={selectedNode}
-                  onOpen={(path) => void openMarkdown(path, resourceName(path))}
-                />
-                <NodeProvenanceFacts node={selectedNode} />
-              </div>
-              <SheetFooter className="shrink-0 border-t border-border px-6 py-4">
-                <div className="flex w-full gap-2">
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="icon"
-                    disabled={
-                      deletionBlockers.length > 0 ||
-                      deletingNodeId === selectedNode.id
-                    }
-                    aria-label={t('Delete this card')}
-                    title={
-                      deletionBlockers.length > 0
-                        ? t('Delete the referencing cards first')
-                        : t('Move this card to Trash')
-                    }
-                    onClick={() => void deleteNode(selectedNode.id)}
-                  >
-                    {deletingNodeId === selectedNode.id ? (
-                      <LoaderCircle className="animate-spin" />
-                    ) : (
-                      <Trash2 />
-                    )}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => {
-                      setInspectorId('');
-                      toggleSelection(selectedNode.id);
-                      locateSequence.current += 1;
-                      setLocateRequest({
-                        nodeId: selectedNode.id,
-                        sequence: locateSequence.current,
-                      });
-                    }}
-                  >
-                    {combineIds.includes(selectedNode.id)
-                      ? t('Unselect')
-                      : t('Add to selection')}
-                  </Button>
-                  {selectedNode.role === 'start' ? (
-                    <Button
-                      type="button"
-                      className="flex-1"
                       onClick={() => {
-                        void beginEditSource(selectedNode);
+                        setInspectorId('');
+                        toggleSelection(selectedNode.id);
+                        locateSequence.current += 1;
+                        setLocateRequest({
+                          nodeId: selectedNode.id,
+                          sequence: locateSequence.current,
+                        });
                       }}
                     >
-                      <Pencil /> {t('Edit source')}
+                      {combineIds.includes(selectedNode.id)
+                        ? t('Unselect')
+                        : t('Add to selection')}
                     </Button>
+                    {selectedNode.role === 'start' ? (
+                      <Button
+                        type="button"
+                        className="flex-1"
+                        onClick={() => {
+                          void beginEditSource(selectedNode);
+                        }}
+                      >
+                        <Pencil /> {t('Edit source')}
+                      </Button>
+                    ) : null}
+                  </div>
+                  {deletionBlockers.length > 0 ? (
+                    <p className="text-[10px] leading-4 text-muted-foreground">
+                      {t('Referenced by')}
+                      {deletionBlockers.length}{' '}
+                      {deletionBlockers.length === 1 ? 'card' : t('cards')}
+                      {t('. Delete those first.')}
+                    </p>
                   ) : null}
-                </div>
-                {deletionBlockers.length > 0 ? (
-                  <p className="text-[10px] leading-4 text-muted-foreground">
-                    {t('Referenced by')}
-                    {deletionBlockers.length}{' '}
-                    {deletionBlockers.length === 1 ? 'card' : t('cards')}
-                    {t('. Delete those first.')}
+                </SheetFooter>
+              </>
+            ) : null}
+          </SheetContent>
+        </Sheet>
+
+        <MarkdownReaderDialog
+          preview={preview}
+          onClose={() => setPreview(null)}
+        />
+
+        <Dialog
+          open={comparison !== null}
+          onOpenChange={(open) => {
+            if (!open) setComparison(null);
+          }}
+        >
+          <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-4xl">
+            {comparison ? (
+              <>
+                <div>
+                  <h2 className="text-sm font-semibold">
+                    {t('Review')}
+                    {comparison.title}
+                  </h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t(
+                      'Every changed line is shown before this revision is accepted.',
+                    )}
                   </p>
-                ) : null}
-              </SheetFooter>
-            </>
-          ) : null}
-        </SheetContent>
-      </Sheet>
-
-      <MarkdownReaderDialog
-        preview={preview}
-        onClose={() => setPreview(null)}
-      />
-
-      <Dialog
-        open={comparison !== null}
-        onOpenChange={(open) => {
-          if (!open) setComparison(null);
-        }}
-      >
-        <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-4xl">
-          {comparison ? (
-            <>
-              <div>
-                <h2 className="text-sm font-semibold">
-                  {t('Review')}
-                  {comparison.title}
-                </h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t(
-                    'Every changed line is shown before this revision is accepted.',
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border font-mono text-[11px] leading-5">
+                  {lineDiff(comparison.previous, comparison.current).map(
+                    (line, index) => (
+                      <div
+                        key={`${index}:${line.text}`}
+                        className={cn(
+                          'grid grid-cols-[24px_1fr] px-3 py-0.5',
+                          line.kind === 'added' && 'bg-emerald-500/10',
+                          line.kind === 'removed' && 'bg-red-500/10',
+                        )}
+                      >
+                        <span className="select-none text-muted-foreground">
+                          {line.kind === 'added'
+                            ? '+'
+                            : line.kind === 'removed'
+                              ? '−'
+                              : ' '}
+                        </span>
+                        <span className="whitespace-pre-wrap break-words">
+                          {line.text || ' '}
+                        </span>
+                      </div>
+                    ),
                   )}
-                </p>
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border font-mono text-[11px] leading-5">
-                {lineDiff(comparison.previous, comparison.current).map(
-                  (line, index) => (
-                    <div
-                      key={`${index}:${line.text}`}
-                      className={cn(
-                        'grid grid-cols-[24px_1fr] px-3 py-0.5',
-                        line.kind === 'added' && 'bg-emerald-500/10',
-                        line.kind === 'removed' && 'bg-red-500/10',
-                      )}
-                    >
-                      <span className="select-none text-muted-foreground">
-                        {line.kind === 'added'
-                          ? '+'
-                          : line.kind === 'removed'
-                            ? '−'
-                            : ' '}
-                      </span>
-                      <span className="whitespace-pre-wrap break-words">
-                        {line.text || ' '}
-                      </span>
-                    </div>
-                  ),
-                )}
-              </div>
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+                </div>
+              </>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+      </div>
     </div>
   );
 }
