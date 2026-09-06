@@ -29,8 +29,10 @@ import {
   staleBasis,
   submissionConflict,
 } from './errors.ts';
+import type { ProductExplorationMaterializationBasis } from '../modules/product-discovery/basis.ts';
 import { assembleProductExplorationBasis } from './prepare.ts';
 import {
+  readMcpOperationBasis,
   requireMcpOperation,
   withMcpOperationLock,
   writeMcpOperation,
@@ -107,7 +109,7 @@ export async function submitProductExplorationResult(
         `Run ${active.runId} owns Product Exploration for this project. Retry after it ends; its log is at ${ownerLogUrlPath(owner, active.runId)}.`,
       );
 
-    const basis = await assembleProductExplorationBasis(
+    const current = await assembleProductExplorationBasis(
       project,
       {
         intention: record.request.intention as never,
@@ -116,9 +118,18 @@ export async function submitProductExplorationResult(
       },
       record.basis.preparedAt,
     );
-    if (basis.fingerprint !== record.basis.fingerprint)
+    if (current.fingerprint !== record.basis.fingerprint)
       throw staleBasis(
         'Read the module resource again, prepare a new operation with the current state, then reapply the requested change.',
+      );
+    const basis =
+      await readMcpOperationBasis<ProductExplorationMaterializationBasis>(
+        project,
+        operationId,
+      );
+    if (basis.fingerprint !== record.basis.fingerprint)
+      throw staleBasis(
+        'The frozen Basis for this operation no longer matches its record. Prepare a new operation.',
       );
 
     const paths = moduleRunLogPaths(project, 'whats-next', record.runId);
@@ -162,8 +173,9 @@ export async function submitProductExplorationResult(
       throw error;
     }
 
+    let published;
     try {
-      const published = await publishProductExplorationResult(
+      published = await publishProductExplorationResult(
         basis,
         typed,
         {
@@ -174,29 +186,6 @@ export async function submitProductExplorationResult(
         () => new Date().toISOString(),
         (entry) => reservation.record(entry),
       );
-      const summary = outcomeSummary(typed, published.candidates.length);
-      const settled: McpOperationRecord = {
-        ...admitted,
-        status: 'completed',
-        settledAt: new Date().toISOString(),
-        outcome: summary,
-        receipt:
-          (published.record.materialization as MaterializationReceipt) ?? null,
-      };
-      await writeMcpOperation(project, settled);
-      await settleRun(reservation, {
-        classification: {
-          status: typed.outcome === 'proposal' ? 'completed' : 'warning',
-          title:
-            typed.outcome === 'proposal'
-              ? 'Candidates ready for review'
-              : 'The module reported no Candidates',
-          detail: summary.summary,
-          supplementaryWarnings: [],
-          recovery: ['log'],
-        },
-      });
-      return { record: settled, replayed: false };
     } catch (error) {
       const boundary =
         error instanceof MaterializationError ? error.boundary : 'publication';
@@ -216,7 +205,7 @@ export async function submitProductExplorationResult(
             boundary === 'stale-basis' ? 'prepare-again' : 'inspect-operation',
         },
       };
-      await writeMcpOperation(project, failed);
+      await writeMcpOperation(project, failed).catch(() => undefined);
       try {
         await settleRun(reservation, {
           classification: {
@@ -235,5 +224,48 @@ export async function submitProductExplorationResult(
         throw invalidResult(message);
       throw publicationFailed(message);
     }
+
+    const summary = outcomeSummary(typed, published.candidates.length);
+    const settled: McpOperationRecord = {
+      ...admitted,
+      status: 'completed',
+      settledAt: new Date().toISOString(),
+      outcome: summary,
+      receipt:
+        (published.record.materialization as MaterializationReceipt) ?? null,
+    };
+    let statusWriteFailed: string | null = null;
+    try {
+      await writeMcpOperation(project, settled);
+    } catch (error) {
+      statusWriteFailed =
+        error instanceof Error ? error.message : 'unknown failure';
+      try {
+        reservation.record({
+          level: 'WARN',
+          actor: 'HOST',
+          phase: 'RUN',
+          event: 'operation.status-write-failed',
+          message: `The result is published and its receipt is committed, but the operation status could not be written: ${statusWriteFailed}. Recover the outcome from the Run receipt.`,
+        });
+      } catch {}
+    }
+    try {
+      await settleRun(reservation, {
+        classification: {
+          status: typed.outcome === 'proposal' ? 'completed' : 'warning',
+          title:
+            typed.outcome === 'proposal'
+              ? 'Candidates ready for review'
+              : 'The module reported no Candidates',
+          detail: summary.summary,
+          supplementaryWarnings: [],
+          recovery: ['log'],
+        },
+      });
+    } catch {
+      releaseRun(reservation);
+    }
+    return { record: settled, replayed: false };
   });
 }

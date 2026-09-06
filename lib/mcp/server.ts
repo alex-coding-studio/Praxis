@@ -28,6 +28,7 @@ import {
 import {
   operationProjection,
   readOperationLog,
+  reconcileMcpOperation,
   requireProject,
 } from './catalog.ts';
 import {
@@ -431,7 +432,10 @@ export function createPraxisMcpServer() {
       runStructured(async () => {
         const project = await requireProject(input.projectId);
         return operationProjection(
-          await requireMcpOperation(project, input.operationId),
+          await reconcileMcpOperation(
+            project,
+            await requireMcpOperation(project, input.operationId),
+          ),
         );
       }),
   );
@@ -454,6 +458,7 @@ export function createPraxisMcpServer() {
       runTool(() =>
         readOperationLog(input.projectId, input.operationId, {
           cursor: input.cursor,
+          limitLines: input.limitLines,
         }),
       ),
   );

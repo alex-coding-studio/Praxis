@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdtempSync } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { appendFile, mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -365,6 +365,149 @@ void test('the operation resource and its log are readable after a submission', 
     /AGENT/.test(log.text),
     false,
     'an external submission must not invent Agent steps',
+  );
+});
+
+void test('preparation freezes the Basis and the source hashes it was prepared against', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const { record } = await prepared(project as never, sourceNodeId);
+  const frozen = JSON.parse(
+    await readFile(path.join(project.planningPath, record.basisPath), 'utf8'),
+  ) as { fingerprint: string; knownResourcePaths: string[] };
+  assert.equal(frozen.fingerprint, record.basis.fingerprint);
+  for (const source of record.sources) {
+    assert.match(source.sha256, /^[0-9a-f]{64}$/);
+    assert.ok(source.byteLength > 0);
+    assert.ok(frozen.knownResourcePaths.includes(source.logicalPath));
+  }
+  const projection = JSON.parse(
+    (await catalog.readOperationResource(project.id, record.operationId)).text,
+  ) as Record<string, unknown>;
+  assert.equal(projection.status, 'prepared');
+});
+
+void test('a committed publication is not reported as failed when its status write is lost', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const { record } = await prepared(project as never, sourceNodeId);
+  await submitProductExplorationResult(
+    project,
+    record.operationId,
+    record.contract,
+    proposal(sourceNodeId),
+  );
+  const published = await findMcpOperation(project, record.operationId);
+  assert.equal(published?.status, 'completed');
+
+  await writeMcpOperation(project, {
+    ...published!,
+    status: 'running',
+    settledAt: null,
+    outcome: null,
+    receipt: null,
+  });
+  const recovered = JSON.parse(
+    (await catalog.readOperationResource(project.id, record.operationId)).text,
+  ) as Record<string, unknown>;
+  assert.equal(
+    recovered.status,
+    'completed',
+    'the committed Run receipt must settle the operation',
+  );
+  assert.equal(
+    (recovered.receipt as { outcome: string }).outcome,
+    'candidates',
+  );
+  assert.equal(recovered.error, null);
+});
+
+void test('an interrupted operation with no committed receipt stays interrupted', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const { record } = await prepared(project as never, sourceNodeId);
+  await writeMcpOperation(project, {
+    ...record,
+    status: 'interrupted',
+    admittedAt: new Date().toISOString(),
+    semanticResultHash: 'never-committed',
+  });
+  const projection = JSON.parse(
+    (await catalog.readOperationResource(project.id, record.operationId)).text,
+  ) as Record<string, unknown>;
+  assert.equal(projection.status, 'interrupted');
+  assert.equal(projection.receipt, null);
+});
+
+void test('the log pages past its first slice and honours a line limit', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const { record } = await prepared(project as never, sourceNodeId);
+  await submitProductExplorationResult(
+    project,
+    record.operationId,
+    record.contract,
+    proposal(sourceNodeId),
+  );
+  const settled = (await findMcpOperation(project, record.operationId))!;
+  const file = path.join(project.planningPath, settled.logRef!);
+  const padding = Array.from(
+    { length: 400 },
+    (_, index) =>
+      `{"sequence":${1000 + index},"level":"INFO","actor":"HOST","phase":"RUN","event":"probe","message":"${'p'.repeat(120)}"}`,
+  ).join('\n');
+  await appendFile(file, `${padding}\n`);
+
+  const first = await catalog.readOperationLog(project.id, record.operationId, {
+    limitLines: 5,
+  });
+  assert.equal(first.text.split('\n').filter(Boolean).length, 5);
+  assert.ok(first.nextCursor, 'a bounded page must offer a continuation');
+
+  let cursor: string | undefined = first.nextCursor ?? undefined;
+  let pages = 1;
+  let bytes = first.byteLength;
+  while (cursor && pages < 500) {
+    const page: Awaited<ReturnType<typeof catalog.readOperationLog>> =
+      await catalog.readOperationLog(project.id, record.operationId, {
+        limitLines: 50,
+        cursor,
+      });
+    bytes += page.byteLength;
+    cursor = page.nextCursor ?? undefined;
+    pages += 1;
+  }
+  assert.equal(cursor, undefined, 'paging must terminate');
+  assert.equal(
+    bytes,
+    first.totalBytes,
+    'every byte of the log must be reachable through the cursor',
+  );
+  assert.ok(
+    first.totalBytes > 32 * 1024,
+    'the fixture must exceed one reader slice',
+  );
+});
+
+void test('a log cursor issued for another operation is refused', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const first = await prepared(project as never, sourceNodeId);
+  await submitProductExplorationResult(
+    project,
+    first.record.operationId,
+    first.record.contract,
+    proposal(sourceNodeId),
+  );
+  const page = await catalog.readOperationLog(
+    project.id,
+    first.record.operationId,
+    { limitLines: 1 },
+  );
+  assert.ok(page.nextCursor);
+  const second = await prepared(project as never, sourceNodeId);
+  await assert.rejects(
+    () =>
+      catalog.readOperationLog(project.id, second.record.operationId, {
+        cursor: page.nextCursor ?? undefined,
+      }),
+    (error: unknown) =>
+      isMcpRequestError(error) && error.envelope.code === 'RESOURCE_CHANGED',
   );
 });
 

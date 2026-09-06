@@ -39,6 +39,7 @@ export type McpOperationRecord = {
   runId: string;
   request: Record<string, unknown>;
   userInputPath: string;
+  basisPath: string;
   sources: McpOperationSource[];
   preparedAt: string;
   admittedAt: string | null;
@@ -71,6 +72,7 @@ export function mcpOperationPaths(
   return {
     directory,
     json: path.join(directory, 'operation.json'),
+    basis: path.join(directory, 'basis.json'),
     userInput: path.join(directory, 'user-input.md'),
     userInputRef: path.posix.join(
       'mcp',
@@ -89,6 +91,31 @@ export async function writeMcpOperation(
   await mkdir(paths.directory, { recursive: true });
   await writeFileAtomically(paths.json, `${JSON.stringify(record, null, 2)}\n`);
   return record;
+}
+
+export async function writeMcpOperationBasis(
+  project: RegisteredProject,
+  operationId: string,
+  basis: unknown,
+) {
+  const paths = mcpOperationPaths(project, operationId);
+  await mkdir(paths.directory, { recursive: true });
+  await writeFileAtomically(paths.basis, `${JSON.stringify(basis, null, 2)}\n`);
+  return path.posix.join('mcp', 'operations', operationId, 'basis.json');
+}
+
+export async function readMcpOperationBasis<T>(
+  project: RegisteredProject,
+  operationId: string,
+): Promise<T> {
+  const paths = mcpOperationPaths(project, operationId);
+  try {
+    return JSON.parse(await readFile(paths.basis, 'utf8')) as T;
+  } catch {
+    throw resourceNotFound(
+      `The frozen Basis for operation ${JSON.stringify(operationId)} is not readable. Prepare a new operation.`,
+    );
+  }
 }
 
 export async function writeMcpOperationUserInput(

@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { sha256Hex } from '../materialization/hash.ts';
+import {
+  resolvePlanningPath,
+  TASK_GRAPH_MARKDOWN_SHAPES,
+} from '../planning-paths.ts';
 import {
   collectLatestUnacceptedCandidateStates,
   collectReservedCandidateIds,
@@ -26,8 +31,10 @@ import { MCP_MODULE_DEFINITIONS } from './modules.ts';
 import {
   newMcpOperationId,
   writeMcpOperation,
+  writeMcpOperationBasis,
   writeMcpOperationUserInput,
   type McpOperationRecord,
+  type McpOperationSource,
 } from './operations.ts';
 import { contractUri, moduleUri } from './uri.ts';
 
@@ -132,6 +139,34 @@ export async function assembleProductExplorationBasis(
   );
 }
 
+async function freezeSources(
+  project: RegisteredProject,
+  logicalPaths: readonly string[],
+): Promise<McpOperationSource[]> {
+  const frozen: McpOperationSource[] = [];
+  for (const logicalPath of logicalPaths) {
+    let resolved;
+    try {
+      resolved = await resolvePlanningPath(project, logicalPath, {
+        shapes: TASK_GRAPH_MARKDOWN_SHAPES,
+        require: 'file',
+      });
+    } catch {
+      continue;
+    }
+    const content = await readFile(resolved.absolutePath, 'utf8').catch(
+      () => null,
+    );
+    if (content === null) continue;
+    frozen.push({
+      logicalPath,
+      sha256: sha256Hex(content),
+      byteLength: Buffer.byteLength(content, 'utf8'),
+    });
+  }
+  return frozen;
+}
+
 export type PreparedProductExploration = {
   record: McpOperationRecord;
   basis: ProductExplorationMaterializationBasis;
@@ -175,6 +210,8 @@ export async function prepareProductExplorationOperation(
     operationId,
     userInput,
   );
+  const basisPath = await writeMcpOperationBasis(project, operationId, basis);
+  const sources = await freezeSources(project, basis.knownResourcePaths);
   const definition = MCP_MODULE_DEFINITIONS['product-exploration'];
   const record: McpOperationRecord = {
     schemaVersion: 1,
@@ -200,7 +237,8 @@ export async function prepareProductExplorationOperation(
       userInputSha256: sha256Hex(userInput),
     },
     userInputPath,
-    sources: [],
+    basisPath,
+    sources,
     preparedAt: basis.preparedAt,
     admittedAt: null,
     semanticResultHash: null,
@@ -225,6 +263,11 @@ export function preparedOperationProjection(record: McpOperationRecord) {
     contract: record.contract,
     basis: record.basis,
     request: record.request,
+    evidence: {
+      userInputPath: record.userInputPath,
+      basisPath: record.basisPath,
+      sources: record.sources,
+    },
     contractUri: contractUri(record.contract.id, record.contract.version),
     moduleUri: moduleUri(record.projectId, record.module),
     operationUri: `praxis://projects/${record.projectId}/operations/${record.operationId}`,

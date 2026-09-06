@@ -32,6 +32,8 @@ import {
   MAX_LIST_LIMIT,
   MAX_LOG_LINES,
   MAX_READ_BYTES,
+  decodeContentCursor,
+  encodeContentCursor,
   pageContent,
   pageList,
 } from './pagination.ts';
@@ -54,11 +56,14 @@ import {
 } from './uri.ts';
 import { requireMcpOperation, type McpOperationRecord } from './operations.ts';
 import { readRunLogTail } from '../execution-observability/run-log.ts';
+import type { MaterializationReceipt } from '../materialization/receipt.ts';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 export const MCP_API_VERSION = 1;
 export const MCP_SERVER_NAME = 'praxis';
 export const MCP_JSON_MEDIA_TYPE = 'application/json';
+export const MCP_LOG_MEDIA_TYPE = 'text/plain';
 
 export const MCP_IMPLEMENTED_TOOLS = [
   'praxis_list_projects',
@@ -471,13 +476,75 @@ export function operationProjection(record: McpOperationRecord) {
   };
 }
 
+export async function reconcileMcpOperation(
+  project: RegisteredProject,
+  record: McpOperationRecord,
+): Promise<McpOperationRecord> {
+  if (record.status !== 'running' && record.status !== 'interrupted')
+    return record;
+  const committed = await readCommittedRunReceipt(project, record.runId);
+  if (!committed) return record;
+  return {
+    ...record,
+    status: 'completed',
+    settledAt: record.settledAt ?? committed.settledAt,
+    outcome: record.outcome ?? committed.outcome,
+    receipt: record.receipt ?? committed.receipt,
+    error: null,
+  };
+}
+
+async function readCommittedRunReceipt(
+  project: RegisteredProject,
+  runId: string,
+) {
+  const file = path.join(
+    project.planningPath,
+    'whats-next',
+    'runs',
+    runId,
+    'run.json',
+  );
+  let stored: {
+    status?: string;
+    endedAt?: string | null;
+    materialization?: MaterializationReceipt;
+    result?: { outcome?: string; candidates?: unknown[] } | null;
+  };
+  try {
+    stored = JSON.parse(await readFile(file, 'utf8')) as typeof stored;
+  } catch {
+    return null;
+  }
+  if (!stored.materialization || stored.materialization.outcome === 'rejected')
+    return null;
+  if (!stored.result) return null;
+  const count = Array.isArray(stored.result.candidates)
+    ? stored.result.candidates.length
+    : 0;
+  return {
+    settledAt: stored.endedAt ?? new Date().toISOString(),
+    receipt: stored.materialization,
+    outcome: {
+      kind: stored.result.outcome ?? 'proposal',
+      summary:
+        stored.result.outcome === 'proposal'
+          ? `${count} Candidate${count === 1 ? '' : 's'} proposed for acceptance.`
+          : 'The module reported no Candidates.',
+    },
+  };
+}
+
 export async function readOperationResource(
   projectId: string,
   operationId: string,
   options: McpReadOptions = {},
 ) {
   const project = await requireProject(projectId);
-  const record = await requireMcpOperation(project, operationId);
+  const record = await reconcileMcpOperation(
+    project,
+    await requireMcpOperation(project, operationId),
+  );
   return jsonDocument(
     operationUri(project.id, operationId),
     operationProjection(record),
@@ -488,37 +555,60 @@ export async function readOperationResource(
 export async function readOperationLog(
   projectId: string,
   operationId: string,
-  options: McpReadOptions = {},
+  options: McpReadOptions & { limitLines?: number } = {},
 ) {
   const project = await requireProject(projectId);
   const record = await requireMcpOperation(project, operationId);
   const uri = operationLogUri(project.id, operationId);
+  const { offset } = decodeContentCursor(options.cursor, record.runId);
   if (!record.logRef)
     return {
       uri,
-      mimeType: 'text/plain',
+      mimeType: MCP_LOG_MEDIA_TYPE,
       text: '',
-      revision: 'empty',
+      revision: record.runId,
       byteOffset: 0,
       byteLength: 0,
       totalBytes: 0,
       nextCursor: null,
     } satisfies McpResourceContent;
+
   const file = path.join(project.planningPath, record.logRef);
   const limitBytes = boundedLimit(
     options.limitBytes,
     DEFAULT_READ_BYTES,
     MAX_READ_BYTES,
   );
-  const slice = await readRunLogTail(file, 0, limitBytes);
-  const text = slice.text;
-  const revision = sha256Hex(text);
-  const page = pageContent(text, revision, options.cursor, limitBytes);
+  const limitLines = boundedLimit(
+    options.limitLines,
+    DEFAULT_LOG_LINES,
+    MAX_LOG_LINES,
+  );
+  let slice;
+  try {
+    slice = await readRunLogTail(file, offset, limitBytes);
+  } catch {
+    throw resourceNotFound(
+      `The log for operation ${JSON.stringify(operationId)} is not readable.`,
+    );
+  }
+  const lines = slice.text.split(/(?<=\n)/u);
+  const kept = lines.slice(0, limitLines);
+  const text = kept.join('');
+  const consumed = Buffer.byteLength(text, 'utf8');
+  const next = slice.offset + consumed;
   return {
     uri,
-    mimeType: 'text/plain',
-    revision,
-    ...page,
+    mimeType: MCP_LOG_MEDIA_TYPE,
+    text,
+    revision: record.runId,
+    byteOffset: slice.offset,
+    byteLength: consumed,
+    totalBytes: slice.size,
+    nextCursor:
+      next < slice.size
+        ? encodeContentCursor({ offset: next, revision: record.runId })
+        : null,
   } satisfies McpResourceContent;
 }
 
