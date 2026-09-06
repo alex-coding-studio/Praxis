@@ -150,6 +150,12 @@ void test('delivery context exposes confirmed scope and accepted evidence, and w
   assert.match(brief!.markdown, /Local search/);
   assert.match(brief!.markdown, /Cloud search/);
   assert.match(brief!.markdown, /SEARCH: Finds matching titles/);
+  await updateDeliveryRecord(project, source.sourceUid, (current) => {
+    current.brief!.revision = 2;
+    current.brief!.outcome = 'A searchable library with local filters';
+  });
+  const refreshed = await resolveProductContextResource(project, briefPath);
+  assert.match(refreshed!.markdown, /A searchable library with local filters/);
   assert.equal(await resolveProductContextResource(project, outputPath), null);
   record = await updateDeliveryRecord(project, source.sourceUid, (current) => {
     current.status = 'completed';
