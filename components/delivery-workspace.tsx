@@ -743,6 +743,7 @@ export function DeliveryWorkspace({
                 title={t('Delivery brief')}
                 filePath={`delivery/targets/${record.sourceUid}/record.json`}
                 markdown={renderDeliveryBrief(record)}
+                initialAnnotationsEnabled={false}
                 compact
                 onAddFeedback={
                   running
