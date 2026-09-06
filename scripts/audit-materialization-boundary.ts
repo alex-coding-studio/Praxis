@@ -44,6 +44,7 @@ const ADAPTER_MEMBERS = [String.raw`lib/modules/[^/]+/producer-adapter\.tsx?$`];
 const MCP_TRANSPORT_MEMBERS = [
   String.raw`lib/mcp/`,
   String.raw`app/api/mcp/route\.tsx?$`,
+  String.raw`lib/modules/delivery-planning/publication-host\.tsx?$`,
 ];
 
 export const MATERIALIZATION_REQUIRED_FILES = [
@@ -109,6 +110,10 @@ export const MATERIALIZATION_REQUIRED_FILES = [
   'lib/mcp/tool-schemas.ts',
   'lib/mcp/uri.ts',
   'app/api/mcp/route.ts',
+  'lib/modules/delivery-planning/publication-host.ts',
+  'lib/modules/implementation/card-identity.ts',
+  'lib/modules/implementation/card-store.ts',
+  'lib/modules/implementation/planning-source.ts',
 ];
 
 export function materializationBoundaryPolicy(

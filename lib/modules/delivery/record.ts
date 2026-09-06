@@ -1,5 +1,5 @@
 import type { AgentProfile } from '../../agents/profile.ts';
-import type { LocalAgentUsage } from '../../agents/transport.ts';
+import type { LocalAgentUsage } from '../../agents/usage.ts';
 import type {
   DeliveryBrief,
   DeliveryModels,
