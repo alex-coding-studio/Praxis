@@ -12,6 +12,7 @@ import {
   deliveryCandidateReady,
   deliveryEvidenceBlockers,
   deliveryTechnicalReady,
+  shouldPrepareDeliveryReview,
 } from '../lib/modules/delivery/record.ts';
 import { ensureDeliveryArtifacts } from '../lib/modules/delivery/artifacts.ts';
 import { resolveProductContextResource } from '../lib/modules/product-context/resource.ts';
@@ -108,6 +109,11 @@ void test('merge eligibility accepts a justified review skip and rejects stale c
     reviewerSessionId: null,
   };
   assert.equal(deliveryCandidateReady(record, 'abc'), true);
+  assert.equal(shouldPrepareDeliveryReview(record), true);
+  record.stopAt = 'draft-pr';
+  assert.equal(shouldPrepareDeliveryReview(record), false);
+  assert.equal(deliveryTechnicalReady(record, 'abc'), true);
+  record.stopAt = undefined;
   record.brief.userAcceptance = [
     'The user decides whether the demo looks and feels right.',
   ];
