@@ -38,6 +38,7 @@ import {
   agentActivityEntry,
   beginModuleRun,
   classifyModuleRun,
+  moduleRunFailureKind,
   stopModuleRun,
 } from '../../execution-observability/module-run.ts';
 import type { ResponseClassification } from '../../execution-observability/types.ts';
@@ -1129,12 +1130,7 @@ async function finishTaskDecompositionRun(
     const classification = classifyModuleRun({
       runState: 'settled',
       failure: {
-        kind:
-          error instanceof PublicApiError && error.status === 409
-            ? 'persistence'
-            : agentOutput
-              ? 'parse'
-              : 'transport',
+        kind: moduleRunFailureKind(error, agentOutput),
         message: original,
       },
     });

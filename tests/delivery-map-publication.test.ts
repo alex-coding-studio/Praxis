@@ -18,6 +18,7 @@ import {
   fixture,
   input,
   result,
+  retainedResult,
   settled,
 } from './helpers/what-to-do-fixture.ts';
 import type { RegisteredProject } from '../lib/project-registry.ts';
@@ -110,4 +111,32 @@ void test('the basis records whether a Map already existed', async (t) => {
       .operation,
     'create-map',
   );
+});
+
+void test('a Run whose Map moved underneath reports the conflict, not a bad result', async (t) => {
+  const { project } = await fixture(t);
+  const control = controlled();
+  const first = await settledMap(project, control);
+  const call = control.calls.length;
+  const run = await startWhatToDoRun(
+    project,
+    { ...input(), sourceUids: [] },
+    control.transport,
+  );
+  await writeWhatToDoCurrentMap(project, { ...first, contracts: [] });
+  control.calls[call]!.resolve({
+    agentSessionId: 'session-overtaken',
+    finalOutput: JSON.stringify(retainedResult(run, first)),
+    usage: null,
+  });
+  const completed = await settled(project, run.id);
+  assert.equal(completed.status, 'failed');
+  assert.match(completed.error ?? '', /changed after this Run was prepared/);
+  assert.equal(
+    (completed.response?.recovery ?? []).includes('reread'),
+    false,
+    'a changed Map must not offer to re-read valid Agent output',
+  );
+  assert.doesNotMatch(completed.response?.title ?? '', /could not be verified/);
+  assert.match(completed.response?.detail ?? '', /could not persist/);
 });

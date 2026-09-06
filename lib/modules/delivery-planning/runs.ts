@@ -37,6 +37,7 @@ import {
   agentActivityEntry,
   beginModuleRun,
   classifyModuleRun,
+  moduleRunFailureKind,
   stopModuleRun,
 } from '../../execution-observability/module-run.ts';
 import type { ResponseClassification } from '../../execution-observability/types.ts';
@@ -552,17 +553,12 @@ function settleLater(
       const classification = classifyModuleRun({
         runState: 'settled',
         failure: {
-          kind:
-            error instanceof PublicApiError && error.status === 409
-              ? 'persistence'
-              : active.agentOutput
-                ? 'parse'
-                : 'transport',
+          kind: moduleRunFailureKind(error, active.agentOutput),
           message: original,
         },
       });
       const message =
-        error instanceof PublicApiError
+        error instanceof PublicApiError || error instanceof MaterializationError
           ? error.message
           : `${classification.detail} ${WHAT_TO_DO_RETAINED}`;
       const terminal: WhatToDoRunRecord = {
