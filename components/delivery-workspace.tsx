@@ -590,8 +590,9 @@ export function DeliveryWorkspace({
       ) : target ? (
         <div
           ref={setScrollRoot}
-          className="relative min-h-0 flex-1 overflow-y-auto p-5 pb-64"
+          className="relative min-h-0 flex-1 overflow-y-auto px-5 pb-64"
         >
+          <div aria-hidden="true" className="h-5" />
           <div ref={setSentinel} aria-hidden="true" className="h-px" />
           {initialStage && (
             <InlineTaskDocument
