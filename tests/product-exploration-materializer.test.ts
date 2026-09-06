@@ -11,7 +11,7 @@ import {
   isStaleBasisError,
   MaterializationError,
 } from '../lib/materialization/receipt.ts';
-import { whatsNextFailureKind } from '../lib/modules/product-discovery/runs.ts';
+import { moduleRunFailureKind } from '../lib/execution-observability/module-run.ts';
 import { classifyModuleRun } from '../lib/execution-observability/module-run.ts';
 import { apiErrorResponse, PublicApiError } from '../lib/api-errors.ts';
 import type { RegisteredProject } from '../lib/project-registry.ts';
@@ -203,28 +203,28 @@ void test('a stale basis is a persistence conflict, not malformed Agent output',
     false,
   );
   assert.equal(
-    whatsNextFailureKind(stale, '{"outcome":"proposal"}'),
+    moduleRunFailureKind(stale, '{"outcome":"proposal"}'),
     'persistence',
   );
   assert.equal(
-    whatsNextFailureKind(new PublicApiError('conflict', 409), 'output'),
+    moduleRunFailureKind(new PublicApiError('conflict', 409), 'output'),
     'persistence',
   );
   assert.equal(
-    whatsNextFailureKind(
+    moduleRunFailureKind(
       new MaterializationError('validation', 'no'),
       'output',
     ),
     'parse',
   );
-  assert.equal(whatsNextFailureKind(new Error('gone'), null), 'transport');
+  assert.equal(moduleRunFailureKind(new Error('gone'), null), 'transport');
 });
 
 void test('the Run response for a stale basis describes the conflict, not a rejected result', () => {
   const conflict = classifyModuleRun({
     runState: 'settled',
     failure: {
-      kind: whatsNextFailureKind(
+      kind: moduleRunFailureKind(
         new MaterializationError('stale-basis', 'The index moved.'),
         '{"outcome":"proposal"}',
       ),

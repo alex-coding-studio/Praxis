@@ -123,6 +123,26 @@ export async function writeWhatToDoRepositorySummary(
   );
 }
 
+export async function readWhatToDoCurrentMapWithFingerprint(
+  project: RegisteredProject,
+): Promise<{ map: WhatToDoDeliveryMap | null; fingerprint: string }> {
+  const directory = await whatToDoDirectory(project);
+  const file = path.join(directory, 'current-map.json');
+  const text = await readFile(file, 'utf8').catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    },
+  );
+  return {
+    map: await readWhatToDoCurrentMap(project),
+    fingerprint:
+      text === null
+        ? 'absent'
+        : createHash('sha256').update(text).digest('hex'),
+  };
+}
+
 export async function readWhatToDoCurrentMap(
   project: RegisteredProject,
 ): Promise<WhatToDoDeliveryMap | null> {
