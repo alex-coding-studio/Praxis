@@ -110,8 +110,13 @@ void test(
       'praxis_read_log',
       'praxis_read_resource',
       'praxis_submit_product_exploration',
+      'praxis_submit_scope_decomposition',
     ]);
-    const writeTools = ['praxis_prepare', 'praxis_submit_product_exploration'];
+    const writeTools = [
+      'praxis_prepare',
+      'praxis_submit_product_exploration',
+      'praxis_submit_scope_decomposition',
+    ];
     for (const tool of tools.tools) {
       assert.equal(
         tool.annotations?.readOnlyHint,

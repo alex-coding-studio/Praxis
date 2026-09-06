@@ -57,22 +57,43 @@ void test('capabilities name the served modules, contracts and limits', async ()
   }
 });
 
-void test('only the implemented module advertises an operation and a submission tool', async () => {
+void test('only implemented modules advertise an operation and a submission tool', async () => {
   const value = parse(catalog.readCapabilities());
+  const served = new Map([
+    ['product-exploration', ['explore']],
+    [
+      'scope-decomposition',
+      [
+        'propose',
+        'append-candidates',
+        'revise-candidate',
+        'recompose-candidates',
+      ],
+    ],
+  ]);
   for (const entry of value.modules as Array<Record<string, unknown>>) {
-    if (entry.module === 'product-exploration') {
-      assert.deepEqual(entry.preparationOperations, ['explore']);
-      assert.equal(entry.submissionTool, 'praxis_submit_product_exploration');
+    const operations = served.get(entry.module as string);
+    if (operations) {
+      assert.deepEqual(
+        entry.preparationOperations,
+        operations,
+        entry.module as string,
+      );
+      assert.equal(
+        entry.submissionTool,
+        MCP_MODULE_DEFINITIONS[
+          entry.module as keyof typeof MCP_MODULE_DEFINITIONS
+        ].submissionTool,
+      );
       continue;
     }
     assert.deepEqual(entry.preparationOperations, [], entry.module as string);
     assert.equal(entry.submissionTool, null, entry.module as string);
   }
   const tools = value.tools as string[];
-  assert.equal(tools.includes('praxis_submit_product_exploration'), true);
   assert.equal(
     tools.filter((tool) => tool.startsWith('praxis_submit')).length,
-    1,
+    2,
     'no unimplemented submission tool may be advertised',
   );
 });

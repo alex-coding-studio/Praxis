@@ -76,6 +76,7 @@ export const MCP_IMPLEMENTED_TOOLS = [
   'praxis_read_resource',
   'praxis_prepare',
   'praxis_submit_product_exploration',
+  'praxis_submit_scope_decomposition',
   'praxis_get_operation',
   'praxis_read_log',
 ] as const;
@@ -114,7 +115,7 @@ export function readCapabilities(options: McpReadOptions = {}) {
     apiVersion: MCP_API_VERSION,
     server: MCP_SERVER_NAME,
     protocolBaseline: '2025-11-25',
-    release: 'product-exploration-submission',
+    release: 'graph-proposal-submission',
     host: { activeRunRegistry: activeRunRegistryOwnership() },
     tools: MCP_IMPLEMENTED_TOOLS,
     resources: {
@@ -152,9 +153,15 @@ export function readCapabilities(options: McpReadOptions = {}) {
           uri: contractUri(definition.contract.id, definition.contract.version),
         },
         preparationOperations:
-          module === 'product-exploration' ? ['explore'] : [],
+          module === 'product-exploration'
+            ? ['explore']
+            : module === 'scope-decomposition'
+              ? [...definition.preparationOperations]
+              : [],
         submissionTool:
-          module === 'product-exploration' ? definition.submissionTool : null,
+          module === 'product-exploration' || module === 'scope-decomposition'
+            ? definition.submissionTool
+            : null,
         plannedPreparationOperations: definition.preparationOperations,
         plannedSubmissionTool: definition.submissionTool,
       };
@@ -488,7 +495,11 @@ export async function reconcileMcpOperation(
 ): Promise<McpOperationRecord> {
   if (record.status !== 'running' && record.status !== 'interrupted')
     return record;
-  const committed = await readCommittedRunReceipt(project, record.runId);
+  const committed = await readCommittedRunReceipt(
+    project,
+    MCP_MODULE_DEFINITIONS[record.module].runsRoot,
+    record.runId,
+  );
   if (!committed) {
     if (
       record.status === 'running' &&
@@ -521,11 +532,12 @@ export async function reconcileMcpOperation(
 
 async function readCommittedRunReceipt(
   project: RegisteredProject,
+  runsRoot: string,
   runId: string,
 ) {
   const file = path.join(
     project.planningPath,
-    'whats-next',
+    runsRoot,
     'runs',
     runId,
     'run.json',
