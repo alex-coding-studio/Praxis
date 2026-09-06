@@ -1,6 +1,21 @@
 # Graph Result Materialization
 
-Status: Partially implemented. The completion audit below is the current remaining-work checklist; the original Definition of done is not yet satisfied.
+Status: Implemented. The completion audit below is closed; see the closure record for the evidence behind each item. MCP exposure remains deferred to its own design.
+
+## Audit closure — 2026-09-06
+
+The 2026-09-05 completion audit is closed against `be2cda2`. Its four sections were delivered by the pull requests named below, each merged after independent review with repository gates green.
+
+| Audit section                                    | Delivered by           | Evidence                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------ | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A. Producer-neutral stage and publish boundary   | #224, #225, #227, #229 | Each module owns `publish.ts`. `tests/{product-exploration,scope-decomposition,domain-model,delivery-map}-submission.test.ts` prepare a Basis, submit a typed semantic result and read back the published outcome without a provider, an Agent response, or a Harness/Session record.         |
+| B. Delivery Planning result-contract integration | #228, #229, #235       | `runs.ts` settles through `toDeliveryMapSemanticResult`; `materializeWhatToDoDeliveryMap` takes `DeliveryMapResult` and the frozen Basis; computation, staging and canonical publication sit behind `publish.ts` with the Planning service and Delivery target guard injected.                |
+| C. Semantic results, receipts and Host events    | #232, #234             | Every module writes `semantic-result.json`, binds its hash to a `MaterializationReceipt` on the Run record (Domain Modeling and Delivery Planning also to `materialization.json`), and emits `materialization.*` as `HOST`. Rejections carry their failing boundary with `publication: null`. |
+| D. Acceptance gap and gate coverage              | #230, #232, #234       | `audit:materialization-boundary` fails on a missing or unanalyzed required file, and a test fails when a guarded module file is absent from that list. Staging and publication failures are covered per module and leave canonical state unchanged.                                           |
+
+Two defects the audit did not name were found and fixed while closing it: a proposal local key shaped like a Candidate label could capture a retained Contract's identity (#228), and a newly created Delivery Contract was published with no Source Claims because the Claim filter compared a materialized identifier against a proposal reference (#235).
+
+Against the Definition of done below: all four modules carry a versioned Result Contract; all four can validate and materialize a typed result without an Agent; all four Agent flows settle through their producer adapter and the same Materializer; the dependency-direction gate guards 36 Materializer-tier files and 4 adapter files across runtime and type-only edges; identities, hashes, paths, lifecycle state, layout, observability and receipts are Praxis-owned; stale and invalid results are refused before any visible change; no artifact migration was required and the parity goldens carry the proof; no MCP server, tool schema, Card change or UI is included.
 
 ## Completion audit — 2026-09-05
 
