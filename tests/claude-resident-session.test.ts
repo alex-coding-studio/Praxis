@@ -11,6 +11,7 @@ import { ClaudeHostBridge } from '../lib/agents/claude/host-bridge.ts';
 import { ClaudeSessionPool } from '../lib/agents/claude/session-pool.ts';
 import { ClaudeResidentProcess } from '../lib/agents/claude/resident-process.ts';
 import { HostJobBroker } from '../lib/agents/host-job-broker.ts';
+import type { AgentRuntimeEvent } from '../lib/agents/runtime-driver.ts';
 
 const fakeClaude = path.resolve('tests/fixtures/fake-claude.mjs');
 const profile = {
@@ -397,4 +398,94 @@ void test('repeated logical turns on one driver release every lease they took', 
     false,
     'an unbalanced lease would keep the session past its idle deadline forever',
   );
+});
+
+void test('each API request reaches the Run Log once, with the process and turn it belongs to', async (t) => {
+  const b = await bench(t, 'usage');
+  const driver = b.makeDriver();
+  const thread = await driver.startThread({
+    profile,
+    workingDirectory: b.root,
+    access: 'read-only',
+    hostJobs: false,
+  });
+  t.after(() => driver.dispose());
+  const usage: Extract<AgentRuntimeEvent, { type: 'request-usage' }>[] = [];
+  const processes: Extract<AgentRuntimeEvent, { type: 'session-process' }>[] =
+    [];
+  const result = await driver.startTurn(thread, {
+    prompt: 'measure',
+    onEvent: (event) => {
+      if (event.type === 'request-usage') usage.push(event);
+      if (event.type === 'session-process') processes.push(event);
+    },
+  }).completion;
+  assert.equal(result.finalOutput, 'USAGE');
+  assert.equal(
+    usage.length,
+    2,
+    'three assistant records sharing one request must not become three log lines',
+  );
+  const first = usage.find((event) =>
+    event.requestKey.startsWith('req_fixture_one'),
+  )!;
+  assert.equal(
+    first.cachedInputTokens,
+    5000,
+    'repeated records are maxed, never summed',
+  );
+  assert.equal(first.outputTokens, 9);
+  assert.equal(first.cacheWriteInputTokens, 40);
+  for (const event of usage) {
+    assert.equal(event.threadId, thread.threadId);
+    assert.ok(
+      event.turnId.startsWith(thread.threadId),
+      'usage is attributed to its turn',
+    );
+    assert.equal(event.launch, 1);
+    assert.ok(typeof event.pid === 'number' && event.pid > 0);
+  }
+  assert.equal(
+    processes.length,
+    1,
+    'the process identity is reported once per launch',
+  );
+  assert.equal(processes[0].resumed, false);
+  assert.equal(processes[0].launch, 1);
+  assert.match(processes[0].instructionsHash, /^[0-9a-f]{16}$/);
+  assert.match(processes[0].toolsHash, /^[0-9a-f]{16}$/);
+});
+
+void test('a recycled process reports the next launch number so log lines stay attributable', async (t) => {
+  const b = await bench(t, 'usage');
+  const driver = b.makeDriver();
+  const readOnly = await driver.startThread({
+    profile,
+    workingDirectory: b.root,
+    access: 'read-only',
+    hostJobs: false,
+  });
+  await driver.startTurn(readOnly, { prompt: 'one' }).completion;
+  await driver.close();
+  const escalated = await driver.resumeThread({
+    ...readOnly,
+    access: 'workspace-write',
+  });
+  t.after(() => driver.dispose());
+  const processes: Extract<AgentRuntimeEvent, { type: 'session-process' }>[] =
+    [];
+  await driver.startTurn(escalated, {
+    prompt: 'two',
+    onEvent: (event) => {
+      if (event.type === 'session-process') processes.push(event);
+    },
+  }).completion;
+  assert.equal(processes.length, 1);
+  assert.equal(
+    processes[0].launch,
+    2,
+    'the replacement process is the second launch',
+  );
+  assert.equal(processes[0].resumed, true);
+  assert.equal(b.pool.launchesOf(readOnly.threadId), 2);
 });

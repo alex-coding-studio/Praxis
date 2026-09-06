@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   type AgentRuntimeCapabilities,
   type AgentRuntimeEvent,
@@ -23,6 +23,10 @@ export { claudeMcpServerName } from './host-bridge.ts';
 export const claudeSuspensionGraceMs = 60000;
 
 const startedThreads = new Set<string>();
+
+function digest(value: string) {
+  return createHash('sha256').update(value).digest('hex').slice(0, 16);
+}
 
 export type ClaudeSessionDriverOptions = {
   command?: string;
@@ -224,6 +228,38 @@ export class ClaudeSessionDriver implements AgentSessionDriver {
     });
     this.leased.set(threadId, (this.leased.get(threadId) ?? 0) + 1);
     startedThreads.add(threadId);
+    const emitEvent = (event: AgentRuntimeEvent) => input.onEvent?.(event);
+    let currentTurnId = '';
+    resident.observe(
+      (usage, identity) =>
+        emitEvent({
+          type: 'request-usage',
+          threadId,
+          turnId: currentTurnId,
+          requestKey: usage.requestKey,
+          pid: identity.pid,
+          launch: identity.launch,
+          inputTokens: usage.inputTokens,
+          cachedInputTokens: usage.cachedInputTokens,
+          cacheWriteInputTokens: usage.cacheWriteInputTokens,
+          outputTokens: usage.outputTokens,
+          at: new Date().toISOString(),
+        }),
+      (identity) =>
+        emitEvent({
+          type: 'session-process',
+          threadId,
+          pid: identity.pid,
+          launch: identity.launch,
+          cliVersion: identity.cliVersion,
+          model: thread.profile.model || undefined,
+          effort: thread.profile.effort || undefined,
+          resumed: resume,
+          instructionsHash: digest(thread.instructions ?? ''),
+          toolsHash: digest(toolNames.join(',')),
+          at: new Date().toISOString(),
+        }),
+    );
 
     let stopped = false;
     const turnState: NonNullable<BridgeThread['turn']> = { stopped: false };
@@ -247,10 +283,11 @@ export class ClaudeSessionDriver implements AgentSessionDriver {
 
     let usage: AgentRuntimeTurnResult['usage'] = null;
     let prompt = input.prompt;
-    const emit = (event: AgentRuntimeEvent) => input.onEvent?.(event);
+    const emit = emitEvent;
     try {
       for (;;) {
         const turnId = `${threadId}:${randomUUID().slice(0, 8)}`;
+        currentTurnId = turnId;
         turnState.onActivity = (summary) => {
           if (summary.startsWith(`Running tool: mcp__${claudeMcpServerName}__`))
             return;
@@ -340,6 +377,7 @@ export class ClaudeSessionDriver implements AgentSessionDriver {
     } finally {
       this.bridge.clearGrace(bridgeThread);
       bridgeThread.turn = undefined;
+      resident.observe(undefined, undefined);
     }
   }
 

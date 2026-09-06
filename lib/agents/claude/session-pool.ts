@@ -13,6 +13,7 @@ type Entry = {
 
 export class ClaudeSessionPool {
   private entries = new Map<string, Entry>();
+  private launches = new Map<string, number>();
   private idleMs: number;
   private cap: number;
 
@@ -29,6 +30,9 @@ export class ClaudeSessionPool {
   }
   leasesOf(threadId: string) {
     return this.entries.get(threadId)?.leases ?? 0;
+  }
+  launchesOf(threadId: string) {
+    return this.launches.get(threadId) ?? 0;
   }
 
   async acquire(threadId: string, options: ClaudeResidentOptions) {
@@ -49,8 +53,10 @@ export class ClaudeSessionPool {
       );
     }
     await this.reclaimForCapacity();
+    const launch = (this.launches.get(threadId) ?? 0) + 1;
+    this.launches.set(threadId, launch);
     const entry: Entry = {
-      process: new ClaudeResidentProcess(options).start(),
+      process: new ClaudeResidentProcess({ ...options, launch }).start(),
       leases: 1,
       lastUsedAt: Date.now(),
     };

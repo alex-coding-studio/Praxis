@@ -128,6 +128,53 @@ async function respond(prompt) {
     }
     return finish('CAP_NOT_REACHED');
   }
+  if (scenario === 'usage') {
+    // 同一个 API 响应拆成 thinking / text / tool_use 三条记录，共享 requestId 与 message.id
+    for (const [index, usage] of [
+      {
+        input_tokens: 2,
+        cache_read_input_tokens: 5000,
+        cache_creation_input_tokens: 40,
+        output_tokens: 1,
+      },
+      {
+        input_tokens: 2,
+        cache_read_input_tokens: 5000,
+        cache_creation_input_tokens: 40,
+        output_tokens: 7,
+      },
+      {
+        input_tokens: 2,
+        cache_read_input_tokens: 5000,
+        cache_creation_input_tokens: 40,
+        output_tokens: 9,
+      },
+    ].entries())
+      send({
+        type: 'assistant',
+        requestId: 'req_fixture_one',
+        message: {
+          id: 'msg_fixture_one',
+          content: [{ type: 'text', text: `part ${index}` }],
+          usage,
+        },
+      });
+    send({
+      type: 'assistant',
+      requestId: 'req_fixture_two',
+      message: {
+        id: 'msg_fixture_two',
+        content: [{ type: 'text', text: 'second' }],
+        usage: {
+          input_tokens: 1,
+          cache_read_input_tokens: 5090,
+          cache_creation_input_tokens: 12,
+          output_tokens: 4,
+        },
+      },
+    });
+    return finish('USAGE');
+  }
   if (scenario === 'hang') return setInterval(() => {}, 1000);
   if (scenario === 'error')
     return send({
