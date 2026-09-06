@@ -244,19 +244,28 @@ export function materializeWhatToDoDeliveryMap(
       outputPath: `what-to-do/runs/${input.runId}/contracts/${identity.id}/output.md`,
     };
   });
-  const contracts = [...retainedContracts, ...newContracts].map((contract) => {
-    const candidateId = contractIdentityKey(contract.id);
-    return {
-      ...contract,
-      sourceClaimIds: input.result.sourceClaims
-        .filter((claim) =>
-          claim.contracts.some(
-            (reference) => contractReferenceKey(reference) === candidateId,
-          ),
-        )
-        .map((claim) => claim.claimId),
-    };
-  });
+  const contracts = [
+    ...retainedContracts.map((contract) => ({
+      key: contractIdentityKey(contract.id),
+      contract,
+    })),
+    ...newContracts.map((contract, index) => ({
+      key: contractReferenceKey({
+        kind: 'proposal',
+        localKey: input.result.contracts[index]!.localKey,
+      }),
+      contract,
+    })),
+  ].map(({ key, contract }) => ({
+    ...contract,
+    sourceClaimIds: input.result.sourceClaims
+      .filter((claim) =>
+        claim.contracts.some(
+          (reference) => contractReferenceKey(reference) === key,
+        ),
+      )
+      .map((claim) => claim.claimId),
+  }));
   const snapshotByPath = new Map(
     [
       ...(input.basis.currentMap?.sourceSnapshots ?? []),
