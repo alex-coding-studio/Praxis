@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type {
   WhatToDoContractCandidate,
-  WhatToDoHarnessResult,
+  WhatToDoMapProposal,
   WhatToDoSourceClaim,
-} from './harness.ts';
+} from './contract.ts';
 
 export type WhatToDoDeliveryContract = Omit<
   WhatToDoContractCandidate,
@@ -118,14 +118,14 @@ export function materializeWhatToDoDeliveryMap(
     runId: string;
     updatedAt: string;
     sourceUids: string[];
-    result: Extract<WhatToDoHarnessResult, { outcome: 'map-proposal' }>;
-    currentMap?: WhatToDoDeliveryMap | null;
+    result: WhatToDoMapProposal;
+    basis: { currentMap: WhatToDoDeliveryMap | null };
     sourceSnapshots: WhatToDoMapSourceSnapshot[];
   },
   createUid: () => string = randomUUID,
 ): WhatToDoDeliveryMap {
   const aliases = new Set(
-    (input.currentMap?.contracts ?? []).map((contract) => contract.id),
+    (input.basis.currentMap?.contracts ?? []).map((contract) => contract.id),
   );
   const retainedCandidateIds = new Set(
     input.result.recomposition?.effects
@@ -133,7 +133,7 @@ export function materializeWhatToDoDeliveryMap(
       .flatMap((effect) => effect.from) ?? [],
   );
   const identities = new Map([
-    ...(input.currentMap?.contracts ?? [])
+    ...(input.basis.currentMap?.contracts ?? [])
       .filter((contract) =>
         retainedCandidateIds.has(whatToDoContractCandidateId(contract)),
       )
@@ -160,7 +160,7 @@ export function materializeWhatToDoDeliveryMap(
       return [candidate.candidateId, { uid, id }] as const;
     }),
   ]);
-  const retainedContracts = (input.currentMap?.contracts ?? [])
+  const retainedContracts = (input.basis.currentMap?.contracts ?? [])
     .filter((contract) =>
       retainedCandidateIds.has(whatToDoContractCandidateId(contract)),
     )
@@ -217,7 +217,7 @@ export function materializeWhatToDoDeliveryMap(
   });
   const snapshotByPath = new Map(
     [
-      ...(input.currentMap?.sourceSnapshots ?? []),
+      ...(input.basis.currentMap?.sourceSnapshots ?? []),
       ...input.sourceSnapshots,
     ].map((snapshot) => [snapshot.logicalPath, snapshot]),
   );

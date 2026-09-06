@@ -62,6 +62,7 @@ void test('publishing against a Map that changed underneath is refused', async (
   const map = await settledMap(project, control);
   const captured = await readWhatToDoCurrentMapWithFingerprint(project);
   const basis = prepareDeliveryMapBasis(project, {
+    currentMap: captured.map,
     currentMapFingerprint: captured.fingerprint,
   });
   await writeWhatToDoCurrentMap(project, { ...map, contracts: [] });
@@ -82,6 +83,7 @@ void test('publishing against the Map it was prepared from succeeds', async (t) 
   const map = await settledMap(project, control);
   const captured = await readWhatToDoCurrentMapWithFingerprint(project);
   const basis = prepareDeliveryMapBasis(project, {
+    currentMap: captured.map,
     currentMapFingerprint: captured.fingerprint,
   });
   await publishDeliveryMap(project, map, undefined, basis);
@@ -98,7 +100,7 @@ void test('the basis records whether a Map already existed', async (t) => {
   const captured = await readWhatToDoCurrentMapWithFingerprint(project);
   const basis = prepareDeliveryMapBasis(
     project,
-    { currentMapFingerprint: captured.fingerprint },
+    { currentMap: captured.map, currentMapFingerprint: captured.fingerprint },
     () => '2026-09-05T00:00:00.000Z',
   );
   assert.equal(basis.operation, 'adjust-map');
@@ -108,8 +110,10 @@ void test('the basis records whether a Map already existed', async (t) => {
     (basis as { preparedAt: string }).preparedAt = 'changed';
   });
   assert.equal(
-    prepareDeliveryMapBasis(project, { currentMapFingerprint: 'absent' })
-      .operation,
+    prepareDeliveryMapBasis(project, {
+      currentMap: null,
+      currentMapFingerprint: 'absent',
+    }).operation,
     'create-map',
   );
 });
@@ -185,4 +189,23 @@ void test('normalization returns a new proposal and leaves the caller its own', 
     usage: null,
   });
   await settled(project, run.id);
+});
+
+void test('the basis freezes the Map that computation and the guard both use', async (t) => {
+  const { project } = await fixture(t);
+  const control = controlled();
+  const map = await settledMap(project, control);
+  const captured = await readWhatToDoCurrentMapWithFingerprint(project);
+  const basis = prepareDeliveryMapBasis(project, {
+    currentMap: captured.map,
+    currentMapFingerprint: captured.fingerprint,
+  });
+  assert.equal(basis.currentMap?.runId, map.runId);
+  assert.notEqual(basis.currentMap, captured.map);
+  captured.map!.contracts.length = 0;
+  assert.equal(basis.currentMap?.contracts.length, map.contracts.length);
+  await writeWhatToDoCurrentMap(project, { ...map, contracts: [] });
+  const reread = await readWhatToDoCurrentMapWithFingerprint(project);
+  assert.notEqual(reread.fingerprint, basis.currentMapFingerprint);
+  assert.equal(basis.currentMap?.contracts.length, map.contracts.length);
 });
