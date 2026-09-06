@@ -5,6 +5,10 @@ export function isUiLanguage(value: unknown): value is UiLanguage {
 }
 
 export const chineseUi: Record<string, string> = {
+  'Orchestrator model': 'Orchestrator 编排模型',
+  'Understands the target, delegates tasks and brings the delivery together.':
+    '负责理解目标、分配任务和汇总交付。',
+  'Remove model': '移除模型',
   'Undelivered targets: {count}': '未交付节点：{count}',
   Models: '模型',
   You: '你',

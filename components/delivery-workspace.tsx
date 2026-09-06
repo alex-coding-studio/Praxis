@@ -547,19 +547,6 @@ export function DeliveryWorkspace({
               </div>
             </div>
             <div className="flex flex-col items-end gap-2">
-              <AgentProfileSelector
-                value={record?.models.orchestrator ?? models.orchestrator}
-                onChange={(profile) => {
-                  if (record)
-                    void command('models', {
-                      models: { ...record.models, orchestrator: profile },
-                    });
-                  else setModels({ ...models, orchestrator: profile });
-                }}
-                disabled={running}
-                showStatus={false}
-                triggerClassName="h-8"
-              />
               {running ? (
                 <Button
                   variant="outline"
@@ -739,65 +726,80 @@ export function DeliveryWorkspace({
         </div>
       )}
       <Dialog open={settings} onOpenChange={setSettings}>
-        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-xl">
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{t('Delivery settings')}</DialogTitle>
           </DialogHeader>
-          <AgentProfileSelector
-            value={models.orchestrator}
-            onChange={(profile) =>
-              setModels({ ...models, orchestrator: profile })
-            }
-            label="Orchestrator"
-          />
-          {(['workers', 'reviewers'] as const).map((pool) => (
-            <div key={pool} className="space-y-2">
-              <h3 className="text-sm">
-                {t(pool === 'workers' ? 'Worker models' : 'Reviewer models')}
-              </h3>
-              {models[pool].map((profile, index) => (
-                <div className="flex gap-2" key={index}>
-                  <AgentProfileSelector
-                    value={profile}
-                    onChange={(value) =>
-                      setModels({
-                        ...models,
-                        [pool]: models[pool].map((entry, i) =>
-                          i === index ? value : entry,
-                        ),
-                      })
-                    }
-                  />
-                  <Button
-                    variant="ghost"
-                    onClick={() =>
-                      setModels({
-                        ...models,
-                        [pool]: models[pool].filter((_, i) => i !== index),
-                      })
-                    }
-                  >
-                    ×
-                  </Button>
-                </div>
-              ))}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  setModels({
-                    ...models,
-                    [pool]: [
-                      ...models[pool],
-                      { agent: 'codex', model: '', effort: '' },
-                    ],
-                  })
-                }
-              >
-                {t('Add model')}
-              </Button>
-            </div>
-          ))}
+          <section className="space-y-2 border-b border-border pb-4">
+            <h3 className="text-sm font-medium">{t('Orchestrator model')}</h3>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'Understands the target, delegates tasks and brings the delivery together.',
+              )}
+            </p>
+            <AgentProfileSelector
+              value={models.orchestrator}
+              onChange={(profile) =>
+                setModels({ ...models, orchestrator: profile })
+              }
+              label="Orchestrator"
+              triggerClassName="w-full sm:max-w-sm"
+            />
+          </section>
+          <div className="grid min-w-0 gap-6 sm:grid-cols-2">
+            {(['workers', 'reviewers'] as const).map((pool) => (
+              <section key={pool} className="min-w-0 space-y-2">
+                <h3 className="text-sm font-medium">
+                  {t(pool === 'workers' ? 'Worker models' : 'Reviewer models')}
+                </h3>
+                {models[pool].map((profile, index) => (
+                  <div className="flex min-w-0 items-center gap-2" key={index}>
+                    <AgentProfileSelector
+                      triggerClassName="min-w-0 flex-1"
+                      value={profile}
+                      onChange={(value) =>
+                        setModels({
+                          ...models,
+                          [pool]: models[pool].map((entry, i) =>
+                            i === index ? value : entry,
+                          ),
+                        })
+                      }
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="shrink-0"
+                      aria-label={t('Remove model')}
+                      onClick={() =>
+                        setModels({
+                          ...models,
+                          [pool]: models[pool].filter((_, i) => i !== index),
+                        })
+                      }
+                    >
+                      ×
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setModels({
+                      ...models,
+                      [pool]: [
+                        ...models[pool],
+                        { agent: 'codex', model: '', effort: '' },
+                      ],
+                    })
+                  }
+                >
+                  {t('Add model')}
+                </Button>
+              </section>
+            ))}
+          </div>
           <Button
             disabled={pending}
             onClick={async () => {
@@ -870,6 +872,7 @@ export function DeliveryWorkspace({
                 }
                 extraInfoCount={contextRefs.length + files.length}
                 extraInfoLabel="Optional sources"
+                showProfileSelector={false}
                 value={record?.models.orchestrator ?? models.orchestrator}
                 onChange={(profile) => {
                   if (record)
