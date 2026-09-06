@@ -144,6 +144,73 @@ function TargetNode({
 }
 const nodeTypes = { target: TargetNode };
 
+function InlineTaskDocument({
+  projectId,
+  target,
+}: {
+  projectId: string;
+  target: ExecutableTarget;
+}) {
+  const { t } = useUiText();
+  const [document, setDocument] = useState<MarkdownReaderDialogPreview | null>(
+    null,
+  );
+  const [error, setError] = useState('');
+  const paths = target.outputPaths.join('\n');
+  useEffect(() => {
+    let current = true;
+    void Promise.all(
+      paths
+        .split('\n')
+        .filter(Boolean)
+        .map(async (filePath) => {
+          const response = await fetch(
+            `/api/projects/${projectId}/resources?path=${encodeURIComponent(filePath)}`,
+            { cache: 'no-store' },
+          );
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error);
+          return result.markdown as string;
+        }),
+    ).then(
+      (markdown) => {
+        if (current)
+          setDocument({
+            title: target.title,
+            path: paths,
+            markdown: markdown.join('\n\n---\n\n'),
+          });
+      },
+      (failure) => {
+        if (current) setError(String(failure));
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [projectId, paths, target.title]);
+  if (error)
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        {error}
+      </p>
+    );
+  if (!document)
+    return (
+      <p className="text-sm text-muted-foreground">
+        {t('Loading task document…')}
+      </p>
+    );
+  return (
+    <MarkdownReader
+      title={document.title}
+      filePath={document.path}
+      markdown={document.markdown}
+      initialAnnotationsEnabled={false}
+    />
+  );
+}
+
 export function DeliveryWorkspace({
   projectId,
   initialWorkspace,
@@ -200,6 +267,7 @@ export function DeliveryWorkspace({
   const record = workspace.records.find((entry) => entry.sourceUid === uid);
   const run = record?.lastWithdrawal ? undefined : record?.runs.at(-1);
   const running = run?.status === 'running';
+  const initialStage = !record?.brief && !record?.workspace && !run;
   async function openTaskDocument() {
     if (!target || readingTask) return;
     setReadingTask(true);
@@ -423,7 +491,7 @@ export function DeliveryWorkspace({
         }
         actions={
           <>
-            {target && (
+            {target && !initialStage && (
               <Button
                 variant="outline"
                 size="sm"
@@ -525,10 +593,18 @@ export function DeliveryWorkspace({
           className="relative min-h-0 flex-1 overflow-y-auto p-5 pb-64"
         >
           <div ref={setSentinel} aria-hidden="true" className="h-px" />
-          {record?.runs.length ||
-          record?.brief ||
-          record?.response ||
-          record?.workspace ? (
+          {initialStage && (
+            <InlineTaskDocument
+              key={`${target.sourceUid}:${target.sourceFingerprint}`}
+              projectId={projectId}
+              target={target}
+            />
+          )}
+          {!initialStage &&
+          (record?.runs.length ||
+            record?.brief ||
+            record?.response ||
+            record?.workspace) ? (
             <ExecutionStickyHeaderFrame stuck={stuck}>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-3">
@@ -979,13 +1055,6 @@ export function DeliveryWorkspace({
               ? 'Delivery feedback'
               : 'Discuss delivery',
           )}
-          description={
-            !record?.brief
-              ? t(
-                  'The task document is already included. Add delivery priorities, extra requirements or scope adjustments. The Agent will prepare a brief first; implementation starts only after your confirmation.',
-                )
-              : undefined
-          }
           running={running}
           collapsed={composerCollapsed}
           onCollapsedChange={setComposerCollapsed}
