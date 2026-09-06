@@ -392,7 +392,8 @@ npm run test:mcp
   document and the User Input it was written against, publishing through the canonical
   service, an exact retry replaying without a second publication, a changed result
   conflicting, a Feature edited after preparation refused as `STALE_BASIS` with the
-  operation left preparable, an adjustment retaining its published Contract, recovery
+  operation left preparable, evidence removed after preparation refused the same way,
+  an adjustment retaining its published Contract, recovery
   from the committed receipt and from the committed Map when the receipt is gone, and an
   uncommitted operation staying unsettled.
 - [tests/mcp-transport.test.ts](../tests/mcp-transport.test.ts) — a real SDK client over

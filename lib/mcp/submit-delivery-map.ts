@@ -145,12 +145,15 @@ export async function driftedDeliveryEvidence(
   const frozen = new Map(
     record.sources.map((source) => [source.logicalPath, source.sha256]),
   );
-  const drifted: string[] = [];
-  for (const input of evidence.inputs) {
-    const recorded = frozen.get(input.logicalPath);
-    if (recorded === undefined || recorded !== sha256Hex(input.content))
-      drifted.push(input.logicalPath);
-  }
+  const assembled = new Map(
+    evidence.inputs.map((input) => [
+      input.logicalPath,
+      sha256Hex(input.content),
+    ]),
+  );
+  const drifted = [...new Set([...frozen.keys(), ...assembled.keys()])].filter(
+    (logicalPath) => frozen.get(logicalPath) !== assembled.get(logicalPath),
+  );
   return { current, drifted };
 }
 

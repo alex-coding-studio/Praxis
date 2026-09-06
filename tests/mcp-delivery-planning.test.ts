@@ -498,6 +498,46 @@ void test('a Feature already in the Delivery Map is refused instead of planned t
   );
 });
 
+void test('evidence removed after preparation is drift, not silence', async (t) => {
+  const project = await fixture(t);
+  const { saveWhatToDoInstructions } =
+    await import('../lib/modules/delivery-planning/instructions.ts');
+  await saveWhatToDoInstructions(
+    project,
+    'Prefer one Contract per accepted Feature.\n',
+  );
+  const { record } = await prepareDeliveryMapOperation(project, {
+    userInput: 'Plan the first delivery.',
+    sourceUids: [FEATURE_UID],
+  });
+  assert.equal(
+    record.sources.some(
+      (source) => source.logicalPath === 'what-to-do/instructions.md',
+    ),
+    true,
+    'the instructions the Map was planned under must be frozen',
+  );
+  await saveWhatToDoInstructions(project, '');
+  await assert.rejects(
+    () =>
+      submitDeliveryMapOperation(
+        project,
+        record.operationId,
+        record.contract,
+        mapProposal(),
+      ),
+    (error: unknown) =>
+      isMcpRequestError(error) &&
+      error.envelope.code === 'STALE_BASIS' &&
+      error.envelope.detail.includes('what-to-do/instructions.md'),
+  );
+  assert.equal(
+    (await readWhatToDoCurrentMapWithFingerprint(project)).map,
+    null,
+    'a submission under removed evidence must not publish',
+  );
+});
+
 void test('a publication conflict is classified as a stale Basis, not a failure', () => {
   assert.equal(
     publicationBoundary(new PublicApiError('conflict', 409)),
