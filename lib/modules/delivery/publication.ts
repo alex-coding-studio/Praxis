@@ -15,7 +15,7 @@ import { PublicApiError } from '../../api-errors.ts';
 import { deliveryGit } from './workspace.ts';
 import { readDeliveryRecord, updateDeliveryRecord } from './storage.ts';
 import { deliveryCandidateReady } from './record.ts';
-import { syncProjectMain } from '../implementation/sync-main.ts';
+import { syncProjectMain } from '../../sync-project-main.ts';
 import { claimDeliveryTarget } from './ownership.ts';
 
 const execute = promisify(execFile);

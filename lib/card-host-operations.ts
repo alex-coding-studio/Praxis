@@ -11,11 +11,11 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { actionPublicationBranch } from './modules/implementation/action-publication.ts';
+import { actionPublicationBranch } from './publication-workspace.ts';
 import {
   verifyCardWorkspace,
   type CardWorkspace,
-} from './modules/implementation/worktree.ts';
+} from './publication-workspace.ts';
 
 const exec = promisify(execFile);
 

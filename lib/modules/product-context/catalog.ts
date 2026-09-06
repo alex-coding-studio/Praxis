@@ -4,7 +4,7 @@ import { ensureDeliveryArtifacts } from '../delivery/artifacts.ts';
 import path from 'node:path';
 import { readDomainModel } from '../domain-modeling/model.ts';
 import type { PlanningCard } from '../implementation/planning-service.ts';
-import { readPlanningFile } from '../implementation/planning-sources.ts';
+import { readPlanningFile } from '../../planning-documents.ts';
 import {
   PRODUCT_CONTEXT_DOCUMENT_SHAPES,
   isAcceptedPlanningShape,

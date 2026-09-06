@@ -4,7 +4,7 @@ import { PublicApiError } from '../../api-errors.ts';
 import { readDomainModel } from '../domain-modeling/model.ts';
 import type { PlanningCard } from '../implementation/planning-service.ts';
 import { readDeliveryRecord } from '../delivery/storage.ts';
-import { readPlanningFile } from '../implementation/planning-sources.ts';
+import { readPlanningFile } from '../../planning-documents.ts';
 import {
   readCardWorkDocument,
   readCardWorklog,

@@ -4,7 +4,7 @@ import { constants, type Dirent } from 'node:fs';
 import { lstat, open, opendir, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { includeInGitHistory } from '../implementation/git.ts';
+import { includeInGitHistory } from '../../repository-file-policy.ts';
 import type { RegisteredProject } from '../../project-registry.ts';
 import { PublicApiError } from '../../api-errors.ts';
 

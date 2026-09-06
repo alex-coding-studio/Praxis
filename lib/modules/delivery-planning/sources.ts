@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { ContextWorkspaceInput } from '../../graph/agent/context-workspace.ts';
 import { PublicApiError } from '../../api-errors.ts';
-import { readPlanningFile } from '../implementation/planning-sources.ts';
+import { readPlanningFile } from '../../planning-documents.ts';
 import type { RegisteredProject } from '../../project-registry.ts';
 import {
   readTaskGraphNodesSnapshot,

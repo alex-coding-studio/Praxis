@@ -1,3 +1,11 @@
+import {
+  verifyCardWorkspace,
+  type CardWorkspace,
+} from '../../publication-workspace.ts';
+export {
+  verifyCardWorkspace,
+  type CardWorkspace,
+} from '../../publication-workspace.ts';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -16,13 +24,6 @@ import { assertCardUuid } from './harness.ts';
 import { PublicApiError } from '../../api-errors.ts';
 
 const exec = promisify(execFile);
-export type CardWorkspace = {
-  path: string;
-  repository: string;
-  branch: string;
-  baseCommit: string;
-  gitDirectory: string;
-};
 export const bootstrapRequired = 'EMPTY_REPOSITORY_CONFIRMATION_REQUIRED';
 function environment() {
   const env = { ...process.env };
@@ -94,11 +95,6 @@ async function resolveCardBase(repository: string) {
     );
   return remoteHead;
 }
-async function regularDirectory(directory: string) {
-  const stat = await lstat(directory);
-  if (!stat.isDirectory() || stat.isSymbolicLink())
-    throw new Error('Workspace ownership requires regular directories.');
-}
 async function sidecar(project: RegisteredProject, cardId: string) {
   return path.join(
     await realpath(project.planningPath),
@@ -118,33 +114,6 @@ async function save(
   const temp = `${file}.${randomUUID()}.tmp`;
   await writeFile(temp, JSON.stringify(workspace), { flag: 'wx' });
   await rename(temp, file);
-}
-export async function verifyCardWorkspace(workspace: CardWorkspace) {
-  await regularDirectory(workspace.path);
-  const top = await git(workspace.path, 'rev-parse', '--show-toplevel');
-  const common = await git(
-    workspace.path,
-    'rev-parse',
-    '--path-format=absolute',
-    '--git-common-dir',
-  );
-  if (
-    (await realpath(top)) !== workspace.path ||
-    (await realpath(common)) !== workspace.gitDirectory ||
-    (await git(workspace.path, 'symbolic-ref', '--short', 'HEAD')) !==
-      workspace.branch
-  )
-    throw new Error(
-      'Card worktree identity changed. Restore its recorded branch and path before continuing.',
-    );
-  const repositoryCommon = await git(
-    workspace.repository,
-    'rev-parse',
-    '--path-format=absolute',
-    '--git-common-dir',
-  );
-  if ((await realpath(repositoryCommon)) !== workspace.gitDirectory)
-    throw new Error('Card repository identity changed.');
 }
 async function create(
   project: RegisteredProject,
