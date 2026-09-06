@@ -1,4 +1,7 @@
-import { defineResultContract } from '../../materialization/contract.ts';
+import {
+  defineResultContract,
+  type ResultContract,
+} from '../../materialization/contract.ts';
 import {
   agentGraphRecomposeEffects,
   recomposeEffectSchema,
@@ -139,7 +142,7 @@ export const SCOPE_DECOMPOSITION_RESULT_SCHEMA = {
   ],
 } as const;
 
-export const SCOPE_DECOMPOSITION_RESULT_CONTRACT =
+export const SCOPE_DECOMPOSITION_RESULT_CONTRACT: ResultContract<ScopeDecompositionResult> =
   defineResultContract<ScopeDecompositionResult>({
     id: SCOPE_DECOMPOSITION_RESULT_CONTRACT_ID,
     version: SCOPE_DECOMPOSITION_RESULT_CONTRACT_VERSION,

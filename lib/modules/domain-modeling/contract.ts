@@ -1,4 +1,7 @@
-import { defineResultContract } from '../../materialization/contract.ts';
+import {
+  defineResultContract,
+  type ResultContract,
+} from '../../materialization/contract.ts';
 import type {
   DomainConstraint,
   DomainEntity,
@@ -217,7 +220,7 @@ export const DOMAIN_MODEL_RESULT_SCHEMA = {
   ],
 } as const;
 
-export const DOMAIN_MODEL_RESULT_CONTRACT =
+export const DOMAIN_MODEL_RESULT_CONTRACT: ResultContract<DomainModelResult> =
   defineResultContract<DomainModelResult>({
     id: DOMAIN_MODEL_RESULT_CONTRACT_ID,
     version: DOMAIN_MODEL_RESULT_CONTRACT_VERSION,
