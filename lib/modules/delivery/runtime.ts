@@ -1,3 +1,4 @@
+import { agentRunLogEntry } from './agent-log.ts';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { CodexAppServerDriver } from '../../agents/codex/app-server-driver.ts';
@@ -307,14 +308,8 @@ async function executeDelivery(
     const turn = driver.startTurn(thread, {
       prompt,
       onEvent: (event) => {
-        if (event.type === 'activity')
-          log.append({
-            level: 'INFO',
-            actor: role,
-            phase: 'EXECUTE',
-            event: 'agent.activity',
-            message: event.summary,
-          });
+        const entry = agentRunLogEntry(role, event);
+        if (entry) log.append(entry);
       },
     });
     active.turns.add(turn);

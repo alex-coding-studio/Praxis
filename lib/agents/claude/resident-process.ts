@@ -21,13 +21,18 @@ export type ResidentRequestUsage = {
   cacheWriteInputTokens: number;
   outputTokens: number;
 };
+export type ResidentProcessIdentity = {
+  pid: number | undefined;
+  launch: number;
+  cliVersion?: string;
+};
 export type ClaudeResidentOptions = {
   command: string;
   arguments: string[];
   environment: NodeJS.ProcessEnv;
   workingDirectory: string;
   signature: string;
-  onRequestUsage?: (usage: ResidentRequestUsage) => void;
+  launch?: number;
 };
 
 type QueuedTurn = ResidentTurnInput & {
@@ -49,6 +54,13 @@ export class ClaudeResidentProcess {
   private stopped?: string;
   private exited?: Promise<void>;
   private requestUsage = new Map<string, ResidentRequestUsage>();
+  private unflushed = new Set<string>();
+  private usageSink?: (
+    usage: ResidentRequestUsage,
+    identity: ResidentProcessIdentity,
+  ) => void;
+  private readySink?: (identity: ResidentProcessIdentity) => void;
+  private cliVersion?: string;
 
   constructor(options: ClaudeResidentOptions) {
     this.options = options;
@@ -63,6 +75,23 @@ export class ClaudeResidentProcess {
   }
   get requestCount() {
     return this.requestUsage.size;
+  }
+  get identity(): ResidentProcessIdentity {
+    return {
+      pid: this.child?.pid,
+      launch: this.options.launch ?? 1,
+      cliVersion: this.cliVersion,
+    };
+  }
+  observe(
+    usageSink?: (
+      usage: ResidentRequestUsage,
+      identity: ResidentProcessIdentity,
+    ) => void,
+    readySink?: (identity: ResidentProcessIdentity) => void,
+  ) {
+    this.usageSink = usageSink;
+    this.readySink = readySink;
   }
 
   start() {
@@ -128,6 +157,7 @@ export class ClaudeResidentProcess {
   }
 
   private consume(line: string) {
+    this.recordProcess(line);
     const event = parseClaudeEvent(line);
     if (!event) return;
     const turn = this.active;
@@ -145,12 +175,38 @@ export class ClaudeResidentProcess {
           : `Claude ended the turn with ${event.subtype}.`;
     else if (typeof event.result === 'string') turn.finalOutput = event.result;
     this.active = undefined;
+    this.flushUsage();
     this.settle(turn, {
       finalOutput: turn.finalOutput,
       usage: turn.usage,
       error: turn.error,
     });
     this.pump();
+  }
+
+  private recordProcess(line: string) {
+    if (this.cliVersion) return;
+    let value: {
+      type?: string;
+      subtype?: string;
+      claude_code_version?: string;
+    };
+    try {
+      value = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (value.type !== 'system' || value.subtype !== 'init') return;
+    this.cliVersion = value.claude_code_version ?? 'unknown';
+    this.readySink?.(this.identity);
+  }
+
+  private flushUsage() {
+    for (const key of this.unflushed) {
+      const usage = this.requestUsage.get(key);
+      if (usage) this.usageSink?.(usage, this.identity);
+    }
+    this.unflushed.clear();
   }
 
   private recordUsage(line: string) {
@@ -188,7 +244,7 @@ export class ClaudeResidentProcess {
       ),
     };
     this.requestUsage.set(key, next);
-    this.options.onRequestUsage?.(next);
+    this.unflushed.add(key);
   }
 
   private settle(turn: QueuedTurn, outcome: ResidentTurnOutcome) {
@@ -198,6 +254,7 @@ export class ClaudeResidentProcess {
   }
 
   private settleAll(reason: string) {
+    this.flushUsage();
     this.stopped ??= reason;
     const detail = this.stderr.trim();
     const error = new Error(detail ? `${reason} ${detail}` : reason);
