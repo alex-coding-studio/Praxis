@@ -57,17 +57,24 @@ void test('capabilities name the served modules, contracts and limits', async ()
   }
 });
 
-void test('this release advertises no preparation operation or submission tool', async () => {
+void test('only the implemented module advertises an operation and a submission tool', async () => {
   const value = parse(catalog.readCapabilities());
   for (const entry of value.modules as Array<Record<string, unknown>>) {
-    assert.deepEqual(entry.preparationOperations, []);
-    assert.equal(entry.submissionTool, null);
+    if (entry.module === 'product-exploration') {
+      assert.deepEqual(entry.preparationOperations, ['explore']);
+      assert.equal(entry.submissionTool, 'praxis_submit_product_exploration');
+      continue;
+    }
+    assert.deepEqual(entry.preparationOperations, [], entry.module as string);
+    assert.equal(entry.submissionTool, null, entry.module as string);
   }
+  const tools = value.tools as string[];
+  assert.equal(tools.includes('praxis_submit_product_exploration'), true);
   assert.equal(
-    (value.tools as string[]).some((tool) => tool.startsWith('praxis_submit')),
-    false,
+    tools.filter((tool) => tool.startsWith('praxis_submit')).length,
+    1,
+    'no unimplemented submission tool may be advertised',
   );
-  assert.equal((value.tools as string[]).includes('praxis_prepare'), false);
 });
 
 void test('a registered project is listed with its module links and no source content', async (t) => {

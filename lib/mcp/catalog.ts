@@ -27,8 +27,10 @@ import {
 import {
   boundedLimit,
   DEFAULT_LIST_LIMIT,
+  DEFAULT_LOG_LINES,
   DEFAULT_READ_BYTES,
   MAX_LIST_LIMIT,
+  MAX_LOG_LINES,
   MAX_READ_BYTES,
   pageContent,
   pageList,
@@ -45,9 +47,14 @@ import {
   contractUri,
   latestResponseUri,
   moduleUri,
+  operationLogUri,
+  operationUri,
   parseMcpUri,
   projectsUri,
 } from './uri.ts';
+import { requireMcpOperation, type McpOperationRecord } from './operations.ts';
+import { readRunLogTail } from '../execution-observability/run-log.ts';
+import path from 'node:path';
 
 export const MCP_API_VERSION = 1;
 export const MCP_SERVER_NAME = 'praxis';
@@ -56,6 +63,10 @@ export const MCP_JSON_MEDIA_TYPE = 'application/json';
 export const MCP_IMPLEMENTED_TOOLS = [
   'praxis_list_projects',
   'praxis_read_resource',
+  'praxis_prepare',
+  'praxis_submit_product_exploration',
+  'praxis_get_operation',
+  'praxis_read_log',
 ] as const;
 
 export type McpResourceContent = {
@@ -92,7 +103,7 @@ export function readCapabilities(options: McpReadOptions = {}) {
     apiVersion: MCP_API_VERSION,
     server: MCP_SERVER_NAME,
     protocolBaseline: '2025-11-25',
-    release: 'reads',
+    release: 'product-exploration-submission',
     host: { activeRunRegistry: activeRunRegistryOwnership() },
     tools: MCP_IMPLEMENTED_TOOLS,
     resources: {
@@ -102,9 +113,15 @@ export function readCapabilities(options: McpReadOptions = {}) {
       latestResponseTemplate:
         'praxis://projects/{projectId}/modules/{module}/latest-response',
       artifactTemplate: 'praxis://projects/{projectId}/artifacts/{artifactId}',
+      operationTemplate:
+        'praxis://projects/{projectId}/operations/{operationId}',
+      operationLogTemplate:
+        'praxis://projects/{projectId}/operations/{operationId}/log',
       contractTemplate: 'praxis://contracts/{contractId}/{version}',
     },
     limits: {
+      logLinesDefault: DEFAULT_LOG_LINES,
+      logLinesMax: MAX_LOG_LINES,
       listDefault: DEFAULT_LIST_LIMIT,
       listMax: MAX_LIST_LIMIT,
       readBytesDefault: DEFAULT_READ_BYTES,
@@ -123,8 +140,10 @@ export function readCapabilities(options: McpReadOptions = {}) {
           hash: definition.contract.hash,
           uri: contractUri(definition.contract.id, definition.contract.version),
         },
-        preparationOperations: [],
-        submissionTool: null,
+        preparationOperations:
+          module === 'product-exploration' ? ['explore'] : [],
+        submissionTool:
+          module === 'product-exploration' ? definition.submissionTool : null,
         plannedPreparationOperations: definition.preparationOperations,
         plannedSubmissionTool: definition.submissionTool,
       };
@@ -425,6 +444,84 @@ export async function readArtifact(
   } satisfies McpResourceContent;
 }
 
+export function operationProjection(record: McpOperationRecord) {
+  return {
+    operationId: record.operationId,
+    projectId: record.projectId,
+    module: record.module,
+    status: record.status,
+    contract: record.contract,
+    basis: record.basis,
+    runId: record.runId,
+    request: record.request,
+    preparedAt: record.preparedAt,
+    admittedAt: record.admittedAt,
+    settledAt: record.settledAt,
+    semanticResultHash: record.semanticResultHash,
+    outcome: record.outcome,
+    receipt: record.receipt,
+    error: record.error,
+    retryAction: record.error?.retryAction ?? null,
+    logUri: record.logRef
+      ? operationLogUri(record.projectId, record.operationId)
+      : null,
+    logUrlPath: record.logUrlPath,
+    operationUri: operationUri(record.projectId, record.operationId),
+    moduleUri: moduleUri(record.projectId, record.module),
+  };
+}
+
+export async function readOperationResource(
+  projectId: string,
+  operationId: string,
+  options: McpReadOptions = {},
+) {
+  const project = await requireProject(projectId);
+  const record = await requireMcpOperation(project, operationId);
+  return jsonDocument(
+    operationUri(project.id, operationId),
+    operationProjection(record),
+    options,
+  );
+}
+
+export async function readOperationLog(
+  projectId: string,
+  operationId: string,
+  options: McpReadOptions = {},
+) {
+  const project = await requireProject(projectId);
+  const record = await requireMcpOperation(project, operationId);
+  const uri = operationLogUri(project.id, operationId);
+  if (!record.logRef)
+    return {
+      uri,
+      mimeType: 'text/plain',
+      text: '',
+      revision: 'empty',
+      byteOffset: 0,
+      byteLength: 0,
+      totalBytes: 0,
+      nextCursor: null,
+    } satisfies McpResourceContent;
+  const file = path.join(project.planningPath, record.logRef);
+  const limitBytes = boundedLimit(
+    options.limitBytes,
+    DEFAULT_READ_BYTES,
+    MAX_READ_BYTES,
+  );
+  const slice = await readRunLogTail(file, 0, limitBytes);
+  const text = slice.text;
+  const revision = sha256Hex(text);
+  const page = pageContent(text, revision, options.cursor, limitBytes);
+  return {
+    uri,
+    mimeType: 'text/plain',
+    revision,
+    ...page,
+  } satisfies McpResourceContent;
+}
+
 export async function resolveMcpResource(
   uri: string,
   options: McpReadOptions = {},
@@ -440,6 +537,18 @@ export async function resolveMcpResource(
     return readLatestResponseProjection(
       reference.projectId,
       reference.module,
+      options,
+    );
+  if (reference.kind === 'operation')
+    return readOperationResource(
+      reference.projectId,
+      reference.operationId,
+      options,
+    );
+  if (reference.kind === 'operation-log')
+    return readOperationLog(
+      reference.projectId,
+      reference.operationId,
       options,
     );
   return readArtifact(reference.projectId, reference.artifactId, options);

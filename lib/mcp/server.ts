@@ -10,13 +10,33 @@ import {
   resolveMcpResource,
   type McpResourceContent,
 } from './catalog.ts';
-import { isMcpRequestError, type McpErrorEnvelope } from './errors.ts';
+import {
+  isMcpRequestError,
+  resourceNotFound,
+  type McpErrorEnvelope,
+} from './errors.ts';
 import { MCP_MODULES, MCP_MODULE_DEFINITIONS } from './modules.ts';
 import { toToolInputSchema } from './schema-adapter.ts';
 import {
+  GET_OPERATION_INPUT_SCHEMA,
   LIST_PROJECTS_INPUT_SCHEMA,
+  PREPARE_INPUT_SCHEMA,
+  READ_LOG_INPUT_SCHEMA,
   READ_RESOURCE_INPUT_SCHEMA,
+  SUBMIT_PRODUCT_EXPLORATION_INPUT_SCHEMA,
 } from './tool-schemas.ts';
+import {
+  operationProjection,
+  readOperationLog,
+  requireProject,
+} from './catalog.ts';
+import {
+  prepareProductExplorationOperation,
+  preparedOperationProjection,
+} from './prepare.ts';
+import { submitProductExplorationResult } from './submit.ts';
+import { requireMcpOperation } from './operations.ts';
+import { operationLogUri, operationUri } from './uri.ts';
 import { capabilitiesUri, contractUri, projectsUri } from './uri.ts';
 
 export const MCP_SERVER_VERSION = `${MCP_API_VERSION}.0.0`;
@@ -72,6 +92,43 @@ function unexpectedFailure(error: unknown) {
     boundary: 'host',
     retryAction: 'start-host',
   });
+}
+
+function clientInfoOf(extra: unknown) {
+  const info = (extra as { clientInfo?: { name?: unknown; version?: unknown } })
+    ?.clientInfo;
+  if (
+    !info ||
+    typeof info.name !== 'string' ||
+    typeof info.version !== 'string'
+  )
+    return null;
+  return { name: info.name, version: info.version };
+}
+
+async function projectForOperation(operationId: string) {
+  const { listProjects } = await import('../project-registry.ts');
+  const { findMcpOperation } = await import('./operations.ts');
+  for (const project of await listProjects())
+    if (await findMcpOperation(project, operationId)) return project;
+  throw resourceNotFound(
+    `No prepared operation ${JSON.stringify(operationId)} exists in any registered project. Prepare again with praxis_prepare.`,
+  );
+}
+
+async function runStructured(run: () => Promise<object>) {
+  try {
+    const value = await run();
+    return {
+      content: [
+        { type: 'text' as const, text: `${JSON.stringify(value, null, 2)}\n` },
+      ],
+      structuredContent: value as Record<string, unknown>,
+    };
+  } catch (error) {
+    if (isMcpRequestError(error)) return toolFailure(error.envelope);
+    return unexpectedFailure(error);
+  }
 }
 
 async function runTool(run: () => Promise<McpResourceContent>) {
@@ -183,6 +240,36 @@ export function createPraxisMcpServer() {
   );
 
   server.registerResource(
+    'operation',
+    new ResourceTemplate(
+      'praxis://projects/{projectId}/operations/{operationId}',
+      { list: undefined },
+    ),
+    {
+      title: 'Operation status',
+      description:
+        'Status, summary, receipt, artifact references and log links for one prepared or admitted operation.',
+      mimeType: MCP_JSON_MEDIA_TYPE,
+    },
+    (uri) => resourceContents(uri.href),
+  );
+
+  server.registerResource(
+    'operation-log',
+    new ResourceTemplate(
+      'praxis://projects/{projectId}/operations/{operationId}/log',
+      { list: undefined },
+    ),
+    {
+      title: 'Operation log',
+      description:
+        'A bounded readable log page for one operation, sharing the reader praxis_read_log uses.',
+      mimeType: 'text/plain',
+    },
+    (uri) => resourceContents(uri.href),
+  );
+
+  server.registerResource(
     'artifact',
     new ResourceTemplate(
       'praxis://projects/{projectId}/artifacts/{artifactId}',
@@ -246,6 +333,127 @@ export function createPraxisMcpServer() {
         resolveMcpResource(input.uri, {
           cursor: input.cursor,
           limitBytes: input.limitBytes,
+        }),
+      ),
+  );
+
+  server.registerTool(
+    'praxis_prepare',
+    {
+      title: 'Prepare a Praxis module operation',
+      description:
+        'Freeze a module Basis and User Input, and return the operation identity and Result Contract to write against. Starts no Agent Run and calls no model.',
+      inputSchema: toToolInputSchema<{
+        projectId: string;
+        module: 'product-exploration';
+        request: {
+          userInput: string;
+          layer: 'discovery' | 'product-design';
+          intention?: string;
+          motion?: string;
+          sourceNodeIds?: string[];
+        };
+      }>(PREPARE_INPUT_SCHEMA, 'praxis_prepare'),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async (input, extra) =>
+      runStructured(async () => {
+        const project = await requireProject(input.projectId);
+        const { record } = await prepareProductExplorationOperation(
+          project,
+          input.request as never,
+          clientInfoOf(extra),
+        );
+        return preparedOperationProjection(record);
+      }),
+  );
+
+  server.registerTool(
+    'praxis_submit_product_exploration',
+    {
+      title: 'Submit a Product Exploration result',
+      description:
+        'Publish a typed Product Exploration result for a prepared operation. Candidates become visible for acceptance in the existing interface; this tool does not accept them.',
+      inputSchema: toToolInputSchema<{
+        operationId: string;
+        contract: { id: string; version: number; hash: string };
+        result: unknown;
+      }>(
+        SUBMIT_PRODUCT_EXPLORATION_INPUT_SCHEMA,
+        'praxis_submit_product_exploration',
+      ),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (input) =>
+      runStructured(async () => {
+        const project = await projectForOperation(input.operationId);
+        const outcome = await submitProductExplorationResult(
+          project,
+          input.operationId,
+          input.contract,
+          input.result,
+        );
+        return {
+          operationId: outcome.record.operationId,
+          status: outcome.record.status,
+          replayed: outcome.replayed,
+          outcome: outcome.record.outcome,
+          operationUri: operationUri(project.id, outcome.record.operationId),
+          logUri: operationLogUri(project.id, outcome.record.operationId),
+          logUrlPath: outcome.record.logUrlPath,
+        };
+      }),
+  );
+
+  server.registerTool(
+    'praxis_get_operation',
+    {
+      title: 'Read an operation status',
+      description:
+        'Return status, summary, receipt and log references for one operation. Reads only.',
+      inputSchema: toToolInputSchema<{
+        projectId: string;
+        operationId: string;
+      }>(GET_OPERATION_INPUT_SCHEMA, 'praxis_get_operation'),
+      annotations: READ_ONLY_ANNOTATIONS,
+    },
+    async (input) =>
+      runStructured(async () => {
+        const project = await requireProject(input.projectId);
+        return operationProjection(
+          await requireMcpOperation(project, input.operationId),
+        );
+      }),
+  );
+
+  server.registerTool(
+    'praxis_read_log',
+    {
+      title: 'Read an operation log',
+      description:
+        'Return a bounded page of the readable log for one operation, with a continuation cursor.',
+      inputSchema: toToolInputSchema<{
+        projectId: string;
+        operationId: string;
+        cursor?: string;
+        limitLines?: number;
+      }>(READ_LOG_INPUT_SCHEMA, 'praxis_read_log'),
+      annotations: READ_ONLY_ANNOTATIONS,
+    },
+    (input) =>
+      runTool(() =>
+        readOperationLog(input.projectId, input.operationId, {
+          cursor: input.cursor,
         }),
       ),
   );

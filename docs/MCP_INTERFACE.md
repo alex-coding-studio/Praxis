@@ -6,9 +6,10 @@ Praxis launching a model. The assistant reasons in its own session; Praxis owns
 deterministic publication and evidence.
 
 This document records the settled interface. It is delivered in Parts. **This release
-implements Part 1: the endpoint, its connection boundary, and the read surface.** No
-preparation, submission, acceptance, Agent dispatch or GitHub capability is served
-here, and none is advertised.
+implements Part 1 (the endpoint, its connection boundary and the read surface) and
+Part 2 (prepared operations and the Product Exploration submission slice).** Scope
+Decomposition, Domain Modeling and Delivery Planning submission, acceptance, Agent
+dispatch and GitHub capability are not served here, and none is advertised.
 
 ## Served in this release
 
@@ -251,8 +252,11 @@ stack trace:
 | `RESOURCE_CHANGED`                         | The document changed mid-read; read it again from the start.               |
 | `HOST_UNAVAILABLE`                         | Reconnect or start the existing Host; do not spawn a competing writer.     |
 
-`STALE_BASIS`, `ACTIVE_RUN_CONFLICT`, `SUBMISSION_CONFLICT` and `PUBLICATION_FAILED`
-belong to the write path and arrive with it.
+| `INVALID_RESULT` | The result failed its Result Contract validator; the message names the rule. The operation stays `prepared`. |
+| `STALE_BASIS` | Module state changed after preparation; read again and prepare a new operation. |
+| `ACTIVE_RUN_CONFLICT` | A UI Run owns the module. Retry after it ends; nothing was published and the operation stays preparable. |
+| `SUBMISSION_CONFLICT` | This operation was admitted with a different result. Inspect it and prepare a new operation. |
+| `PUBLICATION_FAILED` | The publication failed; the operation records the boundary and known effects. |
 
 ## One Host, one owner registry
 
@@ -323,6 +327,13 @@ npm run test:mcp
   required/optional/null handling, the `uniqueItems` advisory boundary against the real
   contract and its AJV validator, loud failure on unclassified and unsupported
   constructs, and the pinned Zod release.
+- [tests/mcp-operations.test.ts](../tests/mcp-operations.test.ts) — preparation creating
+  no entity and no Run, coexisting preparations, a fixture submission publishing readable
+  Candidates without a model and without accepting them, exact-retry replay, changed-result
+  conflict, malformed result refused before admission, contract mismatch, stale Basis, a
+  concurrent UI owner refusing admission and leaving the operation preparable, an
+  interrupted operation not reading as success, and the operation resource and log
+  readback.
 - [tests/mcp-transport.test.ts](../tests/mcp-transport.test.ts) — a real SDK client over
   HTTP completing initialization, discovery and reads, with bounded 20-second timeouts,
   including both sides of the argument-failure split.

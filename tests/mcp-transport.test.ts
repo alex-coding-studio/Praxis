@@ -104,11 +104,21 @@ void test(
     assert.equal(version?.name, 'praxis');
     const tools = await client.listTools();
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [
+      'praxis_get_operation',
       'praxis_list_projects',
+      'praxis_prepare',
+      'praxis_read_log',
       'praxis_read_resource',
+      'praxis_submit_product_exploration',
     ]);
+    const writeTools = ['praxis_prepare', 'praxis_submit_product_exploration'];
     for (const tool of tools.tools) {
-      assert.equal(tool.annotations?.readOnlyHint, true);
+      assert.equal(
+        tool.annotations?.readOnlyHint,
+        !writeTools.includes(tool.name),
+        `${tool.name} read-only annotation`,
+      );
+      assert.equal(tool.annotations?.destructiveHint, false, tool.name);
       assert.equal(
         (tool.inputSchema as { additionalProperties?: boolean })
           .additionalProperties,

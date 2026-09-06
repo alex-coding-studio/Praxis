@@ -9,10 +9,21 @@ export type McpResourceRef =
   | { kind: 'module'; projectId: string; module: McpModule }
   | { kind: 'latest-response'; projectId: string; module: McpModule }
   | { kind: 'artifact'; projectId: string; artifactId: string }
+  | { kind: 'operation'; projectId: string; operationId: string }
+  | { kind: 'operation-log'; projectId: string; operationId: string }
   | { kind: 'contract'; contractId: string; version: number };
 
 const SEGMENT = /^[A-Za-z0-9_.~-]+$/u;
 const ARTIFACT_ID = /^[A-Za-z0-9_-]+$/u;
+const OPERATION_ID = /^MCPOP-[0-9a-f-]{36}$/u;
+
+function assertOperationId(value: string) {
+  if (!OPERATION_ID.test(value))
+    throw invalidArgument(
+      `${JSON.stringify(value)} is not an operation id issued by praxis_prepare.`,
+    );
+  return value;
+}
 
 function segments(uri: string) {
   if (!uri.startsWith(MCP_URI_SCHEME))
@@ -75,6 +86,18 @@ export function parseMcpUri(uri: string): McpResourceRef {
         projectId,
         module: assertModule(parts[3]),
       };
+    if (parts[2] === 'operations' && parts.length === 4)
+      return {
+        kind: 'operation',
+        projectId,
+        operationId: assertOperationId(parts[3]),
+      };
+    if (parts[2] === 'operations' && parts.length === 5 && parts[4] === 'log')
+      return {
+        kind: 'operation-log',
+        projectId,
+        operationId: assertOperationId(parts[3]),
+      };
     if (parts[2] === 'artifacts' && parts.length === 4) {
       if (!ARTIFACT_ID.test(parts[3]))
         throw invalidArgument(
@@ -110,4 +133,12 @@ export function artifactUri(projectId: string, artifactId: string) {
 
 export function contractUri(contractId: string, version: number) {
   return `${MCP_URI_SCHEME}contracts/${contractId}/${version}`;
+}
+
+export function operationUri(projectId: string, operationId: string) {
+  return `${MCP_URI_SCHEME}projects/${projectId}/operations/${operationId}`;
+}
+
+export function operationLogUri(projectId: string, operationId: string) {
+  return `${operationUri(projectId, operationId)}/log`;
 }
