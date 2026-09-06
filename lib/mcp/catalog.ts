@@ -77,6 +77,7 @@ export const MCP_IMPLEMENTED_TOOLS = [
   'praxis_prepare',
   'praxis_submit_product_exploration',
   'praxis_submit_scope_decomposition',
+  'praxis_submit_domain_model',
   'praxis_get_operation',
   'praxis_read_log',
 ] as const;
@@ -115,7 +116,7 @@ export function readCapabilities(options: McpReadOptions = {}) {
     apiVersion: MCP_API_VERSION,
     server: MCP_SERVER_NAME,
     protocolBaseline: '2025-11-25',
-    release: 'graph-proposal-submission',
+    release: 'graph-and-domain-submission',
     host: { activeRunRegistry: activeRunRegistryOwnership() },
     tools: MCP_IMPLEMENTED_TOOLS,
     resources: {
@@ -153,15 +154,13 @@ export function readCapabilities(options: McpReadOptions = {}) {
           uri: contractUri(definition.contract.id, definition.contract.version),
         },
         preparationOperations:
-          module === 'product-exploration'
-            ? ['explore']
-            : module === 'scope-decomposition'
-              ? [...definition.preparationOperations]
-              : [],
+          module === 'delivery-planning'
+            ? []
+            : module === 'product-exploration'
+              ? ['explore']
+              : [...definition.preparationOperations],
         submissionTool:
-          module === 'product-exploration' || module === 'scope-decomposition'
-            ? definition.submissionTool
-            : null,
+          module === 'delivery-planning' ? null : definition.submissionTool,
         plannedPreparationOperations: definition.preparationOperations,
         plannedSubmissionTool: definition.submissionTool,
       };

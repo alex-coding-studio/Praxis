@@ -50,7 +50,7 @@ export type ProductExplorationPrepareRequest = {
   sourceNodeIds?: string[];
 };
 
-function assertUserInput(value: unknown): string {
+export function assertUserInput(value: unknown): string {
   if (typeof value !== 'string' || value.trim().length === 0)
     throw invalidArgument('request.userInput must be a non-empty string.');
   if (value.length > MAX_USER_INPUT_LENGTH)

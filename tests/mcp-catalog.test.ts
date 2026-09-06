@@ -57,9 +57,9 @@ void test('capabilities name the served modules, contracts and limits', async ()
   }
 });
 
-void test('only implemented modules advertise an operation and a submission tool', async () => {
+void test('every module advertises its own operations and submission tool', async () => {
   const value = parse(catalog.readCapabilities());
-  const served = new Map([
+  const expected = new Map([
     ['product-exploration', ['explore']],
     [
       'scope-decomposition',
@@ -70,31 +70,29 @@ void test('only implemented modules advertise an operation and a submission tool
         'recompose-candidates',
       ],
     ],
+    ['domain-modeling', ['change-model']],
+    ['delivery-planning', []],
   ]);
   for (const entry of value.modules as Array<Record<string, unknown>>) {
-    const operations = served.get(entry.module as string);
-    if (operations) {
-      assert.deepEqual(
-        entry.preparationOperations,
-        operations,
-        entry.module as string,
-      );
-      assert.equal(
-        entry.submissionTool,
-        MCP_MODULE_DEFINITIONS[
-          entry.module as keyof typeof MCP_MODULE_DEFINITIONS
-        ].submissionTool,
-      );
-      continue;
-    }
-    assert.deepEqual(entry.preparationOperations, [], entry.module as string);
-    assert.equal(entry.submissionTool, null, entry.module as string);
+    const moduleName = entry.module as keyof typeof MCP_MODULE_DEFINITIONS;
+    assert.deepEqual(
+      entry.preparationOperations,
+      expected.get(moduleName),
+      moduleName,
+    );
+    assert.equal(
+      entry.submissionTool,
+      moduleName === 'delivery-planning'
+        ? null
+        : MCP_MODULE_DEFINITIONS[moduleName].submissionTool,
+      moduleName,
+    );
   }
   const tools = value.tools as string[];
   assert.equal(
     tools.filter((tool) => tool.startsWith('praxis_submit')).length,
-    2,
-    'no unimplemented submission tool may be advertised',
+    3,
+    'only implemented modules advertise a submission tool',
   );
 });
 

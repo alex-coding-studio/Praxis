@@ -24,6 +24,7 @@ import {
   READ_LOG_INPUT_SCHEMA,
   READ_RESOURCE_INPUT_SCHEMA,
   SUBMIT_PRODUCT_EXPLORATION_INPUT_SCHEMA,
+  SUBMIT_DOMAIN_MODEL_INPUT_SCHEMA,
   SUBMIT_SCOPE_DECOMPOSITION_INPUT_SCHEMA,
 } from './tool-schemas.ts';
 import {
@@ -39,6 +40,8 @@ import {
 import { submitProductExplorationResult } from './submit.ts';
 import { prepareScopeDecompositionOperation } from './prepare-scope-decomposition.ts';
 import { submitScopeDecompositionOperation } from './submit-scope-decomposition.ts';
+import { prepareDomainModelOperation } from './prepare-domain-model.ts';
+import { submitDomainModelOperation } from './submit-domain-model.ts';
 import { requireMcpOperation } from './operations.ts';
 import { operationLogUri, operationUri } from './uri.ts';
 import { capabilitiesUri, contractUri, projectsUri } from './uri.ts';
@@ -364,7 +367,10 @@ export function createPraxisMcpServer() {
         'Freeze a module Basis and User Input, and return the operation identity and Result Contract to write against. Starts no Agent Run and calls no model.',
       inputSchema: toToolInputSchema<{
         projectId: string;
-        module: 'product-exploration' | 'scope-decomposition';
+        module:
+          | 'product-exploration'
+          | 'scope-decomposition'
+          | 'domain-modeling';
         request: {
           userInput: string;
           layer: 'discovery' | 'product-design';
@@ -384,18 +390,16 @@ export function createPraxisMcpServer() {
       runStructured(async () => {
         const project = await requireProject(input.projectId);
         const client = clientInfoOf(extra);
-        const { record } =
-          input.module === 'scope-decomposition'
-            ? await prepareScopeDecompositionOperation(
-                project,
-                input.request as never,
-                client,
-              )
-            : await prepareProductExplorationOperation(
-                project,
-                input.request as never,
-                client,
-              );
+        const prepare = {
+          'scope-decomposition': prepareScopeDecompositionOperation,
+          'domain-modeling': prepareDomainModelOperation,
+          'product-exploration': prepareProductExplorationOperation,
+        }[input.module];
+        const { record } = await prepare(
+          project,
+          input.request as never,
+          client,
+        );
         return preparedOperationProjection(record);
       }),
   );
@@ -483,6 +487,54 @@ export function createPraxisMcpServer() {
         };
       }),
   );
+
+  for (const submission of [
+    {
+      name: 'praxis_submit_domain_model',
+      title: 'Submit a Domain Model result',
+      description:
+        "Publish a typed Domain Model result for a prepared operation. The change is applied through the module's canonical publication.",
+      schema: SUBMIT_DOMAIN_MODEL_INPUT_SCHEMA,
+      submit: submitDomainModelOperation,
+    },
+  ] as const)
+    server.registerTool(
+      submission.name,
+      {
+        title: submission.title,
+        description: submission.description,
+        inputSchema: toToolInputSchema<{
+          operationId: string;
+          contract: { id: string; version: number; hash: string };
+          result: unknown;
+        }>(submission.schema, submission.name),
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async (input) =>
+        runStructured(async () => {
+          const project = await projectForOperation(input.operationId);
+          const outcome = await submission.submit(
+            project,
+            input.operationId,
+            input.contract,
+            input.result,
+          );
+          return {
+            operationId: outcome.record.operationId,
+            status: outcome.record.status,
+            replayed: outcome.replayed,
+            outcome: outcome.record.outcome,
+            operationUri: operationUri(project.id, outcome.record.operationId),
+            logUri: operationLogUri(project.id, outcome.record.operationId),
+            logUrlPath: outcome.record.logUrlPath,
+          };
+        }),
+    );
 
   server.registerTool(
     'praxis_get_operation',

@@ -109,6 +109,7 @@ void test(
       'praxis_prepare',
       'praxis_read_log',
       'praxis_read_resource',
+      'praxis_submit_domain_model',
       'praxis_submit_product_exploration',
       'praxis_submit_scope_decomposition',
     ]);
@@ -116,6 +117,7 @@ void test(
       'praxis_prepare',
       'praxis_submit_product_exploration',
       'praxis_submit_scope_decomposition',
+      'praxis_submit_domain_model',
     ];
     for (const tool of tools.tools) {
       assert.equal(
