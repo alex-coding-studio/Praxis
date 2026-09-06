@@ -71,7 +71,7 @@ void test('every module advertises its own operations and submission tool', asyn
       ],
     ],
     ['domain-modeling', ['change-model']],
-    ['delivery-planning', []],
+    ['delivery-planning', ['create-map', 'adjust-map']],
   ]);
   for (const entry of value.modules as Array<Record<string, unknown>>) {
     const moduleName = entry.module as keyof typeof MCP_MODULE_DEFINITIONS;
@@ -82,17 +82,15 @@ void test('every module advertises its own operations and submission tool', asyn
     );
     assert.equal(
       entry.submissionTool,
-      moduleName === 'delivery-planning'
-        ? null
-        : MCP_MODULE_DEFINITIONS[moduleName].submissionTool,
+      MCP_MODULE_DEFINITIONS[moduleName].submissionTool,
       moduleName,
     );
   }
   const tools = value.tools as string[];
   assert.equal(
     tools.filter((tool) => tool.startsWith('praxis_submit')).length,
-    3,
-    'only implemented modules advertise a submission tool',
+    4,
+    'every module advertises exactly one implemented submission tool',
   );
 });
 

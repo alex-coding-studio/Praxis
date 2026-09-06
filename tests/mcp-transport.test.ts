@@ -20,6 +20,7 @@ const registry = await import('../lib/project-registry.ts');
 const { enableMcpEndpoint, readMcpCredentials } =
   await import('../lib/mcp/credentials.ts');
 const route = await import('../app/api/mcp/route.ts');
+const { MCP_IMPLEMENTED_TOOLS } = await import('../lib/mcp/catalog.ts');
 const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
 const { StreamableHTTPClientTransport } =
   await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
@@ -109,15 +110,22 @@ void test(
       'praxis_prepare',
       'praxis_read_log',
       'praxis_read_resource',
+      'praxis_submit_delivery_map',
       'praxis_submit_domain_model',
       'praxis_submit_product_exploration',
       'praxis_submit_scope_decomposition',
     ]);
+    assert.deepEqual(
+      tools.tools.map((tool) => tool.name).sort(),
+      [...MCP_IMPLEMENTED_TOOLS].sort(),
+      'praxis://capabilities must name exactly the tools the server registers',
+    );
     const writeTools = [
       'praxis_prepare',
       'praxis_submit_product_exploration',
       'praxis_submit_scope_decomposition',
       'praxis_submit_domain_model',
+      'praxis_submit_delivery_map',
     ];
     for (const tool of tools.tools) {
       assert.equal(

@@ -172,6 +172,20 @@ export async function writeMcpOperationUserInput(
   return paths.userInputRef;
 }
 
+export async function readMcpOperationUserInput(
+  project: RegisteredProject,
+  operationId: string,
+) {
+  const paths = mcpOperationPaths(project, operationId);
+  try {
+    return await readFile(paths.userInput, 'utf8');
+  } catch {
+    throw resourceNotFound(
+      `The stored User Input for operation ${JSON.stringify(operationId)} is not readable. Prepare a new operation.`,
+    );
+  }
+}
+
 function isRecord(value: unknown): value is McpOperationRecord {
   if (!value || typeof value !== 'object') return false;
   const record = value as Record<string, unknown>;

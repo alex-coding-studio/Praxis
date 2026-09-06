@@ -81,6 +81,7 @@ export const MCP_IMPLEMENTED_TOOLS = [
   'praxis_submit_product_exploration',
   'praxis_submit_scope_decomposition',
   'praxis_submit_domain_model',
+  'praxis_submit_delivery_map',
   'praxis_get_operation',
   'praxis_read_log',
 ] as const;
@@ -157,13 +158,10 @@ export function readCapabilities(options: McpReadOptions = {}) {
           uri: contractUri(definition.contract.id, definition.contract.version),
         },
         preparationOperations:
-          module === 'delivery-planning'
-            ? []
-            : module === 'product-exploration'
-              ? ['explore']
-              : [...definition.preparationOperations],
-        submissionTool:
-          module === 'delivery-planning' ? null : definition.submissionTool,
+          module === 'product-exploration'
+            ? ['explore']
+            : [...definition.preparationOperations],
+        submissionTool: definition.submissionTool,
         plannedPreparationOperations: definition.preparationOperations,
         plannedSubmissionTool: definition.submissionTool,
       };
@@ -600,6 +598,24 @@ async function readDomainCanonicalCommit(
   };
 }
 
+async function readDeliveryCanonicalCommit(
+  project: RegisteredProject,
+  runId: string,
+) {
+  const current = await readWhatToDoCurrentMapWithFingerprint(project)
+    .then((entry) => entry.map)
+    .catch(() => null);
+  if (!current || current.runId !== runId) return null;
+  return {
+    settledAt: current.updatedAt,
+    receipt: null,
+    outcome: {
+      kind: 'canonical',
+      summary: `The canonical Delivery Map was published from this Run. The materialization receipt for it was not recorded, so the outcome is recovered from the committed Map.`,
+    },
+  };
+}
+
 async function readCommittedRunReceipt(
   project: RegisteredProject,
   record: McpOperationRecord,
@@ -616,6 +632,12 @@ async function readCommittedRunReceipt(
       (await readReceiptDocument(
         path.join(directory, 'materialization.json'),
       )) ?? (await readDomainCanonicalCommit(project, record.runId))
+    );
+  if (record.module === 'delivery-planning')
+    return (
+      (await readReceiptDocument(
+        path.join(directory, 'materialization.json'),
+      )) ?? (await readDeliveryCanonicalCommit(project, record.runId))
     );
   return readGraphRunReceipt(project, path.join(directory, 'run.json'));
 }

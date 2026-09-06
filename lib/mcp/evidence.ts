@@ -13,12 +13,13 @@ import {
   type McpOperationSource,
 } from './operations.ts';
 
-export async function freezeLogicalSources(
+export type EvidenceContent = { logicalPath: string; content: string };
+
+export async function readLogicalSources(
   project: RegisteredProject,
-  operationId: string,
   logicalPaths: readonly string[],
-): Promise<McpOperationSource[]> {
-  const frozen: McpOperationSource[] = [];
+): Promise<EvidenceContent[]> {
+  const read: EvidenceContent[] = [];
   for (const logicalPath of logicalPaths) {
     let resolved;
     try {
@@ -39,24 +40,13 @@ export async function freezeLogicalSources(
         `The source document ${JSON.stringify(logicalPath)} could not be read while freezing evidence.`,
       );
     }
-    const sourceId = encodeSourceId(logicalPath);
-    await writeMcpOperationSource(project, operationId, sourceId, content);
-    frozen.push({
-      sourceId,
-      logicalPath,
-      sha256: sha256Hex(content),
-      byteLength: Buffer.byteLength(content, 'utf8'),
-    });
+    read.push({ logicalPath, content });
   }
-  return frozen;
+  return read;
 }
 
-export async function freezeContextSources(
-  project: RegisteredProject,
-  operationId: string,
-  contextIds: readonly string[],
-) {
-  const logicalPaths = contextIds.map((contextId) => {
+export function contextArtifactPaths(contextIds: readonly string[]) {
+  return contextIds.map((contextId) => {
     const logicalPath = decodeArtifactId(contextId);
     if (logicalPath === null)
       throw invalidArgument(
@@ -64,5 +54,59 @@ export async function freezeContextSources(
       );
     return logicalPath;
   });
-  return freezeLogicalSources(project, operationId, logicalPaths);
+}
+
+export async function readContextArtifacts(
+  project: RegisteredProject,
+  contextIds: readonly string[],
+): Promise<EvidenceContent[]> {
+  return readLogicalSources(project, contextArtifactPaths(contextIds));
+}
+
+export async function freezeEvidenceContents(
+  project: RegisteredProject,
+  operationId: string,
+  entries: readonly EvidenceContent[],
+): Promise<McpOperationSource[]> {
+  const frozen: McpOperationSource[] = [];
+  for (const entry of entries) {
+    const sourceId = encodeSourceId(entry.logicalPath);
+    await writeMcpOperationSource(
+      project,
+      operationId,
+      sourceId,
+      entry.content,
+    );
+    frozen.push({
+      sourceId,
+      logicalPath: entry.logicalPath,
+      sha256: sha256Hex(entry.content),
+      byteLength: Buffer.byteLength(entry.content, 'utf8'),
+    });
+  }
+  return frozen;
+}
+
+export async function freezeLogicalSources(
+  project: RegisteredProject,
+  operationId: string,
+  logicalPaths: readonly string[],
+) {
+  return freezeEvidenceContents(
+    project,
+    operationId,
+    await readLogicalSources(project, logicalPaths),
+  );
+}
+
+export async function freezeContextSources(
+  project: RegisteredProject,
+  operationId: string,
+  contextIds: readonly string[],
+) {
+  return freezeLogicalSources(
+    project,
+    operationId,
+    contextArtifactPaths(contextIds),
+  );
 }

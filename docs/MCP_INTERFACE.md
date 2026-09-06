@@ -7,10 +7,10 @@ deterministic publication and evidence.
 
 This document records the settled interface. It is delivered in Parts. **This release
 implements Part 1 (the endpoint, its connection boundary and the read surface), Part 2
-(prepared operations and the Product Exploration submission slice) and Part 3 (Scope
-Decomposition) and the Domain Modeling half of Part 4.** Delivery Planning submission,
-acceptance, Agent dispatch and GitHub capability are not served here, and none is
-advertised.
+(prepared operations and the Product Exploration submission slice), Part 3 (Scope
+Decomposition) and Part 4 (Domain Modeling and Delivery Planning).** All four modules
+can now be prepared against and submitted to. Acceptance, Agent dispatch and GitHub
+capability are not served here, and none is advertised.
 
 ## Served in this release
 
@@ -23,11 +23,8 @@ advertised.
 | `praxis://projects/{projectId}/artifacts/{artifactId}`                     | served                     |
 | `praxis://contracts/{contractId}/{version}`                                | served                     |
 | `praxis_list_projects`, `praxis_read_resource`                             | served                     |
-| `praxis_prepare`, the four `praxis_submit_*` tools, operations and logs    | not served, not advertised |
-
-`praxis://capabilities` reports `preparationOperations: []` and `submissionTool: null`
-for every module. A client must not infer a write path from the planned fields beside
-them.
+| `praxis_prepare`, the four `praxis_submit_*` tools, operations and logs    | served                     |
+| Candidate acceptance, Agent dispatch, GitHub delivery                      | not served, not advertised |
 
 ## Host and transport
 
@@ -80,7 +77,7 @@ even where it still enforces them, and it rewrites `oneOf` as `anyOf`. Contract
 resources therefore keep serving the original schema and hash; the advertised tool
 schema is never presented as the contract.
 
-### Connecting### Connecting
+### Connecting
 
 The endpoint is `http://127.0.0.1:<actual-port>/api/mcp`. The port is whatever the
 running Host uses; no port is hardcoded in tracked code.
@@ -207,9 +204,9 @@ boundaries, so a multi-byte character is never split across pages.
 
 ## Tools
 
-Both tools are annotated read-only, reject unknown structural fields, and export JSON
-Schema rather than prose. They are thin access to the same catalog the resources use;
-there is no second reader implementation.
+Every tool rejects unknown structural fields and exports JSON Schema rather than prose.
+The two read tools are annotated read-only and are thin access to the same catalog the
+resources use; there is no second reader implementation.
 
 ### `praxis_list_projects`
 
@@ -220,6 +217,46 @@ no Git fetch, no project creation.
 
 Input `{ uri, cursor?, limitBytes? }`. Output: MIME type, bounded content, revision and
 next cursor. `limitBytes` controls pagination, not which documents are reachable.
+
+### `praxis_prepare`
+
+Input `{ projectId, module, request }`. `request` is a discriminated per-module shape,
+not a bag of options. Beyond the required `userInput`, each module reads:
+
+| Module                | Request fields                                                    | Operations                                                                 |
+| --------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `product-exploration` | required `layer`; optional `intention`, `motion`, `sourceNodeIds` | `explore`                                                                  |
+| `scope-decomposition` | required `sourceNodeId`; optional `operation`, `candidateIds`     | `propose`, `append-candidates`, `revise-candidate`, `recompose-candidates` |
+| `domain-modeling`     | optional `selectionIds`, `contextIds`                             | `change-model`                                                             |
+| `delivery-planning`   | optional `sourceUids`, `selectionIds`, `contextIds`               | `create-map`, `adjust-map`                                                 |
+
+Preparation freezes the module Basis, the User Input and the source documents the result
+may cite, then returns the operation identity, the Result Contract to write against and
+the submission tool to call. It starts no Agent Run and calls no model.
+
+Delivery Planning chooses `create-map` when no Delivery Map exists and `adjust-map`
+otherwise. `sourceUids` name accepted Product Design Features to plan from; at least one
+is required for a first Map, and preparation names the available uids when the field is
+missing rather than guessing. `selectionIds` name Contracts in the current Map to focus
+on — focus, not permission to discard the rest. A Feature already carried by the current
+Map is refused rather than planned twice.
+
+### The four `praxis_submit_*` tools
+
+Input `{ operationId, contract, result }`, where `contract` restates the Result Contract
+identity the result was written against. Each publishes through its module's existing
+canonical publication; none accepts a Candidate, merges a pull request or marks a
+Contract delivered.
+
+A submission is admitted once. An exact retry of an admitted operation replays its
+settled outcome without republishing; a different result for the same operation is
+refused as `SUBMISSION_CONFLICT`. Freshness is checked at submission, not by a timer: if
+the module state or a frozen source document changed after preparation, the submission is
+refused as `STALE_BASIS` and the operation stays preparable.
+
+`praxis_submit_delivery_map` publishes through `submitDeliveryMapResult` with the
+existing `deliveryPublicationHost`, so a new Map still cannot replace a Contract whose
+delivery work has started.
 
 ### Errors
 
@@ -348,9 +385,20 @@ npm run test:mcp
   vanished selection refused at preparation, an exact retry replaying without advancing
   the state version, a changed result conflicting, and another module's tool refusing the
   operation.
+- [tests/mcp-delivery-planning.test.ts](../tests/mcp-delivery-planning.test.ts) —
+  Delivery Planning preparing as `create-map` or `adjust-map` from the current Map,
+  naming the Features a first Map could use when none is given, refusing a Feature the
+  Map already carries and a focus Contract it no longer has, freezing the Feature
+  document and the User Input it was written against, publishing through the canonical
+  service, an exact retry replaying without a second publication, a changed result
+  conflicting, a Feature edited after preparation refused as `STALE_BASIS` with the
+  operation left preparable, an adjustment retaining its published Contract, recovery
+  from the committed receipt and from the committed Map when the receipt is gone, and an
+  uncommitted operation staying unsettled.
 - [tests/mcp-transport.test.ts](../tests/mcp-transport.test.ts) — a real SDK client over
   HTTP completing initialization, discovery and reads, with bounded 20-second timeouts,
-  including both sides of the argument-failure split.
+  including both sides of the argument-failure split, and `praxis://capabilities` naming
+  exactly the tools the server registers.
 
 ## Not in this interface
 

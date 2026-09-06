@@ -1,6 +1,7 @@
 import { PRODUCT_EXPLORATION_RESULT_SCHEMA } from '../modules/product-discovery/contract.ts';
 import { SCOPE_DECOMPOSITION_RESULT_SCHEMA } from '../modules/scope-decomposition/contract.ts';
 import { DOMAIN_MODEL_RESULT_SCHEMA } from '../modules/domain-modeling/contract.ts';
+import { DELIVERY_MAP_RESULT_SCHEMA } from '../modules/delivery-planning/contract.ts';
 import {
   whatsNextIntentions,
   whatsNextLayers,
@@ -84,7 +85,12 @@ export const PREPARE_INPUT_SCHEMA = {
     },
     module: {
       type: 'string',
-      enum: ['product-exploration', 'scope-decomposition', 'domain-modeling'],
+      enum: [
+        'product-exploration',
+        'scope-decomposition',
+        'domain-modeling',
+        'delivery-planning',
+      ],
       description: 'The module to prepare against.',
     },
     request: {
@@ -153,7 +159,14 @@ export const PREPARE_INPUT_SCHEMA = {
           items: { type: 'string', minLength: 1 },
           maxItems: 100,
           description:
-            'domain-modeling: entity or relationship ids to focus on, empty for the current model scope.',
+            'domain-modeling: entity or relationship ids to focus on, empty for the current model scope. delivery-planning: Contract ids in the current Delivery Map to focus on; focus is not permission to discard the rest.',
+        },
+        sourceUids: {
+          type: 'array',
+          items: { type: 'string', minLength: 1 },
+          maxItems: 20,
+          description:
+            'delivery-planning: accepted Product Design Feature uids to plan from. At least one is required when no Delivery Map exists yet.',
         },
         contextIds: {
           type: 'array',
@@ -272,4 +285,8 @@ function submissionSchema(resultSchema: object) {
 
 export const SUBMIT_DOMAIN_MODEL_INPUT_SCHEMA = submissionSchema(
   DOMAIN_MODEL_RESULT_SCHEMA,
+);
+
+export const SUBMIT_DELIVERY_MAP_INPUT_SCHEMA = submissionSchema(
+  DELIVERY_MAP_RESULT_SCHEMA,
 );
