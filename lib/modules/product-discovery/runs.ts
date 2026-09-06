@@ -12,7 +12,6 @@ import {
 import {
   ensureGraphIdentities,
   readIdentifiedEntities,
-  reservedCandidateAliases,
 } from '../../graph/identity-store.ts';
 import {
   access,
@@ -79,6 +78,10 @@ import {
 } from './validation-context.ts';
 import { MaterializationError } from '../../materialization/receipt.ts';
 import { prepareProductExplorationMaterializationBasis } from './basis.ts';
+import {
+  collectLatestUnacceptedCandidateStates,
+  collectReservedCandidateIds,
+} from './assembly.ts';
 import { publishProductExplorationResult } from './publish.ts';
 import type { MaterializationLog } from '../../materialization/publication.ts';
 import { materializationLogEntry } from '../../materialization/log.ts';
@@ -774,7 +777,7 @@ export async function recoverWhatsNextRunResult(
       record.operation === 'refine-candidate'
         ? []
         : await collectReservedCandidateIds(project),
-    knownCandidates: await collectLatestUnacceptedCandidates(project),
+    knownCandidates: await collectLatestUnacceptedCandidateStates(project),
     revisionTarget: revisionTarget ?? undefined,
   });
   await writeProducerEvidence(
@@ -948,7 +951,7 @@ async function discardWhatsNextCandidateUnlocked(
   }
   const blockers = candidateDependencyBlockers(
     candidateId,
-    await collectLatestUnacceptedCandidates(project),
+    await collectLatestUnacceptedCandidateStates(project),
   );
   if (blockers.length > 0) {
     throw new Error(
@@ -1055,7 +1058,7 @@ async function finishWhatsNextRun(
         knownResourcePaths: resources.map((resource) => resource.logicalPath),
         reservedCandidateIds,
         knownCandidates: (
-          await collectLatestUnacceptedCandidates(project)
+          await collectLatestUnacceptedCandidateStates(project)
         ).filter(
           (candidate) =>
             !record.replacement?.candidateIds.includes(candidate.candidateId),
@@ -1565,34 +1568,6 @@ async function findLatestCoordinatorRun(
   );
 }
 
-async function collectLatestUnacceptedCandidates(project: RegisteredProject) {
-  const runs = await readAllWhatsNextRuns(project);
-  const latestByCandidate = new Map<string, WhatsNextCandidate>();
-  for (const run of runs.sort((left, right) =>
-    left.startedAt.localeCompare(right.startedAt),
-  )) {
-    if (run.result?.outcome !== 'proposal') continue;
-    for (const candidate of run.result.candidates) {
-      const current = latestByCandidate.get(candidate.candidateId);
-      if (!current || candidate.revision > current.revision) {
-        latestByCandidate.set(candidate.candidateId, candidate);
-      }
-    }
-  }
-  const acceptedIds = new Set(
-    (await listTaskGraphNodes(project, GRAPH_ROOT)).flatMap((node) =>
-      node.provenance?.candidateId ? [node.provenance.candidateId] : [],
-    ),
-  );
-  return [...latestByCandidate.values()].filter(
-    (candidate) => !acceptedIds.has(candidate.candidateId),
-  );
-}
-
-async function collectReservedCandidateIds(project: RegisteredProject) {
-  return reservedCandidateAliases(project.planningPath, GRAPH_ROOT);
-}
-
 async function readAllWhatsNextRuns(project: RegisteredProject) {
   const root = path.join(project.planningPath, 'whats-next', 'runs');
   const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
@@ -1857,7 +1832,7 @@ async function writeWhatsNextCheckpoint(
   );
   await mkdir(sessionPath, { recursive: true });
   const activeCandidates = new Map(
-    (await collectLatestUnacceptedCandidates(project)).map((candidate) => [
+    (await collectLatestUnacceptedCandidateStates(project)).map((candidate) => [
       candidate.candidateId,
       candidate,
     ]),
