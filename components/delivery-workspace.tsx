@@ -560,13 +560,6 @@ export function DeliveryWorkspace({
                   {t(record.response.detail)}
                 </p>
               )}
-              {record?.status === 'ready-to-run' && (
-                <p className="mt-2 text-sm">
-                  {t(
-                    'Brief confirmed. Click Start delivery to begin implementation.',
-                  )}
-                </p>
-              )}
               {running &&
                 record?.progress.find((item) => item.status === 'running') && (
                   <p className="mt-2 text-xs text-muted-foreground">
@@ -649,6 +642,13 @@ export function DeliveryWorkspace({
                 >
                   {t('Start delivery')}
                 </Button>
+              )}
+              {record?.status === 'ready-to-run' && !running && (
+                <p className="max-w-64 text-right text-[11px] leading-4 text-muted-foreground">
+                  {t(
+                    'Brief confirmed. Click Start delivery to begin implementation.',
+                  )}
+                </p>
               )}
               {running ? (
                 <Button
