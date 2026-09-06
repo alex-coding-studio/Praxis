@@ -132,6 +132,77 @@
       "detail": "Which audience should the first direction serve?",
       "supplementaryWarnings": [],
       "recovery": ["log", "answer"]
+    },
+    "materialization": {
+      "schemaVersion": 1,
+      "contract": {
+        "id": "praxis.product-exploration.result",
+        "version": 1,
+        "hash": "H1"
+      },
+      "producer": {
+        "kind": "agent-run",
+        "runId": "RUN-U1",
+        "harness": {
+          "id": "praxis.whats-next",
+          "revision": 8
+        }
+      },
+      "basis": {
+        "fingerprint": "H2",
+        "preparedAt": "T"
+      },
+      "semanticResultHash": "H3",
+      "outcome": "clarification",
+      "affected": {
+        "candidateIds": [],
+        "nodeIds": [],
+        "contractIds": [],
+        "domainIds": []
+      },
+      "publication": {
+        "target": "run-record",
+        "at": "T",
+        "revision": null
+      },
+      "failure": null
+    }
+  },
+  "whats-next/runs/RUN-U1/semantic-result.json": {
+    "schemaVersion": 1,
+    "contract": {
+      "id": "praxis.product-exploration.result",
+      "version": 1,
+      "hash": "H1"
+    },
+    "producer": {
+      "kind": "agent-run",
+      "runId": "RUN-U1",
+      "harness": {
+        "id": "praxis.whats-next",
+        "revision": 8
+      }
+    },
+    "semanticResultHash": "H3",
+    "result": {
+      "outcome": "clarification",
+      "clarification": {
+        "question": "Which audience should the first direction serve?",
+        "options": [
+          {
+            "id": "owner",
+            "label": "The owner",
+            "effect": "Optimize for a single person.",
+            "recommended": true
+          },
+          {
+            "id": "team",
+            "label": "A small team",
+            "effect": "Optimize for shared use.",
+            "recommended": false
+          }
+        ]
+      }
     }
   }
 }

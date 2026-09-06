@@ -3,11 +3,19 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { writeFileAtomically } from '../../atomic-json-store.ts';
 import { stageCandidateDocuments } from '../../graph/proposal/stage.ts';
-import { MaterializationError } from '../../materialization/receipt.ts';
+import { contractIdentity } from '../../materialization/contract.ts';
+import { semanticResultHash } from '../../materialization/hash.ts';
+import { materializationLogEntry } from '../../materialization/log.ts';
+import {
+  MaterializationError,
+  type MaterializationReceipt,
+} from '../../materialization/receipt.ts';
+import type { RunLogInput } from '../../execution-observability/log-types.ts';
 import type { ProductExplorationMaterializationBasis } from './basis.ts';
-import type {
-  ProductExplorationCandidateRecord,
-  ProductExplorationResult,
+import {
+  PRODUCT_EXPLORATION_RESULT_CONTRACT,
+  type ProductExplorationCandidateRecord,
+  type ProductExplorationResult,
 } from './contract.ts';
 import { materializeProductExplorationResult } from './materializer.ts';
 
@@ -26,14 +34,28 @@ export type ProductExplorationPublicationRecord = {
   endedAt: string | null;
   activity: unknown[];
   result: unknown;
+  materialization?: MaterializationReceipt;
   error: string | null;
 };
 
 export type ProductExplorationProducer<
   T extends ProductExplorationPublicationRecord,
 > =
-  | { kind: 'agent-run'; record: T; resultBase: object }
+  | {
+      kind: 'agent-run';
+      record: T;
+      resultBase: object;
+      harness?: { id: string; revision: number };
+    }
   | { kind: 'direct'; runId?: string; sourceNodeIds: readonly string[] };
+
+export type MaterializationLog = (entry: RunLogInput) => void;
+
+function receiptOutcome(
+  outcome: ProductExplorationResult['outcome'],
+): MaterializationReceipt['outcome'] {
+  return outcome === 'proposal' ? 'candidates' : outcome;
+}
 
 export type PublishedProductExploration<
   T extends ProductExplorationPublicationRecord,
@@ -45,6 +67,28 @@ export type PublishedProductExploration<
   candidatePaths: Record<string, string>;
   record: T;
 };
+
+async function report<T>(log: MaterializationLog, step: () => Promise<T>) {
+  try {
+    return await step();
+  } catch (error) {
+    const boundary =
+      error instanceof MaterializationError ? error.boundary : 'validation';
+    const message = error instanceof Error ? error.message : String(error);
+    log(
+      materializationLogEntry(
+        boundary === 'stale-basis'
+          ? 'materialization.stale'
+          : boundary === 'validation' || boundary === 'identity'
+            ? 'materialization.rejected'
+            : 'materialization.publication.failed',
+        `${boundary}: ${message}`,
+        'ERROR',
+      ),
+    );
+    throw error;
+  }
+}
 
 function assertRunId(runId: string) {
   if (!RUN_ID.test(runId))
@@ -92,6 +136,7 @@ export async function publishProductExplorationResult<
   result: ProductExplorationResult,
   producer: ProductExplorationProducer<T>,
   now: () => string = () => new Date().toISOString(),
+  log: MaterializationLog = () => undefined,
 ): Promise<PublishedProductExploration<T>> {
   const timestamp = now();
   const base =
@@ -104,19 +149,64 @@ export async function publishProductExplorationResult<
           timestamp,
         ) as T);
   assertRunId(base.runId);
-  const materialized = await materializeProductExplorationResult(basis, result);
+  const resultHash = semanticResultHash(result);
+  const materialized = await report(log, () =>
+    materializeProductExplorationResult(basis, result),
+  );
+  log(
+    materializationLogEntry(
+      'materialization.validated',
+      `The ${result.outcome} result satisfies ${PRODUCT_EXPLORATION_RESULT_CONTRACT.id} v${PRODUCT_EXPLORATION_RESULT_CONTRACT.version}.`,
+    ),
+  );
   const directory = runDirectory(basis, base.runId);
   const candidates = materialized?.candidates ?? [];
   if (materialized) {
+    if (materialized.candidateAliases)
+      log(
+        materializationLogEntry(
+          'materialization.identities.allocated',
+          `Allocated ${Object.keys(materialized.candidateAliases).length} Candidate identities.`,
+        ),
+      );
     await mkdir(directory, { recursive: true });
-    await stageCandidateDocuments(
-      directory,
-      candidates.map((candidate) => ({
-        candidateId: candidate.candidateId,
-        markdown: candidate.outputMarkdown,
-      })),
+    await report(log, () =>
+      stageCandidateDocuments(
+        directory,
+        candidates.map((candidate) => ({
+          candidateId: candidate.candidateId,
+          markdown: candidate.outputMarkdown,
+        })),
+      ),
+    );
+    log(
+      materializationLogEntry(
+        'materialization.staged',
+        `Staged ${candidates.length} Candidate documents.`,
+      ),
     );
   }
+  const receipt: MaterializationReceipt = {
+    schemaVersion: 1,
+    contract: contractIdentity(PRODUCT_EXPLORATION_RESULT_CONTRACT),
+    producer: {
+      kind: producer.kind,
+      runId: base.runId,
+      ...(producer.kind === 'agent-run' &&
+        producer.harness && { harness: producer.harness }),
+    },
+    basis: { fingerprint: basis.fingerprint, preparedAt: basis.preparedAt },
+    semanticResultHash: resultHash,
+    outcome: receiptOutcome(result.outcome),
+    affected: {
+      candidateIds: candidates.map((candidate) => candidate.candidateId),
+      nodeIds: [],
+      contractIds: [],
+      domainIds: [],
+    },
+    publication: { target: 'run-record', at: timestamp, revision: null },
+    failure: null,
+  };
   const resultBase =
     producer.kind === 'agent-run' ? producer.resultBase : result;
   const record: T = {
@@ -131,14 +221,37 @@ export async function publishProductExplorationResult<
           }),
         }
       : resultBase,
+    materialization: receipt,
     error: null,
     updatedAt: timestamp,
     endedAt: base.endedAt ?? timestamp,
   };
   await mkdir(directory, { recursive: true });
-  await writeFileAtomically(
-    path.join(directory, 'run.json'),
-    `${JSON.stringify(record, null, 2)}\n`,
+  await report(log, async () => {
+    await writeFileAtomically(
+      path.join(directory, 'semantic-result.json'),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          contract: receipt.contract,
+          producer: receipt.producer,
+          semanticResultHash: resultHash,
+          result,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFileAtomically(
+      path.join(directory, 'run.json'),
+      `${JSON.stringify(record, null, 2)}\n`,
+    );
+  });
+  log(
+    materializationLogEntry(
+      'materialization.published',
+      `Published the ${receipt.outcome} outcome to the Run record.`,
+    ),
   );
   return {
     runId: record.runId,

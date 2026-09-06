@@ -10,7 +10,11 @@ import {
   listLatestWhatsNextRuns,
   readWhatsNextRun,
 } from '../lib/modules/product-discovery/runs.ts';
-import type { ProductExplorationResult } from '../lib/modules/product-discovery/contract.ts';
+import {
+  PRODUCT_EXPLORATION_RESULT_CONTRACT,
+  type ProductExplorationResult,
+} from '../lib/modules/product-discovery/contract.ts';
+import { semanticResultHash } from '../lib/materialization/hash.ts';
 import { MaterializationError } from '../lib/materialization/receipt.ts';
 import type { RegisteredProject } from '../lib/project-registry.ts';
 
@@ -185,4 +189,95 @@ void test('a direct non-proposal outcome creates no Candidate', async (t) => {
   assert.equal(published.outcome, 'no-change');
   assert.deepEqual(published.candidates, []);
   assert.deepEqual(published.candidatePaths, {});
+});
+
+void test('a direct publication records a Receipt and its semantic result', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const basis = await basisFor(project, sourceNodeId);
+  const result: ProductExplorationResult = {
+    outcome: 'proposal',
+    candidates: [candidate('capture', sourceNodeId)],
+  };
+  const events: string[] = [];
+  const published = await publishProductExplorationResult(
+    basis,
+    result,
+    { kind: 'direct', sourceNodeIds: [sourceNodeId] },
+    () => '2026-09-06T00:00:00.000Z',
+    (entry) => {
+      assert.equal(entry.actor, 'HOST');
+      events.push(entry.event);
+    },
+  );
+
+  assert.deepEqual(events, [
+    'materialization.validated',
+    'materialization.identities.allocated',
+    'materialization.staged',
+    'materialization.published',
+  ]);
+
+  const receipt = published.record.materialization;
+  assert.ok(receipt);
+  assert.deepEqual(receipt.contract, {
+    id: PRODUCT_EXPLORATION_RESULT_CONTRACT.id,
+    version: PRODUCT_EXPLORATION_RESULT_CONTRACT.version,
+    hash: PRODUCT_EXPLORATION_RESULT_CONTRACT.hash,
+  });
+  assert.deepEqual(receipt.producer, {
+    kind: 'direct',
+    runId: published.runId,
+  });
+  assert.deepEqual(receipt.basis, {
+    fingerprint: basis.fingerprint,
+    preparedAt: basis.preparedAt,
+  });
+  assert.equal(receipt.semanticResultHash, semanticResultHash(result));
+  assert.equal(receipt.outcome, 'candidates');
+  assert.deepEqual(receipt.affected.candidateIds, [
+    published.candidates[0]!.candidateId,
+  ]);
+  assert.deepEqual(receipt.publication, {
+    target: 'run-record',
+    at: '2026-09-06T00:00:00.000Z',
+    revision: null,
+  });
+  assert.equal(receipt.failure, null);
+
+  const semantic = JSON.parse(
+    await readFile(
+      path.join(
+        project.planningPath,
+        'whats-next',
+        'runs',
+        published.runId,
+        'semantic-result.json',
+      ),
+      'utf8',
+    ),
+  ) as { semanticResultHash: string; result: ProductExplorationResult };
+  assert.equal(semantic.semanticResultHash, receipt.semanticResultHash);
+  assert.deepEqual(semantic.result, result);
+});
+
+void test('a rejected direct submission reports the failing boundary', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const basis = await basisFor(project, sourceNodeId);
+  const events: Array<{ event: string; level: string }> = [];
+  await assert.rejects(
+    publishProductExplorationResult(
+      basis,
+      {
+        outcome: 'proposal',
+        candidates: [candidate('capture', 'NODE-deadbeef')],
+      },
+      { kind: 'direct', sourceNodeIds: [sourceNodeId] },
+      undefined,
+      (entry) => events.push({ event: entry.event, level: entry.level }),
+    ),
+    (error: unknown) => error instanceof MaterializationError,
+  );
+  assert.deepEqual(events, [
+    { event: 'materialization.rejected', level: 'ERROR' },
+  ]);
 });

@@ -1,5 +1,9 @@
 import './helpers/register-redo-hooks.mjs';
 import assert from 'node:assert/strict';
+import {
+  isReadableActivity,
+  parseRunLogText,
+} from '../lib/execution-observability/run-log-format.ts';
 import test from 'node:test';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -162,6 +166,37 @@ void test('an explored proposal materializes the same Candidates and identities'
   const settled = await settledRun(project, started.runId);
   assert.equal(settled.status, 'proposal', settled.error ?? undefined);
   await assertGolden('explore', await captureGraphState(project));
+
+  const log = parseRunLogText(
+    await readFile(
+      path.join(
+        project.planningPath,
+        'whats-next',
+        'runs',
+        started.runId,
+        'run.log',
+      ),
+      'utf8',
+    ),
+  );
+  const materialization = log.filter((entry) =>
+    entry.event.startsWith('materialization.'),
+  );
+  assert.deepEqual(
+    materialization.map((entry) => entry.event),
+    [
+      'materialization.basis.prepared',
+      'materialization.validated',
+      'materialization.identities.allocated',
+      'materialization.staged',
+      'materialization.published',
+    ],
+  );
+  assert.deepEqual(
+    [...new Set(materialization.map((entry) => entry.actor))],
+    ['HOST'],
+  );
+  assert.deepEqual(materialization.filter(isReadableActivity), []);
 });
 
 void test('dependency-ordered acceptance promotes Candidates to formal Nodes', async (t) => {

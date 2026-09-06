@@ -79,7 +79,11 @@ import {
 } from './validation-context.ts';
 import { MaterializationError } from '../../materialization/receipt.ts';
 import { prepareProductExplorationMaterializationBasis } from './basis.ts';
-import { publishProductExplorationResult } from './publish.ts';
+import {
+  publishProductExplorationResult,
+  type MaterializationLog,
+} from './publish.ts';
+import { materializationLogEntry } from '../../materialization/log.ts';
 import {
   toProductExplorationCandidate,
   toProductExplorationSemanticResult,
@@ -1055,6 +1059,7 @@ async function finishWhatsNextRun(
         ),
         revisionTarget,
       },
+      reservation.record,
     );
     await writeProducerEvidence(
       project,
@@ -1085,7 +1090,17 @@ async function finishWhatsNextRun(
     const published = await publishProductExplorationResult(
       submission.basis,
       submission.semantic,
-      { kind: 'agent-run', record, resultBase: envelope },
+      {
+        kind: 'agent-run',
+        record,
+        resultBase: envelope,
+        harness: {
+          id: envelope.harness.id,
+          revision: envelope.harness.revision,
+        },
+      },
+      undefined,
+      reservation.record,
     );
     const result = published.record.result as WhatsNextHarnessResult;
     if (
@@ -1671,6 +1686,7 @@ async function prepareWhatsNextSubmission(
   project: RegisteredProject,
   output: string,
   input: WhatsNextValidationContextInput,
+  log: MaterializationLog = () => undefined,
 ) {
   const envelope = parseWhatsNextHarnessResult(
     output,
@@ -1722,6 +1738,12 @@ async function prepareWhatsNextSubmission(
           ),
         }
       : { ...subject, operation: 'explore' },
+  );
+  log(
+    materializationLogEntry(
+      'materialization.basis.prepared',
+      `Prepared the ${basis.operation} Basis at fingerprint ${basis.fingerprint.slice(0, 12)}.`,
+    ),
   );
   return {
     envelope,

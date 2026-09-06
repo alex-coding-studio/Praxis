@@ -9,11 +9,13 @@ export const MATERIALIZATION_FAILURE_BOUNDARIES = [
 export type MaterializationFailureBoundary =
   (typeof MATERIALIZATION_FAILURE_BOUNDARIES)[number];
 
+import type { ProducerKind } from './producer.ts';
+
 export type MaterializationReceipt = {
   schemaVersion: 1;
   contract: { id: string; version: number; hash: string };
   producer: {
-    kind: 'agent-run';
+    kind: ProducerKind;
     runId: string;
     harness?: { id: string; revision: number };
   };

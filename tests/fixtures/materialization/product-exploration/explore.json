@@ -125,14 +125,14 @@
           "metadata": {},
           "presentation": {},
           "assumptions": ["The reader already has the source material."],
-          "outputMarkdown": "# Capture the item\n\n## Why this direction\n\n- It answers the stated need directly.\n- It can be judged without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n",
-          "layer": "discovery",
-          "artifactKind": "mvp",
           "uid": "U1",
           "relations": {
             "derivedFrom": ["U0"],
             "dependsOn": []
-          }
+          },
+          "outputMarkdown": "# Capture the item\n\n## Why this direction\n\n- It answers the stated need directly.\n- It can be judged without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n",
+          "layer": "discovery",
+          "artifactKind": "mvp"
         },
         {
           "candidateId": "CANDIDATE-U2",
@@ -147,14 +147,14 @@
           "metadata": {},
           "presentation": {},
           "assumptions": ["The reader already has the source material."],
-          "outputMarkdown": "# Find the item\n\n## Why this direction\n\n- It answers the stated need directly.\n- It can be judged without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n",
-          "layer": "discovery",
-          "artifactKind": "mvp",
           "uid": "U2",
           "relations": {
             "derivedFrom": ["U0"],
             "dependsOn": ["U1"]
-          }
+          },
+          "outputMarkdown": "# Find the item\n\n## Why this direction\n\n- It answers the stated need directly.\n- It can be judged without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n",
+          "layer": "discovery",
+          "artifactKind": "mvp"
         },
         {
           "candidateId": "CANDIDATE-U3",
@@ -169,14 +169,14 @@
           "metadata": {},
           "presentation": {},
           "assumptions": ["The reader already has the source material."],
-          "outputMarkdown": "# Share the item\n\n## Why this direction\n\n- It answers the stated need directly.\n- It can be judged without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n",
-          "layer": "discovery",
-          "artifactKind": "mvp",
           "uid": "U3",
           "relations": {
             "derivedFrom": ["U0"],
             "dependsOn": []
-          }
+          },
+          "outputMarkdown": "# Share the item\n\n## Why this direction\n\n- It answers the stated need directly.\n- It can be judged without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n",
+          "layer": "discovery",
+          "artifactKind": "mvp"
         }
       ],
       "candidateAliases": {
@@ -194,6 +194,130 @@
       "detail": "The product needs one clear direction first.",
       "supplementaryWarnings": [],
       "recovery": ["log", "continue"]
+    },
+    "materialization": {
+      "schemaVersion": 1,
+      "contract": {
+        "id": "praxis.product-exploration.result",
+        "version": 1,
+        "hash": "H1"
+      },
+      "producer": {
+        "kind": "agent-run",
+        "runId": "RUN-U4",
+        "harness": {
+          "id": "praxis.whats-next",
+          "revision": 8
+        }
+      },
+      "basis": {
+        "fingerprint": "H2",
+        "preparedAt": "T"
+      },
+      "semanticResultHash": "H3",
+      "outcome": "candidates",
+      "affected": {
+        "candidateIds": ["CANDIDATE-U1", "CANDIDATE-U2", "CANDIDATE-U3"],
+        "nodeIds": [],
+        "contractIds": [],
+        "domainIds": []
+      },
+      "publication": {
+        "target": "run-record",
+        "at": "T",
+        "revision": null
+      },
+      "failure": null
+    }
+  },
+  "whats-next/runs/RUN-U4/semantic-result.json": {
+    "schemaVersion": 1,
+    "contract": {
+      "id": "praxis.product-exploration.result",
+      "version": 1,
+      "hash": "H1"
+    },
+    "producer": {
+      "kind": "agent-run",
+      "runId": "RUN-U4",
+      "harness": {
+        "id": "praxis.whats-next",
+        "revision": 8
+      }
+    },
+    "semanticResultHash": "H3",
+    "result": {
+      "outcome": "proposal",
+      "candidates": [
+        {
+          "localKey": "CANDIDATE-0001",
+          "type": "mvp",
+          "title": "Capture the item",
+          "summary": "Capture the item stated as one bounded outcome.",
+          "derivedFrom": [
+            {
+              "kind": "node",
+              "id": "NODE-U0"
+            }
+          ],
+          "dependsOn": [],
+          "resources": [],
+          "typeTemplateRef": null,
+          "metadata": {},
+          "presentation": {},
+          "assumptions": ["The reader already has the source material."],
+          "outputMarkdown": "# Capture the item\n\n## Why this direction\n\n- It answers the stated need directly.\n- It can be judged without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n",
+          "layer": "discovery",
+          "artifactKind": "mvp"
+        },
+        {
+          "localKey": "CANDIDATE-0002",
+          "type": "mvp",
+          "title": "Find the item",
+          "summary": "Find the item stated as one bounded outcome.",
+          "derivedFrom": [
+            {
+              "kind": "node",
+              "id": "NODE-U0"
+            }
+          ],
+          "dependsOn": [
+            {
+              "kind": "proposal",
+              "localKey": "CANDIDATE-0001"
+            }
+          ],
+          "resources": [],
+          "typeTemplateRef": null,
+          "metadata": {},
+          "presentation": {},
+          "assumptions": ["The reader already has the source material."],
+          "outputMarkdown": "# Find the item\n\n## Why this direction\n\n- It answers the stated need directly.\n- It can be judged without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n",
+          "layer": "discovery",
+          "artifactKind": "mvp"
+        },
+        {
+          "localKey": "CANDIDATE-0003",
+          "type": "mvp",
+          "title": "Share the item",
+          "summary": "Share the item stated as one bounded outcome.",
+          "derivedFrom": [
+            {
+              "kind": "node",
+              "id": "NODE-U0"
+            }
+          ],
+          "dependsOn": [],
+          "resources": [],
+          "typeTemplateRef": null,
+          "metadata": {},
+          "presentation": {},
+          "assumptions": ["The reader already has the source material."],
+          "outputMarkdown": "# Share the item\n\n## Why this direction\n\n- It answers the stated need directly.\n- It can be judged without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n",
+          "layer": "discovery",
+          "artifactKind": "mvp"
+        }
+      ]
     }
   }
 }
