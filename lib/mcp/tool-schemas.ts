@@ -1,5 +1,6 @@
 import { PRODUCT_EXPLORATION_RESULT_SCHEMA } from '../modules/product-discovery/contract.ts';
 import { SCOPE_DECOMPOSITION_RESULT_SCHEMA } from '../modules/scope-decomposition/contract.ts';
+import { DOMAIN_MODEL_RESULT_SCHEMA } from '../modules/domain-modeling/contract.ts';
 import {
   whatsNextIntentions,
   whatsNextLayers,
@@ -83,7 +84,7 @@ export const PREPARE_INPUT_SCHEMA = {
     },
     module: {
       type: 'string',
-      enum: ['product-exploration', 'scope-decomposition'],
+      enum: ['product-exploration', 'scope-decomposition', 'domain-modeling'],
       description: 'The module to prepare against.',
     },
     request: {
@@ -146,6 +147,20 @@ export const PREPARE_INPUT_SCHEMA = {
           maxItems: 100,
           description:
             'scope-decomposition: open Candidate ids this operation revises or recomposes.',
+        },
+        selectionIds: {
+          type: 'array',
+          items: { type: 'string', minLength: 1 },
+          maxItems: 100,
+          description:
+            'domain-modeling: entity or relationship ids to focus on, empty for the current model scope.',
+        },
+        contextIds: {
+          type: 'array',
+          items: { type: 'string', minLength: 1 },
+          maxItems: 50,
+          description:
+            'Artifact handles from the project catalog to freeze as context evidence.',
         },
       },
     },
@@ -229,3 +244,32 @@ export const SUBMIT_SCOPE_DECOMPOSITION_INPUT_SCHEMA = {
     result: SCOPE_DECOMPOSITION_RESULT_SCHEMA,
   },
 } as const;
+
+function submissionSchema(resultSchema: object) {
+  return {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    type: 'object',
+    additionalProperties: false,
+    required: ['operationId', 'contract', 'result'],
+    properties: {
+      operationId: OPERATION_ID_PROPERTY,
+      contract: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'version', 'hash'],
+        properties: {
+          id: { type: 'string', minLength: 1 },
+          version: { type: 'integer', minimum: 1 },
+          hash: { type: 'string', minLength: 1 },
+        },
+        description:
+          'The Result Contract identity this result was written against.',
+      },
+      result: resultSchema,
+    },
+  };
+}
+
+export const SUBMIT_DOMAIN_MODEL_INPUT_SCHEMA = submissionSchema(
+  DOMAIN_MODEL_RESULT_SCHEMA,
+);

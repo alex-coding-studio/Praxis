@@ -12,8 +12,8 @@ import {
 import {
   listWhatToDoFeatureSources,
   selectWhatToDoFeatureSources,
-  whatToDoFeatureWorkspaceInputs,
 } from '../lib/modules/delivery-planning/sources.ts';
+import { whatToDoFeatureWorkspaceInputs } from '../lib/modules/delivery-planning/workspace-inputs.ts';
 
 async function fixture(t: test.TestContext) {
   const rootPath = await mkdtemp(path.join(os.tmpdir(), 'what-to-do-'));

@@ -11,7 +11,10 @@ import {
   type ResponseOwner,
 } from '../execution-observability/types.ts';
 import { listTaskGraphNodes, type TaskGraphNode } from '../graph/task/nodes.ts';
-import { readDomainModelView } from '../modules/domain-modeling/model.ts';
+import {
+  readDomainModelCommitReceipt,
+  readDomainModelView,
+} from '../modules/domain-modeling/model.ts';
 import { readWhatToDoCurrentMapWithFingerprint } from '../modules/delivery-planning/storage.ts';
 import {
   isAcceptedPlanningShape,
@@ -77,6 +80,7 @@ export const MCP_IMPLEMENTED_TOOLS = [
   'praxis_prepare',
   'praxis_submit_product_exploration',
   'praxis_submit_scope_decomposition',
+  'praxis_submit_domain_model',
   'praxis_get_operation',
   'praxis_read_log',
 ] as const;
@@ -115,7 +119,7 @@ export function readCapabilities(options: McpReadOptions = {}) {
     apiVersion: MCP_API_VERSION,
     server: MCP_SERVER_NAME,
     protocolBaseline: '2025-11-25',
-    release: 'graph-proposal-submission',
+    release: 'graph-and-domain-submission',
     host: { activeRunRegistry: activeRunRegistryOwnership() },
     tools: MCP_IMPLEMENTED_TOOLS,
     resources: {
@@ -153,15 +157,13 @@ export function readCapabilities(options: McpReadOptions = {}) {
           uri: contractUri(definition.contract.id, definition.contract.version),
         },
         preparationOperations:
-          module === 'product-exploration'
-            ? ['explore']
-            : module === 'scope-decomposition'
-              ? [...definition.preparationOperations]
-              : [],
+          module === 'delivery-planning'
+            ? []
+            : module === 'product-exploration'
+              ? ['explore']
+              : [...definition.preparationOperations],
         submissionTool:
-          module === 'product-exploration' || module === 'scope-decomposition'
-            ? definition.submissionTool
-            : null,
+          module === 'delivery-planning' ? null : definition.submissionTool,
         plannedPreparationOperations: definition.preparationOperations,
         plannedSubmissionTool: definition.submissionTool,
       };
@@ -495,11 +497,7 @@ export async function reconcileMcpOperation(
 ): Promise<McpOperationRecord> {
   if (record.status !== 'running' && record.status !== 'interrupted')
     return record;
-  const committed = await readCommittedRunReceipt(
-    project,
-    MCP_MODULE_DEFINITIONS[record.module].runsRoot,
-    record.runId,
-  );
+  const committed = await readCommittedRunReceipt(project, record);
   if (!committed) {
     if (
       record.status === 'running' &&
@@ -530,20 +528,8 @@ export async function reconcileMcpOperation(
   };
 }
 
-async function readCommittedRunReceipt(
-  project: RegisteredProject,
-  runsRoot: string,
-  runId: string,
-) {
-  const file = path.join(
-    project.planningPath,
-    runsRoot,
-    'runs',
-    runId,
-    'run.json',
-  );
+async function readGraphRunReceipt(project: RegisteredProject, file: string) {
   let stored: {
-    status?: string;
     endedAt?: string | null;
     materialization?: MaterializationReceipt;
     result?: { outcome?: string; candidates?: unknown[] } | null;
@@ -570,6 +556,68 @@ async function readCommittedRunReceipt(
           : 'The module reported no Candidates.',
     },
   };
+}
+
+async function readReceiptDocument(file: string) {
+  let receipt: MaterializationReceipt;
+  try {
+    receipt = JSON.parse(
+      await readFile(file, 'utf8'),
+    ) as MaterializationReceipt;
+  } catch {
+    return null;
+  }
+  if (!receipt || typeof receipt !== 'object' || receipt.outcome === 'rejected')
+    return null;
+  return {
+    settledAt: receipt.publication?.at ?? new Date().toISOString(),
+    receipt,
+    outcome: {
+      kind: receipt.outcome,
+      summary:
+        receipt.outcome === 'canonical'
+          ? 'The canonical state was updated.'
+          : 'The module reported no change.',
+    },
+  };
+}
+
+async function readDomainCanonicalCommit(
+  project: RegisteredProject,
+  runId: string,
+) {
+  const committed = await readDomainModelCommitReceipt(project, runId).catch(
+    () => null,
+  );
+  if (!committed) return null;
+  return {
+    settledAt: committed.committedAt,
+    receipt: null,
+    outcome: {
+      kind: 'canonical',
+      summary: `The canonical state was updated to version ${committed.stateVersion}. The materialization receipt for this Run was not recorded, so the outcome is recovered from the committed state.`,
+    },
+  };
+}
+
+async function readCommittedRunReceipt(
+  project: RegisteredProject,
+  record: McpOperationRecord,
+) {
+  const runsRoot = MCP_MODULE_DEFINITIONS[record.module].runsRoot;
+  const directory = path.join(
+    project.planningPath,
+    runsRoot,
+    'runs',
+    record.runId,
+  );
+  if (record.module === 'domain-modeling')
+    return (
+      (await readReceiptDocument(
+        path.join(directory, 'materialization.json'),
+      )) ?? (await readDomainCanonicalCommit(project, record.runId))
+    );
+  return readGraphRunReceipt(project, path.join(directory, 'run.json'));
 }
 
 export async function readOperationResource(

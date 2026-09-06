@@ -25,10 +25,8 @@ import {
   readWhatToDoRepositoryEvidence,
   readWhatToDoTargetedRepositoryEvidence,
 } from './repository-facts.ts';
-import {
-  selectWhatToDoFeatureSources,
-  whatToDoFeatureWorkspaceInputs,
-} from './sources.ts';
+import { selectWhatToDoFeatureSources } from './sources.ts';
+import { whatToDoFeatureWorkspaceInputs } from './workspace-inputs.ts';
 import {
   readWhatToDoRepositorySummary,
   stageWhatToDoRunDirectory,

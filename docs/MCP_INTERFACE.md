@@ -8,8 +8,9 @@ deterministic publication and evidence.
 This document records the settled interface. It is delivered in Parts. **This release
 implements Part 1 (the endpoint, its connection boundary and the read surface), Part 2
 (prepared operations and the Product Exploration submission slice) and Part 3 (Scope
-Decomposition).** Domain Modeling and Delivery Planning submission, acceptance, Agent
-dispatch and GitHub capability are not served here, and none is advertised.
+Decomposition) and the Domain Modeling half of Part 4.** Delivery Planning submission,
+acceptance, Agent dispatch and GitHub capability are not served here, and none is
+advertised.
 
 ## Served in this release
 
@@ -341,6 +342,12 @@ npm run test:mcp
   selection frozen into the Basis, submission not accepting Candidates, retry and
   conflict, an operation of another module refused by this tool, and a log carrying HOST
   rather than invented Agent activity.
+- [tests/mcp-canonical-modules.test.ts](../tests/mcp-canonical-modules.test.ts) — Domain
+  Modeling preparing against the current state version, publishing through the canonical
+  service, a conflict surfacing as `STALE_BASIS` rather than a publication failure, a
+  vanished selection refused at preparation, an exact retry replaying without advancing
+  the state version, a changed result conflicting, and another module's tool refusing the
+  operation.
 - [tests/mcp-transport.test.ts](../tests/mcp-transport.test.ts) — a real SDK client over
   HTTP completing initialization, discovery and reads, with bounded 20-second timeouts,
   including both sides of the argument-failure split.
