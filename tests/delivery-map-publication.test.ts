@@ -2,10 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import {
-  publishDeliveryMap,
-  startWhatToDoRun,
-} from '../lib/modules/delivery-planning/runs.ts';
+import { startWhatToDoRun } from '../lib/modules/delivery-planning/runs.ts';
+import { publishDeliveryMap } from '../lib/modules/delivery-planning/publish.ts';
+import { deliveryPublicationHost } from '../lib/modules/delivery-planning/publication-host.ts';
 import { prepareDeliveryMapBasis } from '../lib/modules/delivery-planning/basis.ts';
 import {
   readWhatToDoCurrentMap,
@@ -68,7 +67,7 @@ void test('publishing against a Map that changed underneath is refused', async (
   await writeWhatToDoCurrentMap(project, { ...map, contracts: [] });
   const overtaken = await readWhatToDoCurrentMap(project);
   await assert.rejects(
-    () => publishDeliveryMap(project, map, undefined, basis),
+    () => publishDeliveryMap(project, map, deliveryPublicationHost, basis),
     (error: unknown) =>
       error instanceof MaterializationError &&
       error.boundary === 'stale-basis' &&
@@ -86,7 +85,7 @@ void test('publishing against the Map it was prepared from succeeds', async (t) 
     currentMap: captured.map,
     currentMapFingerprint: captured.fingerprint,
   });
-  await publishDeliveryMap(project, map, undefined, basis);
+  await publishDeliveryMap(project, map, deliveryPublicationHost, basis);
   const published = await readWhatToDoCurrentMap(project);
   assert.equal(published?.runId, map.runId);
   assert.equal(published?.contracts.length, map.contracts.length);

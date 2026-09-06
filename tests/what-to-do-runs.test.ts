@@ -6,11 +6,12 @@ import { WHAT_TO_DO_HARNESS_REVISION } from '../lib/modules/delivery-planning/ha
 import {
   cancelWhatToDoRun,
   listLatestWhatToDoRuns,
-  publishDeliveryMap,
   readWhatToDoRun,
   startWhatToDoRun,
   whatToDoAgentEnvironment,
 } from '../lib/modules/delivery-planning/runs.ts';
+import { publishDeliveryMap } from '../lib/modules/delivery-planning/publish.ts';
+import { deliveryPublicationHost } from '../lib/modules/delivery-planning/publication-host.ts';
 import { readWhatToDoCurrentMap } from '../lib/modules/delivery-planning/storage.ts';
 import { readWhatToDoRunDraft } from '../lib/modules/delivery-planning/run-draft.ts';
 import { planningService } from '../lib/modules/implementation/planning-service.ts';
@@ -451,6 +452,7 @@ void test('a staged Card transition failure restores the prior Map and Cards', a
         contracts: [],
       },
       {
+        ...deliveryPublicationHost,
         list: async () => [card, secondCard],
         stageDeleteCard: async (targetProject, cardId, revision) => {
           transitionCount += 1;

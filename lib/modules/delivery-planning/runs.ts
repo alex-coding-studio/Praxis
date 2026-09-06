@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
   lstat,
-  mkdir,
   readFile,
   readdir,
   realpath,
@@ -23,7 +22,6 @@ import {
   type AgentGraphActivityRecorder,
 } from '../../graph/agent/run.ts';
 import { PublicApiError } from '../../api-errors.ts';
-import { assertDeliveryMapPreservesTargets } from '../delivery/map-boundary.ts';
 import {
   startLocalAgentRun,
   type LocalAgentRun,
@@ -52,8 +50,6 @@ import {
   type WhatToDoHarnessResult,
 } from './harness.ts';
 import {
-  materializeWhatToDoDeliveryMap,
-  renderWhatToDoContract,
   whatToDoContractCandidateId,
   whatToDoKnownCandidates,
   whatToDoKnownSourceClaims,
@@ -67,18 +63,17 @@ import {
   readWhatToDoCurrentMapWithFingerprint,
   whatToDoDirectory,
   whatToDoRunDirectory,
-  writeWhatToDoCurrentMap,
   writeWhatToDoRepositorySummary,
 } from './storage.ts';
-import {
-  planningService,
-  type PlanningCard,
-} from '../implementation/planning-service.ts';
-import { deliveryContractPlanningSource } from '../implementation/planning-sources.ts';
-import { withDeliveryState } from '../../delivery-state-lock.ts';
 import { toDeliveryMapSemanticResult } from './producer-adapter.ts';
 import { MaterializationError } from '../../materialization/receipt.ts';
 import { prepareDeliveryMapBasis, type DeliveryMapBasis } from './basis.ts';
+import { deliveryPublicationHost } from './publication-host.ts';
+import {
+  computeDeliveryMap,
+  publishDeliveryMap,
+  stageDeliveryContractArtifacts,
+} from './publish.ts';
 
 export type WhatToDoRunRecord = {
   schemaVersion: 1;
@@ -457,26 +452,25 @@ function settleLater(
           ]),
         ),
       });
-      const map =
-        semantic.outcome === 'map-proposal'
-          ? materializeWhatToDoDeliveryMap({
-              runId: run.id,
-              updatedAt: endedAt,
-              sourceUids: [
-                ...(basis?.currentMap?.sourceUids ?? []),
-                ...run.sourceUids,
-              ],
-              result: semantic,
-              basis: {
-                currentMap: basis?.currentMap ?? null,
-                userInput: {
-                  path: prepared.userInput.path,
-                  sha256: prepared.userInput.sha256,
-                },
-              },
-              sourceSnapshots: prepared.sourceSnapshots,
-            })
-          : null;
+      const evidence = {
+        sourceUids: run.sourceUids,
+        userInput: {
+          path: prepared.userInput.path,
+          sha256: prepared.userInput.sha256,
+        },
+        sourceSnapshots: prepared.sourceSnapshots,
+      };
+      if (!basis)
+        throw new MaterializationError(
+          'publication',
+          'The Delivery Map Basis was not prepared for this Run.',
+        );
+      const map = computeDeliveryMap(
+        basis,
+        semantic,
+        { runId: run.id, updatedAt: endedAt },
+        evidence,
+      );
       const classification = classifyModuleRun(
         result.outcome === 'map-proposal'
           ? {
@@ -523,26 +517,10 @@ function settleLater(
         summary: renderRunSummary(result),
         response: result.responseMarkdown,
       });
-      if (map)
-        await Promise.all(
-          map.contracts
-            .filter((contract) =>
-              contract.outputPath.startsWith(
-                `what-to-do/runs/${run.id}/contracts/`,
-              ),
-            )
-            .map(async (contract) => {
-              const directory = path.join(runPath, 'contracts', contract.id);
-              await mkdir(directory, { recursive: true });
-              await atomicWhatToDoText(
-                path.join(directory, 'output.md'),
-                renderWhatToDoContract(contract),
-              );
-            }),
-        );
       if (map) {
+        await stageDeliveryContractArtifacts(project, run.id, map);
         await stageTerminalRunRecord(project, terminal);
-        await publishDeliveryMap(project, map, planningService, basis);
+        await publishDeliveryMap(project, map, deliveryPublicationHost, basis);
         await publishTerminalRunRecord(project, run.id).catch(() => undefined);
       } else {
         await writeRunRecord(project, terminal);
@@ -610,78 +588,6 @@ function settleLater(
       if (activeRuns.get(project.planningPath) === active)
         activeRuns.delete(project.planningPath);
     });
-}
-
-type DeliveryPlanningStore = Pick<
-  typeof planningService,
-  'list' | 'stageDeleteCard'
->;
-
-export async function publishDeliveryMap(
-  project: RegisteredProject,
-  map: WhatToDoDeliveryMap,
-  store: DeliveryPlanningStore = planningService,
-  basis: DeliveryMapBasis | null = null,
-) {
-  await withDeliveryState(project, async () => {
-    await assertDeliveryMapPreservesTargets(project, map);
-    if (basis) {
-      const { fingerprint } =
-        await readWhatToDoCurrentMapWithFingerprint(project);
-      if (fingerprint !== basis.currentMapFingerprint) {
-        throw new MaterializationError(
-          'stale-basis',
-          'The current Delivery Map changed after this Run was prepared.',
-        );
-      }
-    }
-    const nextSources = new Map(
-      map.contracts.map((contract) => {
-        const source = deliveryContractPlanningSource(contract);
-        return [source.uid, source] as const;
-      }),
-    );
-    const superseded = (await store.list(project)).filter((card) => {
-      if (card.source.module !== 'what-to-do') return false;
-      const source = nextSources.get(card.source.uid);
-      return (
-        !source ||
-        source.id !== card.source.id ||
-        source.version !== card.source.version
-      );
-    });
-    const protectedCards = superseded.filter(planningCardProtectsDeliveryMap);
-    if (protectedCards.length)
-      throw new PublicApiError(
-        `The Delivery Map cannot replace Contracts already in progress: ${protectedCards.map((card) => card.source.title).join(', ')}.`,
-        409,
-      );
-    const staged: Array<
-      Awaited<ReturnType<DeliveryPlanningStore['stageDeleteCard']>>
-    > = [];
-    try {
-      for (const card of superseded)
-        staged.push(
-          await store.stageDeleteCard(project, card.id, card.revision),
-        );
-      await writeWhatToDoCurrentMap(project, map);
-    } catch (error) {
-      await Promise.allSettled(
-        staged.reverse().map((transition) => transition.rollback()),
-      );
-      throw error;
-    }
-    await Promise.allSettled(staged.map((transition) => transition.finalize()));
-  });
-}
-
-function planningCardProtectsDeliveryMap(card: PlanningCard) {
-  return Boolean(
-    card.run?.status === 'running' ||
-    card.plan?.status === 'finalized' ||
-    card.actions.length ||
-    card.execution?.runs.length,
-  );
 }
 
 export async function cancelWhatToDoRun(
