@@ -44,6 +44,10 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { MarkdownReader } from '@/components/markdown-reader';
+import {
+  MarkdownReaderDialog,
+  type MarkdownReaderDialogPreview,
+} from '@/components/markdown-reader-dialog';
 import { renderDeliveryBrief } from '@/lib/modules/delivery/documents';
 import { ProjectModuleHeader } from '@/components/project-module-header';
 import { ModuleInstructionsDialog } from '@/components/module-instructions-dialog';
@@ -95,6 +99,8 @@ function TargetNode({
   const { t } = useUiText();
   const target = data.target;
   const busy = ['running', 'reviewing', 'briefing'].includes(target.status);
+  const inProgress =
+    busy || ['ready-to-run', 'waiting-for-user'].includes(target.status);
   return (
     <>
       <Handle type="target" position={Position.Left} isConnectable={false} />
@@ -102,7 +108,7 @@ function TargetNode({
         density="standard"
         focused={selected}
         busy={busy}
-        accentColor={busy ? 'var(--graph-running)' : undefined}
+        accentColor={inProgress ? 'var(--graph-running)' : undefined}
         kindLabel={
           <span className="rounded-lg bg-foreground px-1.5 py-0.5 text-[9px] font-medium text-background">
             {t(layers.find((layer) => layer.id === target.sourceKind)!.label)}
@@ -116,14 +122,14 @@ function TargetNode({
               'text-[11px]',
               target.status === 'completed'
                 ? 'text-emerald-600'
-                : busy
+                : inProgress
                   ? 'text-sky-500'
                   : target.status === 'failed'
                     ? 'text-red-500'
                     : 'text-muted-foreground',
             )}
           >
-            {t(labels[target.status])}
+            {t(inProgress ? 'In progress' : labels[target.status])}
           </span>
         }
         footer={
@@ -163,6 +169,9 @@ export function DeliveryWorkspace({
   const [contextRefs, setContextRefs] = useState<string[]>([]);
   const [folderPath, setFolderPath] = useState('');
   const [error, setError] = useState('');
+  const [taskDocument, setTaskDocument] =
+    useState<MarkdownReaderDialogPreview | null>(null);
+  const [readingTask, setReadingTask] = useState(false);
   const [pending, setPending] = useState(false);
   const [settings, setSettings] = useState(false);
   const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null);
@@ -190,6 +199,34 @@ export function DeliveryWorkspace({
   const record = workspace.records.find((entry) => entry.sourceUid === uid);
   const run = record?.lastWithdrawal ? undefined : record?.runs.at(-1);
   const running = run?.status === 'running';
+  async function openTaskDocument() {
+    if (!target || readingTask) return;
+    setReadingTask(true);
+    try {
+      const documents = await Promise.all(
+        target.outputPaths.map(async (filePath) => {
+          const response = await fetch(
+            `/api/projects/${projectId}/resources?path=${encodeURIComponent(filePath)}`,
+            { cache: 'no-store' },
+          );
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error);
+          return { path: filePath, markdown: result.markdown as string };
+        }),
+      );
+      setTaskDocument({
+        title: target.title,
+        path: target.outputPaths.join(', '),
+        markdown: documents
+          .map((document) => document.markdown)
+          .join('\n\n---\n\n'),
+      });
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setReadingTask(false);
+    }
+  }
   const load = useCallback(async () => {
     const response = await fetch(`/api/projects/${projectId}/delivery`, {
       cache: 'no-store',
@@ -378,6 +415,16 @@ export function DeliveryWorkspace({
         }
         actions={
           <>
+            {target && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={readingTask || !target.outputPaths.length}
+                onClick={() => void openTaskDocument()}
+              >
+                {t('View task document')}
+              </Button>
+            )}
             <ModuleInstructionsDialog
               endpoint={`/api/projects/${projectId}/delivery-context`}
               title="Development Delivery instructions"
@@ -508,6 +555,13 @@ export function DeliveryWorkspace({
                   {t(record.response.detail)}
                 </p>
               )}
+              {record?.status === 'ready-to-run' && (
+                <p className="mt-2 text-sm">
+                  {t(
+                    'Brief confirmed. Click Start delivery to begin implementation.',
+                  )}
+                </p>
+              )}
               {running &&
                 record?.progress.find((item) => item.status === 'running') && (
                   <p className="mt-2 text-xs text-muted-foreground">
@@ -579,6 +633,18 @@ export function DeliveryWorkspace({
                     {t('Withdraw delivery')}
                   </Button>
                 )}
+              {record?.status === 'ready-to-run' && !running && (
+                <Button
+                  disabled={
+                    pending ||
+                    target.sourceChanged ||
+                    target.unmetDependencies.length > 0
+                  }
+                  onClick={() => void command('start')}
+                >
+                  {t('Start delivery')}
+                </Button>
+              )}
               {running ? (
                 <Button
                   variant="outline"
@@ -592,16 +658,40 @@ export function DeliveryWorkspace({
                 record?.brief &&
                 !record.brief.confirmedAt && (
                   <Button
+                    variant={
+                      record.brief.openDecisions.length
+                        ? 'secondary'
+                        : 'default'
+                    }
                     disabled={
                       pending || Boolean(record.brief.openDecisions.length)
                     }
+                    aria-describedby={
+                      record.brief.openDecisions.length
+                        ? 'brief-confirmation-help'
+                        : undefined
+                    }
                     onClick={() => void command('confirm-brief')}
                   >
-                    <Check />
+                    {!record.brief.openDecisions.length && <Check />}
                     {t('Confirm delivery brief')}
                   </Button>
                 )
               )}
+              {!running &&
+                record?.brief &&
+                !record.brief.confirmedAt &&
+                record.brief.openDecisions.length > 0 && (
+                  <p
+                    id="brief-confirmation-help"
+                    className="max-w-64 text-right text-xs text-amber-700 dark:text-amber-300"
+                  >
+                    {t(
+                      'Resolve {count} open decisions in the composer before confirming.',
+                      { count: record.brief.openDecisions.length },
+                    )}
+                  </p>
+                )}
               {!running &&
                 record?.publication &&
                 record.status !== 'completed' && (
@@ -642,14 +732,8 @@ export function DeliveryWorkspace({
                 )}
             </div>
           </ExecutionStickyHeaderFrame>
-          <details className="my-5 text-sm">
-            <summary className="cursor-pointer text-muted-foreground">
-              {t('Source')}
-            </summary>
-            <p className="mt-3 whitespace-pre-wrap">{target.summary}</p>
-          </details>
           {record?.brief && (
-            <section className="mb-5">
+            <section className="my-5">
               <MarkdownReader
                 title={t('Delivery brief')}
                 filePath={`delivery/targets/${record.sourceUid}/record.json`}
@@ -844,6 +928,10 @@ export function DeliveryWorkspace({
           </Button>
         </DialogContent>
       </Dialog>
+      <MarkdownReaderDialog
+        preview={taskDocument}
+        onClose={() => setTaskDocument(null)}
+      />
       {target && (
         <AgentGraphComposerCard
           title={t(

@@ -5,6 +5,12 @@ export function isUiLanguage(value: unknown): value is UiLanguage {
 }
 
 export const chineseUi: Record<string, string> = {
+  'Start delivery': '开始交付',
+  'Brief confirmed. Click Start delivery to begin implementation.':
+    '交付简报已确认。点击“开始交付”后，将启动 Agent 执行。',
+  'Resolve {count} open decisions in the composer before confirming.':
+    '还有 {count} 项待决定，请先在右下角回复，再确认简报。',
+  'View task document': '查看任务文档',
   'Delivery withdrawn': '本次交付已撤销',
   'This unaccepted attempt was withdrawn. Prepare a new brief; the next execution will start from latest main. Previously merged code is unchanged.':
     '本次未验收交付已撤销。可以重新准备交付简报，下一次执行将从最新 main 开始；已合并代码不受影响。',
@@ -609,7 +615,7 @@ export const chineseUi: Record<string, string> = {
   'Add a goal': '添加目标',
   'All goals': '全部目标',
   'Needs attention': '等你处理',
-  'In progress': '推进中',
+  'In progress': '进行中',
   Completed: '已完成',
   'Drop files or choose local files': '拖入文件或选择本地文件',
   'GitHub repository or code URL': 'GitHub 仓库或代码链接',
