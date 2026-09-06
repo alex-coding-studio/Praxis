@@ -10,6 +10,7 @@ import {
   materializationBoundaryMembers,
   materializationBoundaryViolations,
   materializationBoundaryPolicy,
+  missingRequiredFiles,
   nonLiteralImports,
 } from '../scripts/audit-materialization-boundary.ts';
 
@@ -56,16 +57,44 @@ function fixtureReport(name: string) {
 void test('every guarded Materializer, Contract and adapter file exists and is analyzed', () => {
   const required = MATERIALIZATION_BOUNDARY_POLICY.requiredFiles;
   assert.ok(required.length > 0);
-  for (const file of required) {
-    assert.ok(existsSync(path.join(PROJECT_ROOT, file)), `${file} missing`);
-    assert.ok(graph.modules.includes(file), `${file} not analyzed`);
-  }
+  assert.deepEqual(
+    missingRequiredFiles(graph, MATERIALIZATION_BOUNDARY_POLICY, PROJECT_ROOT),
+    [],
+  );
   for (const tier of MATERIALIZATION_BOUNDARY_POLICY.tiers) {
     assert.ok(
       materializationBoundaryMembers(graph, tier).length > 0,
       `tier ${tier.name} guards no file`,
     );
   }
+});
+
+void test('every guarded module file is required by name', () => {
+  const required = new Set(MATERIALIZATION_BOUNDARY_POLICY.requiredFiles);
+  const guarded = MATERIALIZATION_BOUNDARY_POLICY.tiers.flatMap((tier) =>
+    materializationBoundaryMembers(graph, tier),
+  );
+  assert.deepEqual(
+    guarded.filter(
+      (file) => file.startsWith('lib/modules/') && !required.has(file),
+    ),
+    [],
+  );
+});
+
+void test('a required file that is deleted or unreachable is reported', () => {
+  const deleted = materializationBoundaryPolicy('', [
+    'lib/modules/delivery-planning/publish.ts',
+    'lib/modules/delivery-planning/deleted.ts',
+  ]);
+  assert.deepEqual(missingRequiredFiles(graph, deleted, PROJECT_ROOT), [
+    { file: 'lib/modules/delivery-planning/deleted.ts', reason: 'missing' },
+  ]);
+  const unreachable = materializationBoundaryPolicy('', ['package.json']);
+  assert.ok(existsSync(path.join(PROJECT_ROOT, 'package.json')));
+  assert.deepEqual(missingRequiredFiles(graph, unreachable, PROJECT_ROOT), [
+    { file: 'package.json', reason: 'not-analyzed' },
+  ]);
 });
 
 void test('no guarded module reaches Agent transport, Harness, prompt, Context or Run code', () => {
