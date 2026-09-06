@@ -25,6 +25,7 @@ import {
   READ_RESOURCE_INPUT_SCHEMA,
   SUBMIT_PRODUCT_EXPLORATION_INPUT_SCHEMA,
   SUBMIT_DOMAIN_MODEL_INPUT_SCHEMA,
+  SUBMIT_DELIVERY_MAP_INPUT_SCHEMA,
   SUBMIT_SCOPE_DECOMPOSITION_INPUT_SCHEMA,
 } from './tool-schemas.ts';
 import {
@@ -42,6 +43,8 @@ import { prepareScopeDecompositionOperation } from './prepare-scope-decompositio
 import { submitScopeDecompositionOperation } from './submit-scope-decomposition.ts';
 import { prepareDomainModelOperation } from './prepare-domain-model.ts';
 import { submitDomainModelOperation } from './submit-domain-model.ts';
+import { submitDeliveryMapOperation } from './submit-delivery-map.ts';
+import { prepareDeliveryMapOperation } from './prepare-delivery-map.ts';
 import { requireMcpOperation } from './operations.ts';
 import { operationLogUri, operationUri } from './uri.ts';
 import { capabilitiesUri, contractUri, projectsUri } from './uri.ts';
@@ -370,7 +373,8 @@ export function createPraxisMcpServer() {
         module:
           | 'product-exploration'
           | 'scope-decomposition'
-          | 'domain-modeling';
+          | 'domain-modeling'
+          | 'delivery-planning';
         request: {
           userInput: string;
           layer: 'discovery' | 'product-design';
@@ -393,6 +397,7 @@ export function createPraxisMcpServer() {
         const prepare = {
           'scope-decomposition': prepareScopeDecompositionOperation,
           'domain-modeling': prepareDomainModelOperation,
+          'delivery-planning': prepareDeliveryMapOperation,
           'product-exploration': prepareProductExplorationOperation,
         }[input.module];
         const { record } = await prepare(
@@ -496,6 +501,14 @@ export function createPraxisMcpServer() {
         "Publish a typed Domain Model result for a prepared operation. The change is applied through the module's canonical publication.",
       schema: SUBMIT_DOMAIN_MODEL_INPUT_SCHEMA,
       submit: submitDomainModelOperation,
+    },
+    {
+      name: 'praxis_submit_delivery_map',
+      title: 'Submit a Delivery Map result',
+      description:
+        "Publish a typed Delivery Planning result for a prepared operation. The Map is published through the module's canonical publication, which preserves Contracts whose delivery work has already started.",
+      schema: SUBMIT_DELIVERY_MAP_INPUT_SCHEMA,
+      submit: submitDeliveryMapOperation,
     },
   ] as const)
     server.registerTool(

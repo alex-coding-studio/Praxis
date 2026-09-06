@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { sha256Hex } from '../materialization/hash.ts';
 import {
   collectAcceptedCandidateIds,
@@ -16,22 +15,16 @@ import {
 import { taskDecompositionIntentionRegistry } from '../modules/scope-decomposition/intention.ts';
 import { taskDecompositionMotionRegistry } from '../modules/scope-decomposition/motion.ts';
 import { listTaskGraphNodes } from '../graph/task/nodes.ts';
-import {
-  resolvePlanningPath,
-  TASK_GRAPH_MARKDOWN_SHAPES,
-} from '../planning-paths.ts';
 import type { RegisteredProject } from '../project-registry.ts';
 import { invalidArgument } from './errors.ts';
+import { freezeLogicalSources } from './evidence.ts';
 import { MCP_MODULE_DEFINITIONS } from './modules.ts';
 import {
-  encodeSourceId,
   newMcpOperationId,
   writeMcpOperation,
   writeMcpOperationBasis,
-  writeMcpOperationSource,
   writeMcpOperationUserInput,
   type McpOperationRecord,
-  type McpOperationSource,
 } from './operations.ts';
 import { MAX_USER_INPUT_LENGTH } from './prepare.ts';
 
@@ -73,44 +66,6 @@ function assertOperation(value: unknown): ScopeDecompositionOperation {
       `request.operation must be one of ${SCOPE_DECOMPOSITION_OPERATIONS.join(', ')}.`,
     );
   return value as ScopeDecompositionOperation;
-}
-
-async function freezeSources(
-  project: RegisteredProject,
-  operationId: string,
-  logicalPaths: readonly string[],
-): Promise<McpOperationSource[]> {
-  const frozen: McpOperationSource[] = [];
-  for (const logicalPath of logicalPaths) {
-    let resolved;
-    try {
-      resolved = await resolvePlanningPath(project, logicalPath, {
-        shapes: TASK_GRAPH_MARKDOWN_SHAPES,
-        require: 'file',
-      });
-    } catch {
-      throw invalidArgument(
-        `The source document ${JSON.stringify(logicalPath)} is not readable through this project's published documents, so it cannot be frozen as evidence.`,
-      );
-    }
-    let content: string;
-    try {
-      content = await readFile(resolved.absolutePath, 'utf8');
-    } catch {
-      throw invalidArgument(
-        `The source document ${JSON.stringify(logicalPath)} could not be read while freezing evidence.`,
-      );
-    }
-    const sourceId = encodeSourceId(logicalPath);
-    await writeMcpOperationSource(project, operationId, sourceId, content);
-    frozen.push({
-      sourceId,
-      logicalPath,
-      sha256: sha256Hex(content),
-      byteLength: Buffer.byteLength(content, 'utf8'),
-    });
-  }
-  return frozen;
 }
 
 export async function assembleScopeDecompositionBasis(
@@ -255,7 +210,7 @@ export async function prepareScopeDecompositionOperation(
     userInput,
   );
   const basisPath = await writeMcpOperationBasis(project, operationId, basis);
-  const sources = await freezeSources(
+  const sources = await freezeLogicalSources(
     project,
     operationId,
     basis.knownResourcePaths,

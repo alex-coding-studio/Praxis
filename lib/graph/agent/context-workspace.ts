@@ -1,22 +1,13 @@
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-
-export type ContextWorkspaceInput = {
-  role: 'primary' | 'related';
-  kind: string;
-  logicalPath: string;
-  content: string;
-  nodeId?: string;
-  attachment?: ContextWorkspaceAttachment;
-};
-
-export type ContextWorkspaceAttachment = {
-  originalName: string;
-  mediaType: string;
-  byteSize: number;
-  semanticKind: string;
-};
+import {
+  userInputWorkspaceInput,
+  type ContextWorkspaceAttachment,
+  type ContextWorkspaceInput,
+} from './workspace-input.ts';
+export { userInputWorkspaceInput };
+export type { ContextWorkspaceAttachment, ContextWorkspaceInput };
 
 export type ContextWorkspaceEntry = {
   role: 'primary' | 'related';
@@ -39,20 +30,6 @@ export type AgentGraphContentPacket = {
   references: ContextWorkspaceEntry[];
   external: ContextWorkspaceEntry[];
 };
-
-export function userInputWorkspaceInput(
-  logicalPath: string,
-  value: string,
-): ContextWorkspaceInput | null {
-  const text = value.trim();
-  if (!text) return null;
-  return {
-    role: 'primary',
-    kind: 'user-input',
-    logicalPath,
-    content: `# User Input\n\n${text}\n`,
-  };
-}
 
 export function agentGraphContentPacket(
   manifest: ContextWorkspaceManifest,

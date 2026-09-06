@@ -1,4 +1,4 @@
-import type { ContextWorkspaceInput } from '../../graph/agent/context-workspace.ts';
+import type { ContextWorkspaceInput } from '../../graph/agent/workspace-input.ts';
 import { PublicApiError } from '../../api-errors.ts';
 import { readTaskGraphNodesSnapshot } from '../../graph/task/nodes.ts';
 import type { RegisteredProject } from '../../project-registry.ts';
