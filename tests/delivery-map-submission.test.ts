@@ -29,9 +29,18 @@ const store: DeliveryPublicationHost = {
   list: async () => [],
 };
 
+const SOURCE_CONTENT =
+  '# Example\n\nExample anchor text is stated once.\nA deferred sentence sits here.\n';
+const USER_INPUT_CONTENT =
+  'Implement all requested behavior. Defer this requirement.\n';
+
 const evidence = {
   sourceUids: ['feature-1'],
-  userInput: { path: 'what-to-do/input.md', sha256: '2'.repeat(64) },
+  userInput: {
+    path: 'what-to-do/input.md',
+    sha256: '2'.repeat(64),
+    content: USER_INPUT_CONTENT,
+  },
   sourceSnapshots: [
     {
       logicalPath: 'docs/example.md',
@@ -39,6 +48,10 @@ const evidence = {
       storedPath: `what-to-do/runs/${RUN_ID}/context/primary/example.md`,
     },
   ],
+  knownSources: {
+    'docs/example.md': { sha256: '1'.repeat(64), content: SOURCE_CONTENT },
+  },
+  knownEvidencePaths: ['docs/example.md'],
 };
 
 async function fixture(t: test.TestContext) {
@@ -416,5 +429,115 @@ void test('an adjustment applies a Source Claim update to the preserved Claim', 
     (error: unknown) =>
       error instanceof MaterializationError &&
       error.message === 'Source Claim update missing-claim does not exist.',
+  );
+});
+
+function excludedClaim(anchor: string) {
+  return {
+    claimId: 'claim-2',
+    source: { kind: 'source' as const, path: 'docs/example.md' },
+    anchor: 'A deferred sentence sits here.',
+    summary: 'The source asks for something the user deferred.',
+    disposition: 'out-of-scope' as const,
+    contracts: [],
+    exclusionReason: 'User deferred it',
+    exclusionAuthority: { anchor },
+  };
+}
+
+void test('an exclusion anchor absent from the User Input is rejected', async (t) => {
+  const project = await fixture(t);
+  await assert.rejects(
+    submitDeliveryMapResult(
+      project,
+      await emptyBasis(project),
+      {
+        ...example,
+        sourceClaims: [
+          ...example.sourceClaims,
+          excludedClaim('Skip the authentication work'),
+        ],
+      },
+      { runId: RUN_ID, ...evidence },
+      store,
+    ),
+    (error: unknown) =>
+      error instanceof MaterializationError &&
+      error.message ===
+        'Source Claim exclusion authority must occur exactly once in current User Input.',
+  );
+  const canonical = await readWhatToDoCurrentMapWithFingerprint(project);
+  assert.equal(canonical.fingerprint, 'absent');
+});
+
+void test('an exclusion anchor quoted from the User Input is published', async (t) => {
+  const project = await fixture(t);
+  const published = await submitDeliveryMapResult(
+    project,
+    await emptyBasis(project),
+    {
+      ...example,
+      sourceClaims: [
+        ...example.sourceClaims,
+        excludedClaim('Defer this requirement.'),
+      ],
+    },
+    { runId: RUN_ID, ...evidence },
+    store,
+  );
+  assert.deepEqual(published.map!.sourceClaims[1]!.exclusionAuthority, {
+    userInputPath: evidence.userInput.path,
+    userInputSha256: evidence.userInput.sha256,
+    anchor: 'Defer this requirement.',
+  });
+});
+
+void test('a Claim anchor absent from its frozen source is rejected', async (t) => {
+  const project = await fixture(t);
+  await assert.rejects(
+    submitDeliveryMapResult(
+      project,
+      await emptyBasis(project),
+      {
+        ...example,
+        sourceClaims: [
+          { ...example.sourceClaims[0]!, anchor: 'Never written anywhere' },
+        ],
+      },
+      { runId: RUN_ID, ...evidence },
+      store,
+    ),
+    (error: unknown) =>
+      error instanceof MaterializationError &&
+      error.message ===
+        'A Source Claim anchor must occur exactly once in its frozen source.',
+  );
+});
+
+void test('a Contract citing unknown evidence is rejected', async (t) => {
+  const project = await fixture(t);
+  await assert.rejects(
+    submitDeliveryMapResult(
+      project,
+      await emptyBasis(project),
+      {
+        ...example,
+        contracts: [
+          {
+            ...example.contracts[0]!,
+            domainImpact: {
+              kind: 'reuse',
+              reason: 'Reuse it.',
+              evidencePaths: ['docs/absent.md'],
+            },
+          },
+        ],
+      },
+      { runId: RUN_ID, ...evidence },
+      store,
+    ),
+    (error: unknown) =>
+      error instanceof MaterializationError &&
+      error.message === 'The What to Do result references unknown evidence.',
   );
 });

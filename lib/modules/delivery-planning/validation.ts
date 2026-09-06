@@ -405,13 +405,21 @@ function deliveryReferenceKey(reference: DeliveryContractReference) {
     : `contract:${reference.id}`;
 }
 
+export type DeliveryMapFrozenEvidence = {
+  knownSources: Readonly<Record<string, { sha256: string; content: string }>>;
+  userInput: { path: string; sha256: string; content: string };
+  knownEvidencePaths: Iterable<string>;
+};
+
 export function validateDeliveryMapPlan(
   basis: {
     operation: 'create-map' | 'adjust-map';
     currentMap: WhatToDoDeliveryMap | null;
   },
   result: Extract<DeliveryMapResult, { outcome: 'map-proposal' }>,
+  evidence: DeliveryMapFrozenEvidence,
 ) {
+  const knownEvidence = new Set(evidence.knownEvidencePaths);
   const proposed = result.contracts.map(
     (contract) => `proposal:${contract.localKey}`,
   );
@@ -442,6 +450,7 @@ export function validateDeliveryMapPlan(
       contract.acceptanceCriteria.map((criterion) => criterion.id),
       'Acceptance criterion identifiers must be unique within one Contract.',
     );
+    requireKnownPaths(contract.domainImpact.evidencePaths, knownEvidence);
   }
 
   if (basis.operation === 'create-map' && result.recomposition) {
@@ -587,7 +596,25 @@ export function validateDeliveryMapPlan(
       fail(
         `Previously acknowledged Source Claim ${claim.claimId} changed identity.`,
       );
+    if (!previous) {
+      const source = evidence.knownSources[claim.source.path];
+      if (!source) fail('A Source Claim does not match a frozen source.');
+      requireUniqueExcerpt(
+        source.content,
+        claim.anchor,
+        'A Source Claim anchor must occur exactly once in its frozen source.',
+      );
+    }
+    if (claim.exclusionAuthority)
+      requireUniqueExcerpt(
+        evidence.userInput.content,
+        claim.exclusionAuthority.anchor,
+        'Source Claim exclusion authority must occur exactly once in current User Input.',
+      );
   }
+  for (const sourcePath of Object.keys(evidence.knownSources))
+    if (!result.sourceClaims.some((claim) => claim.source.path === sourcePath))
+      fail('Every selected Product Design Feature needs a Source Claim.');
   for (const claimId of previousClaims.keys())
     if (!claimIds.has(claimId))
       fail(`Previously acknowledged Source Claim ${claimId} is missing.`);

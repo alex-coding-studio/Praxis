@@ -19,6 +19,7 @@ import {
 import {
   mergeDeliveryMapClaims,
   validateDeliveryMapPlan,
+  type DeliveryMapFrozenEvidence,
 } from './validation.ts';
 import {
   atomicWhatToDoText,
@@ -199,7 +200,11 @@ export async function submitDeliveryMapResult(
   project: RegisteredProject,
   basis: DeliveryMapBasis,
   result: DeliveryMapResult,
-  submission: { runId: string; updatedAt?: string } & DeliveryMapEvidence,
+  submission: {
+    runId: string;
+    updatedAt?: string;
+  } & DeliveryMapEvidence &
+    DeliveryMapFrozenEvidence,
   host: DeliveryPublicationHost,
 ): Promise<PublishedDeliveryMap> {
   try {
@@ -214,7 +219,17 @@ export async function submitDeliveryMapResult(
     result.outcome === 'map-proposal'
       ? mergeDeliveryMapClaims(basis, result)
       : result;
-  if (merged.outcome === 'map-proposal') validateDeliveryMapPlan(basis, merged);
+  if (merged.outcome === 'map-proposal') {
+    for (const snapshot of submission.sourceSnapshots) {
+      const source = submission.knownSources[snapshot.logicalPath];
+      if (!source || source.sha256 !== snapshot.sha256)
+        throw new MaterializationError(
+          'validation',
+          `The frozen source content is unavailable: ${snapshot.logicalPath}.`,
+        );
+    }
+    validateDeliveryMapPlan(basis, merged, submission);
+  }
   const map = computeDeliveryMap(
     basis,
     merged,
