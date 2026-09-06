@@ -20,6 +20,7 @@ export type ScopeDecompositionPublicationRecord = {
   runId: string;
   sourceNodeId: string;
   operation: string;
+  recomposeCandidateIds?: string[];
   status: string;
   startedAt: string;
   updatedAt: string;
@@ -176,6 +177,9 @@ export async function submitScopeDecompositionResult(
       runId: assertRunId(submission.runId ?? `RUN-${randomUUID()}`),
       sourceNodeId: submission.sourceNodeId,
       operation: basis.operation,
+      ...(basis.recomposeCandidateIds.length && {
+        recomposeCandidateIds: [...basis.recomposeCandidateIds],
+      }),
       status: 'proposal',
       startedAt: timestamp,
       updatedAt: timestamp,

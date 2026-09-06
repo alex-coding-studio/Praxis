@@ -6,6 +6,7 @@ import path from 'node:path';
 import { createStartNode } from '../lib/graph/task/model.ts';
 import { prepareScopeDecompositionMaterializationBasis } from '../lib/modules/scope-decomposition/basis.ts';
 import { submitScopeDecompositionResult } from '../lib/modules/scope-decomposition/publish.ts';
+import { successfulRecomposeSupersededCandidateIds } from '../lib/graph/agent/recompose.ts';
 import {
   listLatestTaskDecompositionRuns,
   readTaskDecompositionRun,
@@ -159,4 +160,64 @@ void test('a direct insufficient-evidence outcome creates no Candidate', async (
   assert.equal(published.outcome, 'insufficient-evidence');
   assert.deepEqual(published.candidates, []);
   assert.deepEqual(published.candidatePaths, {});
+});
+
+void test('a direct Recompose supersedes the Candidates it selected', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const first = await submitScopeDecompositionResult(
+    await basisFor(project, sourceNodeId),
+    { outcome: 'proposal', candidates: [candidate('capture', sourceNodeId)] },
+    { sourceNodeId },
+  );
+  const superseded = first.candidates[0]!.candidateId;
+
+  const recomposeBasis = await prepareScopeDecompositionMaterializationBasis(
+    project,
+    {
+      operation: 'recompose-candidates',
+      recomposeCandidateIds: [superseded],
+      intention: 'understanding',
+      motion: 'unspecified',
+      knownNodeIds: [sourceNodeId],
+      acceptedCandidateIds: [],
+      knownResourcePaths: [],
+      reservedCandidateIds: [],
+      currentCandidates: [
+        { candidateId: superseded, revision: 1, dependsOn: [] },
+      ],
+    },
+  );
+  const recomposed = await submitScopeDecompositionResult(
+    recomposeBasis,
+    {
+      outcome: 'proposal',
+      candidates: [candidate('replacement', sourceNodeId)],
+      recomposition: {
+        effects: [
+          {
+            kind: 'replace',
+            from: [{ kind: 'candidate', id: superseded }],
+            to: [{ kind: 'proposal', localKey: 'replacement' }],
+          },
+        ],
+      },
+    },
+    { sourceNodeId },
+  );
+
+  const stored = await readTaskDecompositionRun(project, recomposed.runId);
+  assert.deepEqual(
+    stored.recomposeCandidateIds,
+    [superseded],
+    'a direct Recompose must persist the working set the readers use',
+  );
+  assert.deepEqual(
+    [
+      ...successfulRecomposeSupersededCandidateIds(
+        await listLatestTaskDecompositionRuns(project),
+      ),
+    ],
+    [superseded],
+    'the replaced Candidate must leave the current working set',
+  );
 });
