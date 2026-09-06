@@ -28,6 +28,8 @@ const HARNESS = String.raw`lib/modules/[^/]+/harness\.tsx?$`;
 const PROMPT = String.raw`lib/modules/[^/]+/prompt\.tsx?$`;
 const MODULE_CONTEXT = String.raw`lib/modules/[^/]+/context\.tsx?$`;
 const AGENT_GRAPH_IO = String.raw`lib/graph/agent/(?:run|input|context-workspace)\.ts$`;
+const AGENT_RUNTIME = String.raw`lib/agents/(?:transport|runtime-driver|event-driven-transport|legacy-session-driver|host-job-broker|models|skills)\.tsx?$`;
+const AGENT_PROVIDERS = String.raw`lib/agents/(?:claude|codex|deepseek)/`;
 
 const MATERIALIZER_MEMBERS = [
   String.raw`lib/materialization/`,
@@ -38,6 +40,11 @@ const MATERIALIZER_MEMBERS = [
 ];
 
 const ADAPTER_MEMBERS = [String.raw`lib/modules/[^/]+/producer-adapter\.tsx?$`];
+
+const MCP_TRANSPORT_MEMBERS = [
+  String.raw`lib/mcp/`,
+  String.raw`app/api/mcp/route\.tsx?$`,
+];
 
 export const MATERIALIZATION_REQUIRED_FILES = [
   'lib/materialization/contract.ts',
@@ -80,6 +87,17 @@ export const MATERIALIZATION_REQUIRED_FILES = [
   'lib/modules/scope-decomposition/producer-adapter.ts',
   'lib/modules/domain-modeling/producer-adapter.ts',
   'lib/modules/delivery-planning/producer-adapter.ts',
+  'lib/mcp/authorization.ts',
+  'lib/mcp/artifacts.ts',
+  'lib/mcp/catalog.ts',
+  'lib/mcp/credentials.ts',
+  'lib/mcp/errors.ts',
+  'lib/mcp/modules.ts',
+  'lib/mcp/pagination.ts',
+  'lib/mcp/server.ts',
+  'lib/mcp/tool-schemas.ts',
+  'lib/mcp/uri.ts',
+  'app/api/mcp/route.ts',
 ];
 
 export function materializationBoundaryPolicy(
@@ -105,6 +123,18 @@ export function materializationBoundaryPolicy(
         name: 'adapter',
         members: ADAPTER_MEMBERS.map(anchored),
         forbidden: [AGENT_TRANSPORT, RUN_SERVICE].map(anchored),
+      },
+      {
+        name: 'mcp-transport',
+        members: MCP_TRANSPORT_MEMBERS.map(anchored),
+        forbidden: [
+          AGENT_RUNTIME,
+          AGENT_PROVIDERS,
+          RUN_SERVICE,
+          HARNESS,
+          PROMPT,
+          AGENT_GRAPH_IO,
+        ].map(anchored),
       },
     ],
     requiredFiles: requiredFiles.map((file) => `${prefix}${file}`),

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { PublicApiError } from '../api-errors.ts';
 import type { AgentProfile } from '../agents/profile.ts';
@@ -73,9 +74,31 @@ export class ActiveRunConflictError extends PublicApiError {
 
 const state = globalThis as typeof globalThis & {
   __praxisActiveRuns?: Map<string, ActiveRunReservation>;
+  __praxisActiveRunsOwner?: string;
 };
 const registry = (state.__praxisActiveRuns ??= new Map());
+const moduleInstanceId = randomUUID();
+state.__praxisActiveRunsOwner ??= moduleInstanceId;
 const handles = new WeakMap<ActiveRunReservation, ActiveRunHandle>();
+
+export type ActiveRunRegistryOwnership = {
+  hostPid: number;
+  moduleInstanceId: string;
+  registryOwnerId: string;
+  shared: boolean;
+  activeOwners: number;
+};
+
+export function activeRunRegistryOwnership(): ActiveRunRegistryOwnership {
+  const registryOwnerId = state.__praxisActiveRunsOwner as string;
+  return {
+    hostPid: process.pid,
+    moduleInstanceId,
+    registryOwnerId,
+    shared: moduleInstanceId === registryOwnerId,
+    activeOwners: registry.size,
+  };
+}
 
 export function getActiveRun(owner: ResponseOwner) {
   return registry.get(ownerKey(owner)) ?? null;
