@@ -32,7 +32,7 @@ const MATERIALIZER_MEMBERS = [
   String.raw`lib/materialization/`,
   String.raw`lib/graph/proposal/`,
   String.raw`lib/graph/task/nodes\.ts$`,
-  String.raw`lib/modules/[^/]+/(?:contract|basis|validation|materializer)\.tsx?$`,
+  String.raw`lib/modules/[^/]+/(?:contract|basis|validation|materializer|publish)\.tsx?$`,
 ];
 
 const ADAPTER_MEMBERS = [String.raw`lib/modules/[^/]+/producer-adapter\.tsx?$`];
