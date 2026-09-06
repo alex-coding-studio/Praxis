@@ -32,6 +32,7 @@ export type McpModuleDefinition = {
   responseOwner: ResponseModule;
   materializationModule: MaterializationModule;
   implementationPath: string;
+  runsRoot: string;
   layers: readonly string[];
   contract: ResultContract<unknown>;
   example: unknown;
@@ -45,6 +46,7 @@ export const MCP_MODULE_DEFINITIONS: Record<McpModule, McpModuleDefinition> = {
     responseOwner: 'whats-next',
     materializationModule: 'whats-next',
     implementationPath: 'lib/modules/product-discovery',
+    runsRoot: 'whats-next',
     layers: ['discovery', 'product-design'],
     contract:
       PRODUCT_EXPLORATION_RESULT_CONTRACT as unknown as ResultContract<unknown>,
@@ -57,6 +59,7 @@ export const MCP_MODULE_DEFINITIONS: Record<McpModule, McpModuleDefinition> = {
     responseOwner: 'task-decomposition',
     materializationModule: 'task-graph',
     implementationPath: 'lib/modules/scope-decomposition',
+    runsRoot: 'task-decomposition',
     layers: [],
     contract:
       SCOPE_DECOMPOSITION_RESULT_CONTRACT as unknown as ResultContract<unknown>,
@@ -74,6 +77,7 @@ export const MCP_MODULE_DEFINITIONS: Record<McpModule, McpModuleDefinition> = {
     responseOwner: 'domain-model',
     materializationModule: 'domain-model',
     implementationPath: 'lib/modules/domain-modeling',
+    runsRoot: 'domain-model',
     layers: [],
     contract:
       DOMAIN_MODEL_RESULT_CONTRACT as unknown as ResultContract<unknown>,
@@ -86,6 +90,7 @@ export const MCP_MODULE_DEFINITIONS: Record<McpModule, McpModuleDefinition> = {
     responseOwner: 'what-to-do',
     materializationModule: 'what-to-do',
     implementationPath: 'lib/modules/delivery-planning',
+    runsRoot: 'what-to-do',
     layers: [],
     contract:
       DELIVERY_MAP_RESULT_CONTRACT as unknown as ResultContract<unknown>,

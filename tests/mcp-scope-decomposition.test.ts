@@ -14,7 +14,8 @@ const { prepareScopeDecompositionOperation } =
   await import('../lib/mcp/prepare-scope-decomposition.ts');
 const { submitScopeDecompositionOperation } =
   await import('../lib/mcp/submit-scope-decomposition.ts');
-const { findMcpOperation } = await import('../lib/mcp/operations.ts');
+const { findMcpOperation, writeMcpOperation } =
+  await import('../lib/mcp/operations.ts');
 const { isMcpRequestError } = await import('../lib/mcp/errors.ts');
 const assembly = await import('../lib/modules/scope-decomposition/assembly.ts');
 const catalog = await import('../lib/mcp/catalog.ts');
@@ -360,6 +361,50 @@ void test('a Product Exploration operation cannot be submitted through the Scope
       ),
     (error: unknown) =>
       isMcpRequestError(error) && error.envelope.code === 'CONTRACT_MISMATCH',
+  );
+});
+
+void test('a committed Scope Run settles an operation whose status write was lost', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const { record } = await prepareAndSubmit(
+    project as never,
+    sourceNodeId,
+    {},
+    proposal(sourceNodeId, [['first', 'Import the reading list']]),
+  );
+  const published = (await findMcpOperation(project, record.operationId))!;
+  assert.equal(published.status, 'completed');
+  await writeMcpOperation(project, {
+    ...published,
+    status: 'running',
+    settledAt: null,
+    outcome: null,
+    receipt: null,
+  });
+  const recovered = JSON.parse(
+    (await catalog.readOperationResource(project.id, record.operationId)).text,
+  ) as Record<string, unknown>;
+  assert.equal(
+    recovered.status,
+    'completed',
+    'recovery must read the Scope Run directory, not another module',
+  );
+  assert.equal(
+    (recovered.receipt as { outcome: string }).outcome,
+    'candidates',
+  );
+  const retry = await submitScopeDecompositionOperation(
+    project,
+    record.operationId,
+    record.contract,
+    proposal(sourceNodeId, [['first', 'Import the reading list']]),
+  );
+  assert.equal(retry.replayed, true);
+  assert.equal(retry.record.status, 'completed');
+  assert.equal(
+    (await assembly.collectLatestUnacceptedCandidateStates(project)).length,
+    1,
+    'recovery must not republish',
   );
 });
 

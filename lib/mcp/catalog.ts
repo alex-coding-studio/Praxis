@@ -495,7 +495,11 @@ export async function reconcileMcpOperation(
 ): Promise<McpOperationRecord> {
   if (record.status !== 'running' && record.status !== 'interrupted')
     return record;
-  const committed = await readCommittedRunReceipt(project, record.runId);
+  const committed = await readCommittedRunReceipt(
+    project,
+    MCP_MODULE_DEFINITIONS[record.module].runsRoot,
+    record.runId,
+  );
   if (!committed) {
     if (
       record.status === 'running' &&
@@ -528,11 +532,12 @@ export async function reconcileMcpOperation(
 
 async function readCommittedRunReceipt(
   project: RegisteredProject,
+  runsRoot: string,
   runId: string,
 ) {
   const file = path.join(
     project.planningPath,
-    'whats-next',
+    runsRoot,
     'runs',
     runId,
     'run.json',
