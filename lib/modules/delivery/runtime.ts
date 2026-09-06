@@ -37,7 +37,7 @@ import {
   WORKER_INSTRUCTIONS,
 } from './instructions.ts';
 import {
-  deliveryTechnicalReady,
+  shouldPrepareDeliveryReview,
   type DeliveryRecord,
   type DeliveryRun,
 } from './record.ts';
@@ -840,20 +840,14 @@ async function executeDelivery(
     );
     assertActive();
     const delivered = await record();
-    if (
-      run.kind !== 'brief' &&
-      delivered.stopAt !== 'draft-pr' &&
-      delivered.publication?.draft &&
-      delivered.response?.status !== 'fail' &&
-      deliveryTechnicalReady(delivered, delivered.publication.head)
-    ) {
+    if (run.kind !== 'brief' && shouldPrepareDeliveryReview(delivered)) {
       await readyDeliveryForReview(project, uid);
       log.append({
         level: 'INFO',
         actor: 'HOST',
         phase: 'PUBLISH',
         event: 'delivery.ready-for-review',
-        message: `${delivered.publication.url} is ready for review. User acceptance is still pending.`,
+        message: `${delivered.publication!.url} is ready for review. User acceptance is still pending.`,
       });
     }
     assertActive();

@@ -121,6 +121,15 @@ export function deliveryTechnicalReady(record: DeliveryRecord, head: string) {
   );
 }
 
+export function shouldPrepareDeliveryReview(record: DeliveryRecord) {
+  return Boolean(
+    record.stopAt !== 'draft-pr' &&
+    record.publication?.draft &&
+    record.response?.status !== 'fail' &&
+    deliveryTechnicalReady(record, record.publication.head),
+  );
+}
+
 export function deliveryEvidenceBlockers(
   record: DeliveryRecord,
   head: string,
