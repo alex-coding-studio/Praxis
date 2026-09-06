@@ -4,6 +4,7 @@ import { claimDeliveryTarget } from './ownership.ts';
 import { readDeliveryRecord, updateDeliveryRecord } from './storage.ts';
 import { deliveryEvidenceReady } from './record.ts';
 import { deliveryGit, latestDeliveryMain } from './workspace.ts';
+import { assertCurrentDeliverySource } from './sources.ts';
 
 export async function recognizeExistingDelivery(
   project: RegisteredProject,
@@ -58,6 +59,7 @@ export async function acceptExistingDelivery(
       !record.existingDelivery
     )
       throw new PublicApiError('Refresh the proposed existing delivery.', 409);
+    await assertCurrentDeliverySource(project, record);
     const head = await latestDeliveryMain(project);
     if (
       record.existingDelivery.head !== head ||

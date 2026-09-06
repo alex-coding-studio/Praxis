@@ -559,6 +559,7 @@ export function DeliveryWorkspace({
             </div>
             <div className="flex flex-col items-end gap-2">
               {record &&
+                !record.lastWithdrawal &&
                 !record.acceptedHead &&
                 record.status !== 'completed' && (
                   <Button
@@ -607,6 +608,7 @@ export function DeliveryWorkspace({
                   <Button
                     disabled={
                       pending ||
+                      target.sourceChanged ||
                       !deliveryCandidateReady(record, record.publication.head)
                     }
                     onClick={() => {
@@ -627,6 +629,7 @@ export function DeliveryWorkspace({
                   <Button
                     disabled={
                       pending ||
+                      target.sourceChanged ||
                       !deliveryEvidenceReady(
                         record,
                         record.existingDelivery.head,

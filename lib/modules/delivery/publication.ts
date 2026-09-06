@@ -17,6 +17,7 @@ import { readDeliveryRecord, updateDeliveryRecord } from './storage.ts';
 import { deliveryCandidateReady } from './record.ts';
 import { syncProjectMain } from '../../sync-project-main.ts';
 import { claimDeliveryTarget } from './ownership.ts';
+import { assertCurrentDeliverySource } from './sources.ts';
 
 const execute = promisify(execFile);
 const runner: HostCommandRunner = async (command, args, options) =>
@@ -108,6 +109,7 @@ export async function acceptDelivery(
         );
       if (record.runs.at(-1)?.status === 'running')
         throw new PublicApiError('Wait for the current run.', 409);
+      await assertCurrentDeliverySource(project, record);
       const head = await git(record.workspace.path, 'rev-parse', 'HEAD');
       if (!deliveryCandidateReady(record, head))
         throw new PublicApiError(

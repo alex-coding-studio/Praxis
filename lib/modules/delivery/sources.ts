@@ -8,6 +8,21 @@ import {
 } from '../../graph/task/nodes.ts';
 import { readWhatToDoCurrentMap } from '../delivery-planning/storage.ts';
 import type { DeliverySource } from './types.ts';
+import { PublicApiError } from '../../api-errors.ts';
+import type { DeliveryRecord } from './record.ts';
+
+export async function assertCurrentDeliverySource(
+  project: RegisteredProject,
+  record: DeliveryRecord,
+) {
+  const { sources } = await readDeliverySources(project);
+  const source = sources.find((entry) => entry.sourceUid === record.sourceUid);
+  if (!source || source.sourceFingerprint !== record.sourceFingerprint)
+    throw new PublicApiError(
+      'The delivery source changed. Refresh the brief and evidence before accepting.',
+      409,
+    );
+}
 
 export function nodeDeliveryKind(
   node: TaskGraphNode,

@@ -1,6 +1,7 @@
+import { readDeliverySources } from '../lib/modules/delivery/sources.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { acceptDelivery } from '../lib/modules/delivery/publication.ts';
@@ -29,19 +30,35 @@ async function fixture(t: test.TestContext) {
     codePath: rootPath,
   } as RegisteredProject;
   const uid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const nodePath = path.join(
+    project.planningPath,
+    'whats-next/nodes/NODE-aaaaaaaa',
+  );
+  await mkdir(nodePath, { recursive: true });
+  await writeFile(
+    path.join(nodePath, 'node.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      id: 'NODE-aaaaaaaa',
+      uid,
+      role: 'node',
+      type: 'MVP',
+      title: 'Fixture',
+      status: 'accepted',
+      layer: 'discovery',
+      artifactKind: 'mvp',
+      resources: [],
+      dependsOn: [],
+      derivedFrom: [],
+      relations: { dependsOn: [], derivedFrom: [] },
+      createdAt: 'now',
+      updatedAt: 'now',
+    }),
+  );
+  await writeFile(path.join(nodePath, 'output.md'), '# Fixture');
   await createDeliveryRecord(
     project,
-    {
-      sourceUid: uid,
-      sourceId: 'NODE-aaaaaaaa',
-      sourceKind: 'mvp',
-      sourceModule: 'whats-next',
-      title: 'Fixture',
-      summary: '',
-      dependsOn: [],
-      outputPaths: [],
-      sourceFingerprint: 'source',
-    },
+    (await readDeliverySources(project)).sources[0],
     {
       orchestrator: { agent: 'codex', model: '', effort: '' },
       workers: [],
@@ -189,10 +206,7 @@ void test('user can accept verified current-main work without a new commit or pu
     'Existing implementation',
   );
   const head = await deliveryGit(project.rootPath, 'rev-parse', 'HEAD');
-  await writeFile(
-    path.join(project.rootPath, '.git/info/exclude'),
-    'delivery/\n',
-  );
+  await writeFile(path.join(project.rootPath, '.git/info/exclude'), '*\n');
   await updateDeliveryRecord(project, uid, (record) => {
     record.publication = null;
     record.workspace = { path: project.rootPath, branch: 'main', base: head };
@@ -215,4 +229,45 @@ void test('user can accept verified current-main work without a new commit or pu
   assert.equal(accepted.publication, null);
   assert.equal(accepted.acceptedHead, head);
   assert.equal(await deliveryGit(project.rootPath, 'rev-parse', 'HEAD'), head);
+});
+
+void test('changed or removed source prevents both acceptance paths before GitHub or completion', async (t) => {
+  const { project, uid, record } = await fixture(t);
+  await updateDeliveryRecord(project, uid, (current) => {
+    current.existingDelivery = { head: 'head', reason: 'Already implemented' };
+  });
+  await writeFile(
+    path.join(project.planningPath, 'whats-next/nodes/NODE-aaaaaaaa/output.md'),
+    '# Changed requirements',
+  );
+  let current = (await readDeliveryRecord(project, uid))!;
+  await assert.rejects(
+    acceptDelivery(project, uid, current.revision, {
+      runner: async () => {
+        throw new Error('Unexpected GitHub call');
+      },
+    }),
+    /source changed/,
+  );
+  await assert.rejects(
+    acceptExistingDelivery(project, uid, current.revision),
+    /source changed/,
+  );
+  assert.equal((await readDeliveryRecord(project, uid))!.acceptedHead, null);
+  await rm(path.join(project.planningPath, 'whats-next/nodes/NODE-aaaaaaaa'), {
+    recursive: true,
+  });
+  current = (await readDeliveryRecord(project, uid))!;
+  await assert.rejects(
+    acceptDelivery(project, uid, current.revision),
+    /source changed/,
+  );
+  await assert.rejects(
+    acceptExistingDelivery(project, uid, current.revision),
+    /source changed/,
+  );
+  assert.equal(
+    (await readDeliveryRecord(project, uid))!.publication!.head,
+    record.publication!.head,
+  );
 });

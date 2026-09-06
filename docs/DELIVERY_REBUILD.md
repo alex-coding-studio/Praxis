@@ -1,6 +1,6 @@
 # Development Delivery
 
-Status: implementation in progress in PR #214. Do not merge or reset live execution data until the remaining rollout work and user UI acceptance are complete.
+Status: delivery runtime increment in PR #214. The user authorized merging after final review and repository gates pass. Legacy retirement and real-project rollout below remain follow-up work; merging this increment does not claim they are complete.
 
 ## Product boundary
 
@@ -25,12 +25,12 @@ Before user acceptance, the user can explicitly withdraw the current delivery at
 - New production navigation and source status projections. Old implementation URLs redirect to the Target workspace, and old execution mutation endpoints have been removed.
 - Scoped reset command with a non-destructive default: `node --experimental-strip-types scripts/reset-legacy-delivery.ts --project=<id>`. Add `--execute` only at the rollout boundary.
 
-## Remaining work before rollout
+## Remaining cleanup and project rollout
 
 - Finish extracting shared publication, path and log utilities from the old implementation module. Remove retired Card/Plan/Action consumers and their obsolete tests at the reset boundary, without deleting graph-module behavior.
 - Complete final UI and real-project dogfood before rollout. Keep the shared Composer and context picker unchanged.
 - Run the verified one-time Locus execution reset only after the new flow is ready. Existing source graphs, repository commits and remote PRs remain intact.
-- Obtain user UI acceptance, complete final exact-head review and repository gates, then publish the final result.
+- Finish real-project acceptance and report the final legacy-retirement outcome separately from this runtime increment.
 
 ## Validation boundaries
 
