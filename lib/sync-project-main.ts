@@ -36,10 +36,7 @@ export async function syncProjectMain(directory: string) {
     await git('fetch', 'origin', 'refs/heads/main:refs/remotes/origin/main');
     const target = await git('rev-parse', 'refs/remotes/origin/main');
     let checkoutUpdated = false;
-    if (
-      (await git('branch', '--show-current')) === 'main' &&
-      !(await git('status', '--porcelain', '--untracked-files=all'))
-    ) {
+    if ((await git('branch', '--show-current')) === 'main') {
       const localHead = await git('rev-parse', 'HEAD');
       const canFastForward = await git(
         'merge-base',
@@ -53,6 +50,11 @@ export async function syncProjectMain(directory: string) {
         await git('merge', '--ff-only', target);
         checkoutUpdated = true;
       }
+      if (localHead !== target && !canFastForward)
+        throw new PublicApiError(
+          'Local main cannot fast-forward to origin/main. Resolve its local commits before syncing.',
+          409,
+        );
     }
     return {
       updated: before !== target || checkoutUpdated,
