@@ -155,7 +155,7 @@ async function readTree(root: string, relative = ''): Promise<string[]> {
 }
 
 const CAPTURED =
-  /(?:^|\/)(?:run\.json|node\.json|identities\.json|output\.md)$/;
+  /(?:^|\/)(?:run\.json|semantic-result\.json|node\.json|identities\.json|output\.md)$/;
 
 type CapturedFile = { key: string; text: string };
 

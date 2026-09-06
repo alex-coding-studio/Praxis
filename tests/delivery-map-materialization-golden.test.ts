@@ -3,7 +3,8 @@ import test from 'node:test';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { publishDeliveryMap } from '../lib/modules/delivery-planning/runs.ts';
+import { publishDeliveryMap } from '../lib/modules/delivery-planning/publish.ts';
+import { deliveryPublicationHost } from '../lib/modules/delivery-planning/publication-host.ts';
 import { startWhatToDoRun } from '../lib/modules/delivery-planning/runs.ts';
 import { createCanonicalizer } from './helpers/graph-materialization-golden.ts';
 import {
@@ -102,7 +103,7 @@ void test('a created Delivery Map publishes its Contracts and their output', asy
   const { project } = await fixture(t);
   const control = controlled();
   const created = await settleRun(project, control, input(), result);
-  await publishDeliveryMap(project, created.map!);
+  await publishDeliveryMap(project, created.map!, deliveryPublicationHost);
   await assertGolden('create-map', await captureDeliveryState(project));
 });
 
@@ -110,14 +111,14 @@ void test('a retained Contract keeps its identity across an adjusted Map', async
   const { project } = await fixture(t);
   const control = controlled();
   const created = await settleRun(project, control, input(), result);
-  await publishDeliveryMap(project, created.map!);
+  await publishDeliveryMap(project, created.map!, deliveryPublicationHost);
   const adjusted = await settleRun(
     project,
     control,
     { ...input(), sourceUids: [] },
     (run) => retainedResult(run, created.map!),
   );
-  await publishDeliveryMap(project, adjusted.map!);
+  await publishDeliveryMap(project, adjusted.map!, deliveryPublicationHost);
   assert.equal(adjusted.map!.contracts[0]!.id, created.map!.contracts[0]!.id);
   await assertGolden('retain-contract', await captureDeliveryState(project));
 });
@@ -127,14 +128,14 @@ void test('a replaced Contract supersedes the previous one', async (t) => {
   const control = controlled();
   const created = await settleRun(project, control, input(), result);
   const firstResult = result(created);
-  await publishDeliveryMap(project, created.map!);
+  await publishDeliveryMap(project, created.map!, deliveryPublicationHost);
   const replaced = await settleRun(
     project,
     control,
     { ...input(), sourceUids: [] },
     (run) => replacementResult(run, created.map!, firstResult),
   );
-  await publishDeliveryMap(project, replaced.map!);
+  await publishDeliveryMap(project, replaced.map!, deliveryPublicationHost);
   assert.notEqual(
     replaced.map!.contracts[0]!.id,
     created.map!.contracts[0]!.id,

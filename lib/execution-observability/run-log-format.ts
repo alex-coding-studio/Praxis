@@ -69,7 +69,8 @@ export function renderRunLogText(entries: RunLogEntry[]) {
 
 const noise = new Set(['Agent report received.', 'Agent call completed.']);
 
-const lifecycle = /^(?:run|phase|response|cancel|process|operation)\./;
+const lifecycle =
+  /^(?:run|phase|response|cancel|process|operation|materialization)\./;
 
 export function isReadableActivity(entry: RunLogEntry) {
   if (entry.event === 'job.progress') return false;

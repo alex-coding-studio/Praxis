@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DependencyGraph } from '../lib/graph/runtime-dependencies.ts';
@@ -33,6 +34,7 @@ const MATERIALIZER_MEMBERS = [
   String.raw`lib/graph/proposal/`,
   String.raw`lib/graph/task/nodes\.ts$`,
   String.raw`lib/modules/[^/]+/(?:contract|basis|validation|materializer|publish)\.tsx?$`,
+  String.raw`lib/modules/delivery-planning/map\.tsx?$`,
 ];
 
 const ADAPTER_MEMBERS = [String.raw`lib/modules/[^/]+/producer-adapter\.tsx?$`];
@@ -50,12 +52,29 @@ export const MATERIALIZATION_REQUIRED_FILES = [
   'lib/graph/proposal/validate.ts',
   'lib/graph/proposal/classify.ts',
   'lib/graph/proposal/dependencies.ts',
+  'lib/graph/proposal/promote.ts',
+  'lib/graph/proposal/resolve.ts',
+  'lib/graph/proposal/stage.ts',
   'lib/graph/task/nodes.ts',
-  'lib/modules/domain-modeling/materializer.ts',
   'lib/modules/product-discovery/contract.ts',
+  'lib/modules/product-discovery/basis.ts',
+  'lib/modules/product-discovery/validation.ts',
+  'lib/modules/product-discovery/materializer.ts',
+  'lib/modules/product-discovery/publish.ts',
   'lib/modules/scope-decomposition/contract.ts',
+  'lib/modules/scope-decomposition/basis.ts',
+  'lib/modules/scope-decomposition/validation.ts',
+  'lib/modules/scope-decomposition/materializer.ts',
+  'lib/modules/scope-decomposition/publish.ts',
   'lib/modules/domain-modeling/contract.ts',
+  'lib/modules/domain-modeling/basis.ts',
+  'lib/modules/domain-modeling/materializer.ts',
+  'lib/modules/domain-modeling/publish.ts',
   'lib/modules/delivery-planning/contract.ts',
+  'lib/modules/delivery-planning/basis.ts',
+  'lib/modules/delivery-planning/validation.ts',
+  'lib/modules/delivery-planning/map.ts',
+  'lib/modules/delivery-planning/publish.ts',
   'lib/modules/product-discovery/producer-adapter.ts',
   'lib/modules/scope-decomposition/producer-adapter.ts',
   'lib/modules/domain-modeling/producer-adapter.ts',
@@ -170,6 +189,22 @@ export function nonLiteralImports(
   );
 }
 
+export function missingRequiredFiles(
+  graph: DependencyGraph,
+  policy: MaterializationBoundaryPolicy = MATERIALIZATION_BOUNDARY_POLICY,
+  projectRoot = auditProjectRoot(),
+) {
+  const entries: Array<{ file: string; reason: 'missing' | 'not-analyzed' }> =
+    [];
+  for (const file of policy.requiredFiles) {
+    if (!existsSync(path.join(projectRoot, file)))
+      entries.push({ file, reason: 'missing' });
+    else if (!graph.modules.includes(file))
+      entries.push({ file, reason: 'not-analyzed' });
+  }
+  return entries;
+}
+
 export function auditProjectRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 }
@@ -182,6 +217,11 @@ export function runMaterializationBoundaryAudit(
     graph,
     violations: materializationBoundaryViolations(graph),
     nonLiteral: nonLiteralImports(graph),
+    missing: missingRequiredFiles(
+      graph,
+      MATERIALIZATION_BOUNDARY_POLICY,
+      projectRoot,
+    ),
   };
 }
 
@@ -189,7 +229,8 @@ if (
   process.argv[1] &&
   path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  const { graph, violations, nonLiteral } = runMaterializationBoundaryAudit();
+  const { graph, violations, nonLiteral, missing } =
+    runMaterializationBoundaryAudit();
   const guarded = MATERIALIZATION_BOUNDARY_POLICY.tiers.map((tier) => ({
     tier: tier.name,
     files: materializationBoundaryMembers(graph, tier).length,
@@ -204,6 +245,9 @@ if (
     process.stdout.write(
       `non-literal import: ${entry.from}:${entry.line}:${entry.column}\n`,
     );
-  if (guarded.some((entry) => entry.files === 0)) process.exit(2);
+  for (const entry of missing)
+    process.stdout.write(`required file ${entry.reason}: ${entry.file}\n`);
+  if (guarded.some((entry) => entry.files === 0) || missing.length)
+    process.exit(2);
   if (violations.length || nonLiteral.length) process.exit(3);
 }

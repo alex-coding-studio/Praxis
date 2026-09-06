@@ -1,4 +1,7 @@
-import { defineResultContract } from '../../materialization/contract.ts';
+import {
+  defineResultContract,
+  type ResultContract,
+} from '../../materialization/contract.ts';
 import {
   agentGraphRecomposeEffects,
   recomposeEffectSchema,
@@ -469,7 +472,7 @@ export const DELIVERY_MAP_RESULT_SCHEMA = {
   ],
 } as const;
 
-export const DELIVERY_MAP_RESULT_CONTRACT =
+export const DELIVERY_MAP_RESULT_CONTRACT: ResultContract<DeliveryMapResult> =
   defineResultContract<DeliveryMapResult>({
     id: DELIVERY_MAP_RESULT_CONTRACT_ID,
     version: DELIVERY_MAP_RESULT_CONTRACT_VERSION,

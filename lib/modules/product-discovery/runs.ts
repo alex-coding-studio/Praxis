@@ -79,7 +79,15 @@ import {
 } from './validation-context.ts';
 import { MaterializationError } from '../../materialization/receipt.ts';
 import { prepareProductExplorationMaterializationBasis } from './basis.ts';
-import { publishProductExplorationResult } from './publish.ts';
+import {
+  publishProductExplorationResult,
+  type MaterializationLog,
+} from './publish.ts';
+import { materializationLogEntry } from '../../materialization/log.ts';
+import {
+  rejectionReceipt,
+  type MaterializationReceipt,
+} from '../../materialization/receipt.ts';
 import {
   toProductExplorationCandidate,
   toProductExplorationSemanticResult,
@@ -177,6 +185,7 @@ export type WhatsNextRunRecord = {
   sessionUsage?: LocalAgentUsage | null;
   activity: AgentGraphActivity[];
   result: WhatsNextHarnessResult | null;
+  materialization?: MaterializationReceipt;
   error: string | null;
   logRef?: string;
   hostPid?: number;
@@ -1055,6 +1064,7 @@ async function finishWhatsNextRun(
         ),
         revisionTarget,
       },
+      reservation.record,
     );
     await writeProducerEvidence(
       project,
@@ -1085,7 +1095,17 @@ async function finishWhatsNextRun(
     const published = await publishProductExplorationResult(
       submission.basis,
       submission.semantic,
-      { kind: 'agent-run', record, resultBase: envelope },
+      {
+        kind: 'agent-run',
+        record,
+        resultBase: envelope,
+        harness: {
+          id: envelope.harness.id,
+          revision: envelope.harness.revision,
+        },
+      },
+      undefined,
+      reservation.record,
     );
     const result = published.record.result as WhatsNextHarnessResult;
     if (
@@ -1127,6 +1147,8 @@ async function finishWhatsNextRun(
     record.status = 'failed';
     record.error = original;
     record.response = classification;
+    const receipt = rejectionReceipt(error);
+    if (receipt) record.materialization = receipt;
     const active = activeRuns.get(runKey(project, record.runId));
     await active?.activityRecorder.flush();
     await writeAgentGraphRunEvidence(whatsNextRunPath(project, record.runId), {
@@ -1671,6 +1693,7 @@ async function prepareWhatsNextSubmission(
   project: RegisteredProject,
   output: string,
   input: WhatsNextValidationContextInput,
+  log: MaterializationLog = () => undefined,
 ) {
   const envelope = parseWhatsNextHarnessResult(
     output,
@@ -1722,6 +1745,12 @@ async function prepareWhatsNextSubmission(
           ),
         }
       : { ...subject, operation: 'explore' },
+  );
+  log(
+    materializationLogEntry(
+      'materialization.basis.prepared',
+      `Prepared the ${basis.operation} Basis at fingerprint ${basis.fingerprint.slice(0, 12)}.`,
+    ),
   );
   return {
     envelope,

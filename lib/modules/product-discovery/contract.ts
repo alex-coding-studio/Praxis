@@ -1,4 +1,7 @@
-import { defineResultContract } from '../../materialization/contract.ts';
+import {
+  defineResultContract,
+  type ResultContract,
+} from '../../materialization/contract.ts';
 import {
   CLARIFICATION_SCHEMA,
   GRAPH_PROPOSAL_CANDIDATE_PROPERTIES,
@@ -105,7 +108,7 @@ export const PRODUCT_EXPLORATION_RESULT_SCHEMA = {
   ],
 } as const;
 
-export const PRODUCT_EXPLORATION_RESULT_CONTRACT =
+export const PRODUCT_EXPLORATION_RESULT_CONTRACT: ResultContract<ProductExplorationResult> =
   defineResultContract<ProductExplorationResult>({
     id: PRODUCT_EXPLORATION_RESULT_CONTRACT_ID,
     version: PRODUCT_EXPLORATION_RESULT_CONTRACT_VERSION,

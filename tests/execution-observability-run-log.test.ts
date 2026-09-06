@@ -11,14 +11,23 @@ import {
 import {
   formatRunLogLine,
   parseRunLogText,
+  isReadableActivity,
   readableActivity,
   renderRunLogText,
 } from '../lib/execution-observability/run-log-format.ts';
+import {
+  MATERIALIZATION_LOG_EVENTS,
+  materializationLogEntry,
+} from '../lib/materialization/log.ts';
 import {
   createRunLog,
   openRunLog,
   readRunLogTail,
 } from '../lib/execution-observability/run-log.ts';
+
+const MATERIALIZATION_LOG_EVENT_NAMES = Object.keys(
+  MATERIALIZATION_LOG_EVENTS,
+) as Array<keyof typeof MATERIALIZATION_LOG_EVENTS>;
 
 const LINE =
   /^\d{6} \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z (INFO|WARN|ERROR) (HOST|AGENT|COORDINATOR|WORKER|JOB) (RUN|PREPARE|EXECUTE|VERIFY|PUBLISH|FINALIZE|STOP|RECOVERY) [a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+ — /;
@@ -409,5 +418,32 @@ void test('legacy execution activity and coordination traces adapt with Host, Co
       'ERROR WORKER EXECUTE worker.finished',
       'WARN COORDINATOR FINALIZE decision.recorded',
     ],
+  );
+});
+
+void test('HOST materialization events stay out of the readable activity strip', () => {
+  const entries = MATERIALIZATION_LOG_EVENT_NAMES.map((event, index) => ({
+    sequence: index + 1,
+    at: '2026-09-04T00:00:00.000Z',
+    ...materializationLogEntry(event, `${event} happened`),
+  }));
+  assert.ok(entries.length > 0);
+  assert.deepEqual(entries.filter(isReadableActivity), []);
+  assert.deepEqual(
+    [
+      ...entries,
+      {
+        sequence: entries.length + 1,
+        at: '2026-09-04T00:00:09.000Z',
+        level: 'INFO' as const,
+        actor: 'AGENT' as const,
+        phase: 'EXECUTE' as const,
+        event: 'agent.progress',
+        message: 'visible',
+      },
+    ]
+      .filter(isReadableActivity)
+      .map((entry) => entry.message),
+    ['visible'],
   );
 });

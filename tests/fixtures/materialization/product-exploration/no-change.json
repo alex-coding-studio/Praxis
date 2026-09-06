@@ -116,6 +116,61 @@
       "detail": "The current direction already covers this request.",
       "supplementaryWarnings": [],
       "recovery": ["log", "continue"]
+    },
+    "materialization": {
+      "schemaVersion": 1,
+      "contract": {
+        "id": "praxis.product-exploration.result",
+        "version": 1,
+        "hash": "H1"
+      },
+      "producer": {
+        "kind": "agent-run",
+        "runId": "RUN-U1",
+        "harness": {
+          "id": "praxis.whats-next",
+          "revision": 8
+        }
+      },
+      "basis": {
+        "fingerprint": "H2",
+        "preparedAt": "T"
+      },
+      "semanticResultHash": "H3",
+      "outcome": "no-change",
+      "affected": {
+        "candidateIds": [],
+        "nodeIds": [],
+        "contractIds": [],
+        "domainIds": []
+      },
+      "publication": {
+        "target": "run-record",
+        "at": "T",
+        "revision": null
+      },
+      "failure": null
+    }
+  },
+  "whats-next/runs/RUN-U1/semantic-result.json": {
+    "schemaVersion": 1,
+    "contract": {
+      "id": "praxis.product-exploration.result",
+      "version": 1,
+      "hash": "H1"
+    },
+    "producer": {
+      "kind": "agent-run",
+      "runId": "RUN-U1",
+      "harness": {
+        "id": "praxis.whats-next",
+        "revision": 8
+      }
+    },
+    "semanticResultHash": "H3",
+    "result": {
+      "outcome": "no-change",
+      "reason": "The current direction already covers this request."
     }
   }
 }

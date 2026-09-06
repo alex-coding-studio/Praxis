@@ -121,14 +121,14 @@
           "metadata": {},
           "presentation": {},
           "assumptions": ["The reader already has the source material."],
-          "outputMarkdown": "# Capture the item\n\n## Why this direction\n\n- It answers the stated need directly.\n- It can be judged without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n",
-          "layer": "discovery",
-          "artifactKind": "mvp",
           "uid": "U1",
           "relations": {
             "derivedFrom": ["U0"],
             "dependsOn": []
-          }
+          },
+          "outputMarkdown": "# Capture the item\n\n## Why this direction\n\n- It answers the stated need directly.\n- It can be judged without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n",
+          "layer": "discovery",
+          "artifactKind": "mvp"
         }
       ],
       "candidateAliases": {
@@ -144,6 +144,83 @@
       "detail": "The product needs one clear direction first.",
       "supplementaryWarnings": [],
       "recovery": ["log", "continue"]
+    },
+    "materialization": {
+      "schemaVersion": 1,
+      "contract": {
+        "id": "praxis.product-exploration.result",
+        "version": 1,
+        "hash": "H1"
+      },
+      "producer": {
+        "kind": "agent-run",
+        "runId": "RUN-U2",
+        "harness": {
+          "id": "praxis.whats-next",
+          "revision": 8
+        }
+      },
+      "basis": {
+        "fingerprint": "H2",
+        "preparedAt": "T"
+      },
+      "semanticResultHash": "H3",
+      "outcome": "candidates",
+      "affected": {
+        "candidateIds": ["CANDIDATE-U1"],
+        "nodeIds": [],
+        "contractIds": [],
+        "domainIds": []
+      },
+      "publication": {
+        "target": "run-record",
+        "at": "T",
+        "revision": null
+      },
+      "failure": null
+    }
+  },
+  "whats-next/runs/RUN-U2/semantic-result.json": {
+    "schemaVersion": 1,
+    "contract": {
+      "id": "praxis.product-exploration.result",
+      "version": 1,
+      "hash": "H1"
+    },
+    "producer": {
+      "kind": "agent-run",
+      "runId": "RUN-U2",
+      "harness": {
+        "id": "praxis.whats-next",
+        "revision": 8
+      }
+    },
+    "semanticResultHash": "H3",
+    "result": {
+      "outcome": "proposal",
+      "candidates": [
+        {
+          "localKey": "CANDIDATE-0001",
+          "type": "mvp",
+          "title": "Capture the item",
+          "summary": "Capture the item stated as one bounded outcome.",
+          "derivedFrom": [
+            {
+              "kind": "node",
+              "id": "NODE-U0"
+            }
+          ],
+          "dependsOn": [],
+          "resources": [],
+          "typeTemplateRef": null,
+          "metadata": {},
+          "presentation": {},
+          "assumptions": ["The reader already has the source material."],
+          "outputMarkdown": "# Capture the item\n\n## Why this direction\n\n- It answers the stated need directly.\n- It can be judged without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n",
+          "layer": "discovery",
+          "artifactKind": "mvp"
+        }
+      ]
     }
   },
   "whats-next/runs/RUN-U5/candidates/CANDIDATE-U1/output.md": "# Capture the item\n\n## Why this direction\n\n- It states the outcome the reader asked for.\n- It remains judgeable without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n",
@@ -184,7 +261,7 @@
       "intention": "mvp-exploration",
       "motion": "unspecified"
     },
-    "inputFingerprint": "H1",
+    "inputFingerprint": "H4",
     "startedAt": "T",
     "updatedAt": "T",
     "endedAt": "T",
@@ -205,7 +282,7 @@
       "request": {
         "sessionId": "SESSION-U3",
         "requestId": "REQUEST-U6",
-        "inputFingerprint": "H1"
+        "inputFingerprint": "H4"
       },
       "reflection": {
         "markdown": "The product needs one clear direction first.",
@@ -234,14 +311,14 @@
           "metadata": {},
           "presentation": {},
           "assumptions": ["The reader already has the source material."],
-          "outputMarkdown": "# Capture the item\n\n## Why this direction\n\n- It states the outcome the reader asked for.\n- It remains judgeable without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n",
-          "layer": "discovery",
-          "artifactKind": "mvp",
           "uid": "U1",
           "relations": {
             "derivedFrom": ["U0"],
             "dependsOn": []
-          }
+          },
+          "outputMarkdown": "# Capture the item\n\n## Why this direction\n\n- It states the outcome the reader asked for.\n- It remains judgeable without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n",
+          "layer": "discovery",
+          "artifactKind": "mvp"
         }
       ]
     },
@@ -254,6 +331,83 @@
       "detail": "The product needs one clear direction first.",
       "supplementaryWarnings": [],
       "recovery": ["log", "continue"]
+    },
+    "materialization": {
+      "schemaVersion": 1,
+      "contract": {
+        "id": "praxis.product-exploration.result",
+        "version": 1,
+        "hash": "H1"
+      },
+      "producer": {
+        "kind": "agent-run",
+        "runId": "RUN-U5",
+        "harness": {
+          "id": "praxis.whats-next",
+          "revision": 8
+        }
+      },
+      "basis": {
+        "fingerprint": "H5",
+        "preparedAt": "T"
+      },
+      "semanticResultHash": "H6",
+      "outcome": "candidates",
+      "affected": {
+        "candidateIds": ["CANDIDATE-U1"],
+        "nodeIds": [],
+        "contractIds": [],
+        "domainIds": []
+      },
+      "publication": {
+        "target": "run-record",
+        "at": "T",
+        "revision": null
+      },
+      "failure": null
+    }
+  },
+  "whats-next/runs/RUN-U5/semantic-result.json": {
+    "schemaVersion": 1,
+    "contract": {
+      "id": "praxis.product-exploration.result",
+      "version": 1,
+      "hash": "H1"
+    },
+    "producer": {
+      "kind": "agent-run",
+      "runId": "RUN-U5",
+      "harness": {
+        "id": "praxis.whats-next",
+        "revision": 8
+      }
+    },
+    "semanticResultHash": "H6",
+    "result": {
+      "outcome": "proposal",
+      "candidates": [
+        {
+          "localKey": "CANDIDATE-U1",
+          "type": "mvp",
+          "title": "Capture the item",
+          "summary": "Capture the item with one stated outcome.",
+          "derivedFrom": [
+            {
+              "kind": "node",
+              "id": "NODE-U0"
+            }
+          ],
+          "dependsOn": [],
+          "resources": [],
+          "typeTemplateRef": null,
+          "metadata": {},
+          "presentation": {},
+          "assumptions": ["The reader already has the source material."],
+          "outputMarkdown": "# Capture the item\n\n## Why this direction\n\n- It states the outcome the reader asked for.\n- It remains judgeable without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n",
+          "layer": "discovery",
+          "artifactKind": "mvp"
+        }
+      ]
     }
   }
 }
