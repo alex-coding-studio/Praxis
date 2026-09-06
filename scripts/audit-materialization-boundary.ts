@@ -46,6 +46,7 @@ export const MATERIALIZATION_REQUIRED_FILES = [
   'lib/materialization/receipt.ts',
   'lib/materialization/producer.ts',
   'lib/materialization/log.ts',
+  'lib/materialization/publication.ts',
   'lib/graph/proposal/reference.ts',
   'lib/graph/proposal/contract.ts',
   'lib/graph/proposal/basis.ts',
