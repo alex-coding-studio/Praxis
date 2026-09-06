@@ -190,6 +190,34 @@ void test('start, status, logs, restart and stop manage one detached server', as
   }
 });
 
+void test('mcp info reports the endpoint of a running managed server', async () => {
+  const env = isolatedEnv();
+  const port = String(await freePort());
+  const stop = () => run(['stop', '--port', port], env);
+  try {
+    const idle = run(['mcp', 'info'], env);
+    assert.equal(idle.status, 0, idle.stderr);
+    assert.match(idle.stdout, /No managed background Praxis server is running/);
+
+    const started = run(['start', '-d', '--port', port], env);
+    assert.equal(started.status, 0, started.stderr);
+
+    const info = run(['mcp', 'info'], env);
+    assert.equal(info.status, 0, info.stderr);
+    assert.match(
+      info.stdout,
+      new RegExp(`Endpoint: http://127\\.0\\.0\\.1:${port}/api/mcp`),
+      'a running server must have its endpoint reported',
+    );
+    assert.doesNotMatch(
+      info.stdout,
+      /No managed background Praxis server is running/,
+    );
+  } finally {
+    stop();
+  }
+});
+
 void test('dev mode is recorded on the managed server', async () => {
   const env = isolatedEnv();
   const port = String(await freePort());

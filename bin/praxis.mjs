@@ -668,7 +668,7 @@ async function mcpCredentials() {
 
 function runningMcpPorts() {
   return listStates()
-    .filter((state) => verifyState(state) === 'running')
+    .filter((state) => verifyState(state) === 'live')
     .map((state) => state.port);
 }
 
@@ -682,7 +682,9 @@ async function runMcpCommand(parsed) {
         : `Enabled the MCP endpoint with the existing credential.`,
     );
     console.log(`  Credential file: ${file}`);
-    console.log('  Restart the Praxis server so it reads the new setting.');
+    console.log(
+      '  A running Praxis server reads this on the next request; no restart is needed.',
+    );
     return;
   }
   if (parsed.subcommand === 'disable') {
@@ -704,7 +706,9 @@ async function runMcpCommand(parsed) {
       'Issued a new MCP credential. The previous one no longer works.',
     );
     console.log(`  Credential file: ${file}`);
-    console.log('  Update every configured client, then restart the server.');
+    console.log(
+      '  Update every configured client. A running server refuses the old credential on the next request.',
+    );
     return;
   }
   const stored = await credentials.readMcpCredentials();
