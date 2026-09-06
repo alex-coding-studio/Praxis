@@ -49,6 +49,7 @@ export type DeliveryRun = {
   error: string | null;
 };
 export type DeliveryRecord = DeliverySummary & {
+  stopAt?: 'draft-pr';
   attempt?: number;
   lastWithdrawal?: {
     at: string;

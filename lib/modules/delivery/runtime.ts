@@ -681,6 +681,7 @@ async function executeDelivery(
             role === 'worker' ? 'WORKER' : 'REVIEWER',
             JSON.stringify({
               instruction,
+              stopAt: current.stopAt ?? 'ready-for-review',
               brief: current.brief,
               userInstructions: current.instructions,
               moduleInstructions: run.moduleInstructions,
@@ -803,6 +804,7 @@ async function executeDelivery(
       'ORCHESTRATOR',
       JSON.stringify({
         kind: run.kind,
+        stopAt: current.stopAt ?? 'ready-for-review',
         input: run.input,
         source: current.source,
         contextRoot: project.planningPath,
@@ -840,6 +842,7 @@ async function executeDelivery(
     const delivered = await record();
     if (
       run.kind !== 'brief' &&
+      delivered.stopAt !== 'draft-pr' &&
       delivered.publication?.draft &&
       delivered.response?.status !== 'fail' &&
       deliveryTechnicalReady(delivered, delivered.publication.head)
