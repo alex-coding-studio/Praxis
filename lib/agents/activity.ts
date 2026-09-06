@@ -93,7 +93,11 @@ export function readLocalAgentActivity(
         };
     }
   }
-  if (event.type === 'turn.failed' || event.type === 'error')
+  if (
+    event.type === 'turn.failed' ||
+    event.type === 'error' ||
+    (event.type === 'result' && event.is_error === true)
+  )
     return { kind: 'result', summary: 'Agent reported an execution error.' };
   if (event.type === 'turn.completed' || event.type === 'result')
     return { kind: 'result', summary: 'Agent call completed.' };

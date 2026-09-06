@@ -3,6 +3,27 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { readLocalAgentActivity } from '../lib/agents/activity.ts';
+
+void test('Claude error results remain errors even when their subtype is success', () => {
+  assert.equal(
+    readLocalAgentActivity({
+      type: 'result',
+      subtype: 'success',
+      is_error: true,
+      terminal_reason: 'api_error',
+    })?.summary,
+    'Agent reported an execution error.',
+  );
+  assert.equal(
+    readLocalAgentActivity({
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+    })?.summary,
+    'Agent call completed.',
+  );
+});
 import {
   ClaudeSessionDriver,
   buildClaudeSessionArguments,
