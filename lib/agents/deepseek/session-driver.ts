@@ -124,6 +124,7 @@ async function loadSessionModules(): Promise<SessionModules> {
 async function bootSessionRuntime(
   workingDirectory: string,
   load: () => Promise<SessionModules> = loadSessionModules,
+  access: AgentRuntimeThread['access'] = 'workspace-write',
 ): Promise<SessionRuntime> {
   const dsh = await load();
   const nodeModules = findNodeModules(dirname(fileURLToPath(import.meta.url)));
@@ -136,7 +137,7 @@ async function bootSessionRuntime(
   const patches = buildDeepseekPatches(
     dsh.loadOverlayPatches('praxis', patchFile),
     workingDirectory,
-    'workspace-write',
+    access === 'read-only' ? 'read-only' : 'workspace-write',
   );
   const baseUrl = pathToFileURL(join(nodeModules, '/')).href;
   const configDir = await mkdtemp(join(tmpdir(), 'praxis-dsh-'));
@@ -190,7 +191,7 @@ export class DeepseekSessionDriver implements AgentSessionDriver {
   async startThread(
     input: AgentRuntimeThreadInput,
   ): Promise<AgentRuntimeThread> {
-    const runtime = await this.ensureRuntime(input.workingDirectory);
+    const runtime = await this.ensureRuntime(input);
     const provider = 'deepseek-official';
     const model = input.profile.model || 'deepseek-v4-flash';
     const effort = deepseekEffort(input.profile.effort ?? '');
@@ -220,6 +221,8 @@ export class DeepseekSessionDriver implements AgentSessionDriver {
       profile: input.profile,
       workingDirectory: input.workingDirectory,
       access: input.access,
+      instructions: input.instructions,
+      hostJobs: input.hostJobs,
     };
     this.threads.set(sessionId, {
       thread,
@@ -231,7 +234,7 @@ export class DeepseekSessionDriver implements AgentSessionDriver {
   }
 
   async resumeThread(thread: AgentRuntimeThread): Promise<AgentRuntimeThread> {
-    const runtime = await this.ensureRuntime(thread.workingDirectory);
+    const runtime = await this.ensureRuntime(thread);
     if (!this.threads.has(thread.threadId)) {
       const handle = await runtime.agents.resume({
         resumeSessionId: runtime.SessionId(thread.threadId),
@@ -311,14 +314,19 @@ export class DeepseekSessionDriver implements AgentSessionDriver {
   }
 
   private async ensureRuntime(
-    workingDirectory: string,
+    input: Pick<
+      AgentRuntimeThreadInput,
+      'workingDirectory' | 'access' | 'hostJobs'
+    >,
   ): Promise<SessionRuntime> {
     if (this.runtime) return this.runtime;
     const runtime = await bootSessionRuntime(
-      workingDirectory,
+      input.workingDirectory,
       this.options.load ?? loadSessionModules,
+      input.access,
     );
-    runtime.tools.register(this.runJobDefinition());
+    if (input.access !== 'read-only' && input.hostJobs !== false)
+      runtime.tools.register(this.runJobDefinition());
     for (const tool of this.hostTools.values())
       runtime.tools.register(this.hostToolDefinition(tool));
     this.runtime = runtime;
@@ -345,7 +353,14 @@ export class DeepseekSessionDriver implements AgentSessionDriver {
     const firstSeq = agent.session.seq;
     agent.followup(
       runtime.createUserMessage({
-        content: [{ type: 'text', text: prompt }],
+        content: [
+          {
+            type: 'text',
+            text: state.thread.instructions
+              ? `${state.thread.instructions}\n\n${prompt}`
+              : prompt,
+          },
+        ],
         source: { kind: 'user' },
       }),
     );

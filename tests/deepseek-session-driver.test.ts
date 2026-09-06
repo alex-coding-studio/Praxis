@@ -15,6 +15,8 @@ type RegisteredTool = {
 };
 
 function makeFakeModules(hangTurn: boolean) {
+  const messages: unknown[] = [];
+  let bootPatches: unknown[] = [];
   const registered: RegisteredTool[] = [];
   let resolveTurn: (() => void) | undefined;
   let followed = false;
@@ -69,10 +71,16 @@ function makeFakeModules(hangTurn: boolean) {
             : undefined,
   };
   const modules: SessionModules = {
-    boot: async () => ctx,
+    boot: async (_name, _config, patches) => {
+      bootPatches = patches;
+      return ctx;
+    },
     loadOverlayPatches: () => [],
     SessionId: (id) => id,
-    createUserMessage: (message) => message,
+    createUserMessage: (message) => {
+      messages.push(message);
+      return message;
+    },
     ReasoningEffortId: (effort) => effort,
     installModelSelection: () => {},
   };
@@ -82,6 +90,8 @@ function makeFakeModules(hangTurn: boolean) {
     registered,
     releaseTurn: () => resolveTurn?.(),
     runCalls: () => runCalls,
+    messages,
+    patches: () => bootPatches,
   };
 }
 
@@ -98,6 +108,41 @@ void test('a DeepSeek session turn keeps its generated output', async () => {
   });
   const result = await driver.startTurn(thread, { prompt: 'do it' }).completion;
   assert.equal(result.finalOutput, 'done');
+  await driver.close();
+});
+
+void test('a DeepSeek reviewer receives role instructions without write tools or Host jobs', async () => {
+  const fake = makeFakeModules(false);
+  const driver = new DeepseekSessionDriver({
+    brokerFactory: () => fake.broker,
+    load: async () => fake.modules,
+  });
+  const thread = await driver.startThread({
+    profile: { agent: 'deepseek', model: '', effort: '' },
+    workingDirectory: '/tmp/project',
+    access: 'read-only',
+    hostJobs: false,
+    instructions: 'Review the agreed delivery only.',
+  });
+  await driver.startTurn(thread, { prompt: 'Inspect the current candidate.' })
+    .completion;
+  assert.equal(
+    fake.registered.some((tool) => tool.name === 'run_job'),
+    false,
+  );
+  assert.deepEqual(
+    fake
+      .patches()
+      .find((value) => (value as { id: string }).id === 'sandbox-policy'),
+    {
+      id: 'sandbox-policy',
+      config: { mode: 'read-only', workspaceRoot: '/tmp/project' },
+    },
+  );
+  assert.match(
+    JSON.stringify(fake.messages),
+    /Review the agreed delivery only/,
+  );
   await driver.close();
 });
 

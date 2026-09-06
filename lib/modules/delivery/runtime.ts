@@ -248,6 +248,7 @@ async function executeDelivery(
           : ('workspace-write' as const),
       instructions,
       hostJobs: run.kind !== 'brief' && role !== 'REVIEWER',
+      advertiseHostJobs: role === 'ORCHESTRATOR',
     };
     let thread: AgentRuntimeThread;
     if (sessionId) {
@@ -469,6 +470,8 @@ async function executeDelivery(
             openDecisions: strings(args.openDecisions, 'Open decisions'),
             confirmedAt: null,
           };
+          current.checks = [];
+          current.review = null;
         });
       },
     ),

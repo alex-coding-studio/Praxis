@@ -136,7 +136,9 @@ export class CodexAppServerDriver implements AgentSessionDriver {
       developerInstructions: input.instructions ?? workerInstructions,
       ephemeral: false,
       dynamicTools: [
-        ...(input.hostJobs === false ? [] : [runJobTool]),
+        ...(input.hostJobs === false && !input.advertiseHostJobs
+          ? []
+          : [runJobTool]),
         ...[...this.hostTools.values()].map((tool) => ({
           type: 'function',
           name: tool.name,
@@ -151,6 +153,8 @@ export class CodexAppServerDriver implements AgentSessionDriver {
       profile: input.profile,
       workingDirectory: input.workingDirectory,
       access: input.access,
+      instructions: input.instructions,
+      hostJobs: input.hostJobs,
     };
     this.threads.set(thread.threadId, thread);
     this.brokers.set(thread.threadId, this.brokerFactory(input));
@@ -160,7 +164,16 @@ export class CodexAppServerDriver implements AgentSessionDriver {
 
   async resumeThread(thread: AgentRuntimeThread) {
     await this.ready;
-    await this.request('thread/resume', { threadId: thread.threadId });
+    await this.request('thread/resume', {
+      threadId: thread.threadId,
+      cwd: thread.workingDirectory,
+      model: thread.profile.model || null,
+      sandbox:
+        thread.access === 'full-access' ? 'danger-full-access' : thread.access,
+      developerInstructions: thread.instructions,
+      approvalPolicy: 'never',
+    });
+    this.hostJobs.set(thread.threadId, thread.hostJobs !== false);
     this.threads.set(thread.threadId, thread);
     if (!this.brokers.has(thread.threadId))
       this.brokers.set(

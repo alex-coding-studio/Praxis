@@ -11,6 +11,7 @@ import {
 import {
   createDeliveryRecord,
   readDeliveryRecord,
+  updateDeliveryRecord,
 } from '../lib/modules/delivery/storage.ts';
 import type { RegisteredProject } from '../lib/project-registry.ts';
 import type {
@@ -127,6 +128,34 @@ void test('briefing persists its result, excludes implementation delegation, and
   await waitForDeliveryRun(project, uid);
   assert.equal(starts, 1);
   assert.equal(resumes, 1);
+  await updateDeliveryRecord(project, uid, (value) => {
+    value.checks = [
+      {
+        id: 'AC1',
+        head: 'same-head',
+        status: 'passed',
+        evidence: 'previous requirement',
+      },
+    ];
+    value.review = {
+      head: 'same-head',
+      disposition: 'not-required',
+      reason: 'previous scope',
+      approved: false,
+      reviewerSessionId: null,
+    };
+  });
+  await startDeliveryRun(
+    project,
+    uid,
+    'brief',
+    'Change AC1 to the new acceptance requirement',
+    driver,
+  );
+  await waitForDeliveryRun(project, uid);
+  const revised = await readDeliveryRecord(project, uid);
+  assert.deepEqual(revised?.checks, []);
+  assert.equal(revised?.review, null);
 });
 
 void test('model selection can adjust effort within a configured model but cannot promote itself outside the pool', () => {
