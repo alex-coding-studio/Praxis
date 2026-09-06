@@ -174,6 +174,7 @@ export function DeliveryWorkspace({
   const [readingTask, setReadingTask] = useState(false);
   const [pending, setPending] = useState(false);
   const [settings, setSettings] = useState(false);
+  const [modelNotice, setModelNotice] = useState(false);
   const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null);
   const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
   const [stuck, setStuck] = useState(false);
@@ -265,6 +266,13 @@ export function DeliveryWorkspace({
     return () => observer.disconnect();
   }, [scrollRoot, sentinel]);
   async function command(action: string, extra: Record<string, unknown> = {}) {
+    if (action === 'start' && !(record?.models ?? models).workers.length) {
+      setError('');
+      if (record) setModels(record.models);
+      setModelNotice(true);
+      setSettings(true);
+      return false;
+    }
     setPending(true);
     setError('');
     try {
@@ -849,11 +857,24 @@ export function DeliveryWorkspace({
           {error}
         </div>
       )}
-      <Dialog open={settings} onOpenChange={setSettings}>
+      <Dialog
+        open={settings}
+        onOpenChange={(open) => {
+          setSettings(open);
+          if (!open) setModelNotice(false);
+        }}
+      >
         <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{t('Delivery settings')}</DialogTitle>
           </DialogHeader>
+          {modelNotice && (
+            <p className="text-sm text-muted-foreground">
+              {t(
+                'Add a Worker model before starting delivery. Save your settings, then click Start delivery again.',
+              )}
+            </p>
+          )}
           <section className="space-y-2 border-b border-border pb-4">
             <h3 className="text-sm font-medium">{t('Orchestrator model')}</h3>
             <p className="text-xs text-muted-foreground">
@@ -927,7 +948,10 @@ export function DeliveryWorkspace({
           <Button
             disabled={pending}
             onClick={async () => {
-              if (await command('models', { models })) setSettings(false);
+              if (await command('models', { models })) {
+                setSettings(false);
+                setModelNotice(false);
+              }
             }}
           >
             {t('Save')}

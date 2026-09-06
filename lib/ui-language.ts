@@ -5,6 +5,8 @@ export function isUiLanguage(value: unknown): value is UiLanguage {
 }
 
 export const chineseUi: Record<string, string> = {
+  'Add a Worker model before starting delivery. Save your settings, then click Start delivery again.':
+    '开始交付前，请先添加一个 Worker 模型。保存后，再点击“开始交付”。',
   'Start delivery': '开始交付',
   'Brief confirmed. Click Start delivery to begin implementation.':
     '交付简报已确认。点击“开始交付”后，将启动 Agent 执行。',
