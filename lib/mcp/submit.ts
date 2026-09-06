@@ -10,7 +10,13 @@ import {
   moduleRunLogPaths,
 } from '../execution-observability/module-run.ts';
 import { ownerLogUrlPath } from '../execution-observability/types.ts';
-import { semanticResultHash } from '../materialization/hash.ts';
+import { readFile } from 'node:fs/promises';
+import { semanticResultHash, sha256Hex } from '../materialization/hash.ts';
+import {
+  resolvePlanningPath,
+  TASK_GRAPH_MARKDOWN_SHAPES,
+} from '../planning-paths.ts';
+import { reconcileMcpOperation } from './catalog.ts';
 import {
   MaterializationError,
   type MaterializationReceipt,
@@ -31,6 +37,7 @@ import {
 } from './errors.ts';
 import type { ProductExplorationMaterializationBasis } from '../modules/product-discovery/basis.ts';
 import { assembleProductExplorationBasis } from './prepare.ts';
+import type { McpOperationSource } from './operations.ts';
 import {
   readMcpOperationBasis,
   requireMcpOperation,
@@ -38,6 +45,31 @@ import {
   writeMcpOperation,
   type McpOperationRecord,
 } from './operations.ts';
+
+async function driftedSources(
+  project: RegisteredProject,
+  sources: readonly McpOperationSource[],
+) {
+  const drifted: string[] = [];
+  for (const source of sources) {
+    let resolved;
+    try {
+      resolved = await resolvePlanningPath(project, source.logicalPath, {
+        shapes: TASK_GRAPH_MARKDOWN_SHAPES,
+        require: 'file',
+      });
+    } catch {
+      drifted.push(source.logicalPath);
+      continue;
+    }
+    const content = await readFile(resolved.absolutePath, 'utf8').catch(
+      () => null,
+    );
+    if (content === null || sha256Hex(content) !== source.sha256)
+      drifted.push(source.logicalPath);
+  }
+  return drifted;
+}
 
 export type McpSubmissionOutcome = {
   record: McpOperationRecord;
@@ -99,7 +131,13 @@ export async function submitProductExplorationResult(
         throw submissionConflict(
           `Operation ${operationId} was already admitted with a different result. Inspect it with praxis_get_operation and prepare a new operation to correct it.`,
         );
-      return { record, replayed: true };
+      const reconciled = await reconcileMcpOperation(project, record);
+      if (reconciled.status === 'interrupted')
+        throw publicationFailed(
+          reconciled.error?.detail ??
+            `Operation ${operationId} was admitted but its outcome is not provable. Inspect its Run log before preparing a replacement; this retry did not republish it.`,
+        );
+      return { record: reconciled, replayed: true };
     }
 
     const owner = moduleOwner(project, 'whats-next');
@@ -131,12 +169,18 @@ export async function submitProductExplorationResult(
       throw staleBasis(
         'The frozen Basis for this operation no longer matches its record. Prepare a new operation.',
       );
+    const drifted = await driftedSources(project, record.sources);
+    if (drifted.length > 0)
+      throw staleBasis(
+        `These source documents changed after this operation was prepared: ${drifted.join(', ')}. Read them again and prepare a new operation.`,
+      );
 
     const paths = moduleRunLogPaths(project, 'whats-next', record.runId);
     const admitted: McpOperationRecord = {
       ...record,
       status: 'running',
       admittedAt: new Date().toISOString(),
+      admittedHostPid: process.pid,
       semanticResultHash: resultHash,
       logRef: paths.logRef,
       logUrlPath: ownerLogUrlPath(owner, record.runId),

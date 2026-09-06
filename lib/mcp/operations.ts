@@ -43,6 +43,7 @@ export type McpOperationRecord = {
   sources: McpOperationSource[];
   preparedAt: string;
   admittedAt: string | null;
+  admittedHostPid: number | null;
   semanticResultHash: string | null;
   settledAt: string | null;
   outcome: { kind: string; summary: string } | null;

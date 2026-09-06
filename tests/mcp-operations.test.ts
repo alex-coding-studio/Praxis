@@ -23,6 +23,7 @@ const { beginRun, releaseRun } =
 const { moduleOwner } =
   await import('../lib/execution-observability/module-run.ts');
 const { listTaskGraphNodes } = await import('../lib/graph/task/nodes.ts');
+const { semanticResultHash } = await import('../lib/materialization/hash.ts');
 
 test.after(() => rm(REGISTRY_HOME, { recursive: true, force: true }));
 
@@ -509,6 +510,124 @@ void test('a log cursor issued for another operation is refused', async (t) => {
     (error: unknown) =>
       isMcpRequestError(error) && error.envelope.code === 'RESOURCE_CHANGED',
   );
+});
+
+void test('a source document edited after preparation is refused as a stale Basis', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const { record } = await prepared(project as never, sourceNodeId);
+  assert.ok(
+    record.sources.length > 0,
+    'the fixture must freeze at least one source document',
+  );
+  const source = record.sources[0]!;
+  const file = path.join(project.planningPath, source.logicalPath);
+  await appendFile(file, '\n\nAn edit the client never saw.\n');
+  await assert.rejects(
+    () =>
+      submitProductExplorationResult(
+        project,
+        record.operationId,
+        record.contract,
+        proposal(sourceNodeId),
+      ),
+    (error: unknown) =>
+      isMcpRequestError(error) &&
+      error.envelope.code === 'STALE_BASIS' &&
+      error.envelope.detail.includes(source.logicalPath),
+  );
+  const after = await findMcpOperation(project, record.operationId);
+  assert.equal(after?.status, 'prepared');
+  assert.deepEqual(
+    await assembly.collectLatestUnacceptedCandidateStates(project),
+    [],
+    'a drifted source must publish nothing',
+  );
+});
+
+void test('a retry after a lost status write returns the committed outcome', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const { record } = await prepared(project as never, sourceNodeId);
+  await submitProductExplorationResult(
+    project,
+    record.operationId,
+    record.contract,
+    proposal(sourceNodeId),
+  );
+  const published = (await findMcpOperation(project, record.operationId))!;
+  await writeMcpOperation(project, {
+    ...published,
+    status: 'running',
+    settledAt: null,
+    outcome: null,
+    receipt: null,
+  });
+  const retry = await submitProductExplorationResult(
+    project,
+    record.operationId,
+    record.contract,
+    proposal(sourceNodeId),
+  );
+  assert.equal(retry.replayed, true);
+  assert.equal(
+    retry.record.status,
+    'completed',
+    'a retry must reconcile against the committed receipt',
+  );
+  assert.equal(retry.record.receipt?.outcome, 'candidates');
+  assert.equal(
+    (await assembly.collectLatestUnacceptedCandidateStates(project)).length,
+    1,
+    'reconciliation must not republish',
+  );
+});
+
+void test('an admission orphaned by a dead Host reads as interrupted and refuses a silent retry', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const { record } = await prepared(project as never, sourceNodeId);
+  await writeMcpOperation(project, {
+    ...record,
+    status: 'running',
+    admittedAt: new Date().toISOString(),
+    admittedHostPid: 2 ** 22,
+    semanticResultHash: semanticResultHash(proposal(sourceNodeId)),
+  });
+  const projection = JSON.parse(
+    (await catalog.readOperationResource(project.id, record.operationId)).text,
+  ) as Record<string, unknown>;
+  assert.equal(projection.status, 'interrupted');
+  assert.equal(projection.receipt, null);
+  await assert.rejects(
+    () =>
+      submitProductExplorationResult(
+        project,
+        record.operationId,
+        record.contract,
+        proposal(sourceNodeId),
+      ),
+    (error: unknown) =>
+      isMcpRequestError(error) && error.envelope.code === 'PUBLICATION_FAILED',
+  );
+  assert.deepEqual(
+    await assembly.collectLatestUnacceptedCandidateStates(project),
+    [],
+    'an unprovable admission must never be blindly replayed',
+  );
+});
+
+void test('an admission held by this live Host still reads as running', async (t) => {
+  const { project, sourceNodeId } = await fixture(t);
+  const { record } = await prepared(project as never, sourceNodeId);
+  await writeMcpOperation(project, {
+    ...record,
+    status: 'running',
+    admittedAt: new Date().toISOString(),
+    admittedHostPid: process.pid,
+    semanticResultHash: 'still-publishing',
+  });
+  const projection = JSON.parse(
+    (await catalog.readOperationResource(project.id, record.operationId)).text,
+  ) as Record<string, unknown>;
+  assert.equal(projection.status, 'running');
 });
 
 void test('preparation refuses to guess when a layer allows more than one intention', async (t) => {

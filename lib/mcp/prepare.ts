@@ -241,6 +241,7 @@ export async function prepareProductExplorationOperation(
     sources,
     preparedAt: basis.preparedAt,
     admittedAt: null,
+    admittedHostPid: null,
     semanticResultHash: null,
     settledAt: null,
     outcome: null,

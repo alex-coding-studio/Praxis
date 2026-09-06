@@ -2,6 +2,7 @@ import { canonicalJson, sha256Hex } from '../materialization/hash.ts';
 import {
   activeRunRegistryOwnership,
   getActiveRun,
+  hostProcessAlive,
   type ActiveRunReservation,
 } from '../execution-observability/active-runs.ts';
 import { readLatestResponse } from '../execution-observability/latest-response-store.ts';
@@ -483,7 +484,26 @@ export async function reconcileMcpOperation(
   if (record.status !== 'running' && record.status !== 'interrupted')
     return record;
   const committed = await readCommittedRunReceipt(project, record.runId);
-  if (!committed) return record;
+  if (!committed) {
+    if (
+      record.status === 'running' &&
+      record.admittedHostPid !== null &&
+      !hostProcessAlive(record.admittedHostPid)
+    )
+      return {
+        ...record,
+        status: 'interrupted',
+        error: record.error ?? {
+          code: 'PUBLICATION_FAILED',
+          title: 'The Host stopped before the outcome was provable',
+          detail:
+            'This operation was admitted but no committed receipt exists for its Run. Inspect the Run log before preparing a replacement; the result was not republished.',
+          boundary: 'publication',
+          retryAction: 'inspect-operation',
+        },
+      };
+    return record;
+  }
   return {
     ...record,
     status: 'completed',
