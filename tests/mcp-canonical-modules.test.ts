@@ -18,8 +18,6 @@ const { isMcpRequestError } = await import('../lib/mcp/errors.ts');
 const catalog = await import('../lib/mcp/catalog.ts');
 const { readDomainModelView } =
   await import('../lib/modules/domain-modeling/model.ts');
-const { readWhatToDoCurrentMapWithFingerprint } =
-  await import('../lib/modules/delivery-planning/storage.ts');
 
 test.after(() => rm(REGISTRY_HOME, { recursive: true, force: true }));
 
