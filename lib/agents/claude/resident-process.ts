@@ -254,6 +254,7 @@ export class ClaudeResidentProcess {
   }
 
   private settleAll(reason: string) {
+    this.flushUsage();
     this.stopped ??= reason;
     const detail = this.stderr.trim();
     const error = new Error(detail ? `${reason} ${detail}` : reason);

@@ -79,6 +79,16 @@ export class ClaudeHostBridge {
     if (thread?.graceTimer) clearTimeout(thread.graceTimer);
     this.threads.delete(threadId);
   }
+  toolDefinitions(thread: BridgeThread) {
+    const defined = thread.hostJobs ? [runJobTool] : [];
+    for (const tool of thread.hostTools.values())
+      defined.push({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema as typeof runJobTool.inputSchema,
+      });
+    return defined;
+  }
   toolNames(thread: BridgeThread) {
     const names = thread.hostJobs ? [runJobTool.name] : [];
     for (const name of thread.hostTools.keys()) names.push(name);
@@ -181,16 +191,7 @@ export class ClaudeHostBridge {
       });
     if (message.method === 'ping') return reply({});
     if (message.method === 'tools/list')
-      return reply({
-        tools: [
-          ...(thread.hostJobs ? [runJobTool] : []),
-          ...[...thread.hostTools.values()].map((tool) => ({
-            name: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-          })),
-        ],
-      });
+      return reply({ tools: this.toolDefinitions(thread) });
     if (message.method === 'tools/call') {
       const rawName = message.params?.name;
       const name = typeof rawName === 'string' ? rawName : '';

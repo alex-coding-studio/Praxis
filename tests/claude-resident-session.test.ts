@@ -10,6 +10,7 @@ import {
 import { ClaudeHostBridge } from '../lib/agents/claude/host-bridge.ts';
 import { ClaudeSessionPool } from '../lib/agents/claude/session-pool.ts';
 import { ClaudeResidentProcess } from '../lib/agents/claude/resident-process.ts';
+import type { ResidentRequestUsage } from '../lib/agents/claude/resident-process.ts';
 import { HostJobBroker } from '../lib/agents/host-job-broker.ts';
 import type { AgentRuntimeEvent } from '../lib/agents/runtime-driver.ts';
 
@@ -488,4 +489,105 @@ void test('a recycled process reports the next launch number so log lines stay a
   );
   assert.equal(processes[0].resumed, true);
   assert.equal(b.pool.launchesOf(readOnly.threadId), 2);
+});
+
+void test('usage observed before a process exits is reported, not discarded with the rejected turn', async () => {
+  const record = JSON.stringify({
+    type: 'assistant',
+    requestId: 'req_dying',
+    message: {
+      id: 'msg_dying',
+      content: [{ type: 'text', text: 'partial' }],
+      usage: {
+        input_tokens: 1,
+        cache_read_input_tokens: 4096,
+        cache_creation_input_tokens: 88_000,
+        output_tokens: 2,
+      },
+    },
+  });
+  const resident = new ClaudeResidentProcess({
+    command: process.execPath,
+    arguments: [
+      '-e',
+      `process.stdout.write(${JSON.stringify(`${record}\n`)}); setTimeout(() => process.exit(9), 120);`,
+    ],
+    environment: { ...process.env },
+    workingDirectory: os.tmpdir(),
+    signature: 'dying',
+  }).start();
+  const seen: ResidentRequestUsage[] = [];
+  resident.observe((usage) => seen.push(usage));
+  await assert.rejects(resident.send({ prompt: 'one' }));
+  assert.equal(
+    seen.length,
+    1,
+    'a crash must not hide the request that preceded it',
+  );
+  assert.equal(seen[0].cacheWriteInputTokens, 88_000);
+  assert.equal(seen[0].requestKey, 'req_dying|msg_dying');
+});
+
+void test('the tool digest changes when a tool definition changes, not only when a name does', async (t) => {
+  const b = await bench(t);
+  const hashes: string[] = [];
+  const collect = async (
+    description: string,
+    access: 'read-only' | 'workspace-write',
+  ) => {
+    const driver = new ClaudeSessionDriver({
+      command: process.execPath,
+      arguments: [fakeClaude],
+      environment: { ...process.env, FAKE_CLAUDE_SCENARIO: 'echo' },
+      brokerFactory: (input) =>
+        new HostJobBroker(
+          input.workingDirectory,
+          path.join(b.root, 'jobs'),
+          () => {},
+        ),
+      hostTools: [
+        {
+          name: 'dispatch_worker',
+          description,
+          inputSchema: { type: 'object', properties: {} },
+          call: async () => ({}),
+        },
+      ],
+      bridge: b.bridge,
+      pool: b.pool,
+    });
+    const thread = await driver.startThread({
+      profile,
+      workingDirectory: b.root,
+      access,
+      hostJobs: false,
+    });
+    await driver.startTurn(thread, {
+      prompt: 'one',
+      onEvent: (event) => {
+        if (event.type === 'session-process') hashes.push(event.toolsHash);
+      },
+    }).completion;
+    await driver.dispose();
+  };
+  await collect('dispatch a specialist', 'read-only');
+  await collect('dispatch a specialist', 'read-only');
+  await collect('dispatch a specialist with a different contract', 'read-only');
+  await collect('dispatch a specialist', 'workspace-write');
+  assert.equal(hashes.length, 4);
+  assert.equal(
+    hashes[0],
+    hashes[1],
+    'an unchanged tool surface keeps its digest',
+  );
+  assert.notEqual(
+    hashes[0],
+    hashes[2],
+    'a changed tool description changes the prefix and must change the digest',
+  );
+  assert.notEqual(
+    hashes[0],
+    hashes[3],
+    'the built-in tool selection is part of the prefix and must reach the digest',
+  );
 });

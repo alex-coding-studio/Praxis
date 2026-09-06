@@ -228,6 +228,12 @@ export class ClaudeSessionDriver implements AgentSessionDriver {
     });
     this.leased.set(threadId, (this.leased.get(threadId) ?? 0) + 1);
     startedThreads.add(threadId);
+    const toolSurfaceDigest = digest(
+      JSON.stringify({
+        builtin: arguments_[arguments_.indexOf('--tools') + 1] ?? '',
+        mcp: this.bridge.toolDefinitions(bridgeThread),
+      }),
+    );
     const emitEvent = (event: AgentRuntimeEvent) => input.onEvent?.(event);
     let currentTurnId = '';
     resident.observe(
@@ -256,7 +262,7 @@ export class ClaudeSessionDriver implements AgentSessionDriver {
           effort: thread.profile.effort || undefined,
           resumed: resume,
           instructionsHash: digest(thread.instructions ?? ''),
-          toolsHash: digest(toolNames.join(',')),
+          toolsHash: toolSurfaceDigest,
           at: new Date().toISOString(),
         }),
     );
