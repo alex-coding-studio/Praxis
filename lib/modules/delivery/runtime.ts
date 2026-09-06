@@ -25,7 +25,10 @@ import {
   updateDeliveryRecord,
 } from './storage.ts';
 import { selectDeliveryModel } from './models.ts';
-import { publishDeliveryCandidate } from './publication.ts';
+import {
+  publishDeliveryCandidate,
+  readyDeliveryForReview,
+} from './publication.ts';
 import { deliveryGit, prepareDeliveryWorkspace } from './workspace.ts';
 import {
   ORCHESTRATOR_INSTRUCTIONS,
@@ -822,6 +825,31 @@ async function executeDelivery(
         });
       },
     );
+    assertActive();
+    const delivered = await record();
+    if (
+      run.kind !== 'brief' &&
+      delivered.publication?.draft &&
+      delivered.response?.status !== 'fail' &&
+      delivered.brief?.confirmedAt &&
+      delivered.progress.length > 0 &&
+      delivered.progress.every((item) => item.status === 'completed') &&
+      delivered.checks.some((check) => check.status === 'passed') &&
+      delivered.checks.every(
+        (check) =>
+          check.head === delivered.publication!.head &&
+          check.status !== 'failed',
+      )
+    ) {
+      await readyDeliveryForReview(project, uid);
+      log.append({
+        level: 'INFO',
+        actor: 'HOST',
+        phase: 'PUBLISH',
+        event: 'delivery.ready-for-review',
+        message: `${delivered.publication.url} is ready for review. User acceptance is still pending.`,
+      });
+    }
     assertActive();
     await updateDeliveryRecord(project, uid, (value) => {
       const storedRun = value.runs.find((entry) => entry.id === run.id)!;
