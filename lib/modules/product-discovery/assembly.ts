@@ -70,7 +70,9 @@ export async function listProductExplorationRunStates(
   const visible = stored.filter((run): run is StoredRun => run !== null);
   const superseded = new Set(
     visible.flatMap((run) =>
-      run.replacement?.state === 'applied' ? (run.replacement.runIds ?? []) : [],
+      run.replacement?.state === 'applied'
+        ? (run.replacement.runIds ?? [])
+        : [],
     ),
   );
   return visible
