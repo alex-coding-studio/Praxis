@@ -9,18 +9,13 @@ import {
   type ExecutionAccess,
 } from './skills.ts';
 import type { ReasoningEffort } from './model-types.ts';
+import type { LocalAgentUsage } from './usage.ts';
 import type { CardEnvironmentManifest } from '../card-host-operations.ts';
 import { bootRuntime, renderDeepseekContext } from './deepseek/runtime.ts';
 
 export type LocalAgentKind = 'codex' | 'claude' | 'deepseek';
 
-export type LocalAgentUsage = {
-  inputTokens: number;
-  cachedInputTokens: number;
-  cacheWriteInputTokens: number;
-  outputTokens: number;
-  reasoningOutputTokens: number;
-};
+export type { LocalAgentUsage } from './usage.ts';
 
 export type LocalAgentResult = {
   agentSessionId: string | null;

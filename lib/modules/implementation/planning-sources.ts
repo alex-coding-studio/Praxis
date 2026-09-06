@@ -1,5 +1,4 @@
 import { readdir } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { RegisteredProject } from '../../project-registry.ts';
 import { readPlanningFile } from '../../planning-documents.ts';
@@ -7,49 +6,14 @@ export { readPlanningFile } from '../../planning-documents.ts';
 import { assertCardUuid } from './harness.ts';
 import { primarySourceResourcePaths } from '../../graph/agent/context-workspace.ts';
 import { readWhatToDoCurrentMap } from '../delivery-planning/storage.ts';
-import type { WhatToDoDeliveryContract } from '../delivery-planning/map.ts';
-
-export type PlanningSource = {
-  module: 'whats-next' | 'task-graph' | 'what-to-do';
-  id: string;
-  uid: string;
-  title: string;
-  summary: string;
-  dependsOn: string[];
-  derivedFrom?: string[];
-  outputPaths: string[];
-  version?: string;
-};
-
-export function deliveryContractPlanningSource(
-  contract: WhatToDoDeliveryContract,
-): PlanningSource {
-  const source: PlanningSource = {
-    module: 'what-to-do',
-    id: contract.id,
-    uid: contract.uid,
-    title: contract.title,
-    summary: contract.summary,
-    dependsOn: [...contract.relations.dependsOn],
-    derivedFrom: [],
-    outputPaths: [contract.outputPath],
-  };
-  source.version = createHash('sha256')
-    .update(
-      JSON.stringify({
-        module: source.module,
-        id: source.id,
-        uid: source.uid,
-        title: source.title,
-        summary: source.summary,
-        dependsOn: source.dependsOn,
-        derivedFrom: source.derivedFrom,
-        outputPaths: source.outputPaths,
-      }),
-    )
-    .digest('hex');
-  return source;
-}
+import {
+  deliveryContractPlanningSource,
+  type PlanningSource,
+} from './planning-source.ts';
+export {
+  deliveryContractPlanningSource,
+  type PlanningSource,
+} from './planning-source.ts';
 
 export async function listPlanningSources(
   project: RegisteredProject,

@@ -7,9 +7,11 @@ import {
 } from './checklist.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import Ajv2020 from 'ajv/dist/2020.js';
+import { assertCardUuid, type ExecutionStage } from './card-identity.ts';
 
 export const JUST_DO_IT_HARNESS_REVISION = 2;
-export type ExecutionStage = 'planning' | 'execution' | 'review' | 'todo';
+export { assertCardUuid };
+export type { ExecutionStage };
 export type ActionContract = {
   id: string;
   title: string;
@@ -236,13 +238,6 @@ export type CardHarnessResult = ResultBase &
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateOutput = ajv.compile(JUST_DO_IT_OUTPUT_SCHEMA);
-const validateUuid = ajv.compile(uuid);
-
-export function assertCardUuid(value: string) {
-  if (!validateUuid(value))
-    throw new Error('Expected a UUID, not a display alias.');
-}
-
 export function assertHarnessScope(
   request: Pick<CardHarnessRequest, 'stage' | 'actionId' | 'context'>,
 ) {

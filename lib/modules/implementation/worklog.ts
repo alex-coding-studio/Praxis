@@ -10,7 +10,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import Ajv2020 from 'ajv/dist/2020.js';
-import { assertCardUuid, type ExecutionStage } from './harness.ts';
+import { assertCardUuid, type ExecutionStage } from './card-identity.ts';
 
 type RecordBase = { stage: ExecutionStage; actionId: string | null };
 export type CardWorkRecord = RecordBase &

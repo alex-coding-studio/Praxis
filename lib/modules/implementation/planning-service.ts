@@ -1,14 +1,7 @@
 import { PublicApiError } from '../../api-errors.ts';
 import { validateAcceptanceCriteria } from './checklist.ts';
 import { randomUUID } from 'node:crypto';
-import {
-  readdir,
-  mkdir,
-  writeFile,
-  rename,
-  realpath,
-  lstat,
-} from 'node:fs/promises';
+import { mkdir, writeFile, realpath, rename } from 'node:fs/promises';
 import path from 'node:path';
 import trash from 'trash';
 import {
@@ -23,7 +16,21 @@ import {
   type LocalAgentUsage,
 } from '../../agents/transport.ts';
 import {
-  assertCardUuid,
+  activePlanningRuns,
+  assertPlanningCardRevision,
+  checkPlanningCardStorageRoot,
+  commitPlanningCard,
+  listPlanningCards,
+  loadPlanningCard,
+  planningCardKey,
+  planningCardRevisionRef,
+  planningCardRoot,
+  readPlanningCard,
+  stagePlanningCardDeletion,
+  type ActivePlanningRun,
+} from './card-store.ts';
+import { assertCardUuid } from './card-identity.ts';
+import {
   createCardHarnessRequest,
   buildCardHarnessPrompt,
   parseCardHarnessResult,
@@ -32,12 +39,7 @@ import {
   type CardHarnessContext,
   type CardHarnessRequest,
 } from './harness.ts';
-import {
-  appendCardWorkRecord,
-  readCardWorklog,
-  readCardWorkDocument,
-  type CardWorkRecord,
-} from './worklog.ts';
+import { readCardWorklog, type CardWorkRecord } from './worklog.ts';
 import {
   listPlanningSources,
   snapshotPlanningSource,
@@ -97,49 +99,18 @@ export type StartPlanningInput = {
   contextRefs: string[];
   retainRefs: string[];
 };
-type Running = {
-  id: string;
+type Running = ActivePlanningRun & {
   handle: LocalAgentRun | null;
   timer: ReturnType<typeof setTimeout> | null;
 };
 type Transport = typeof startLocalAgentRun;
-const runtimeGlobal = globalThis as typeof globalThis & {
-  jdiPlanningActive?: Map<string, Running>;
-};
-const defaultActive = (runtimeGlobal.jdiPlanningActive ??= new Map());
+const defaultActive = activePlanningRuns<Running>();
 
-function root(project: RegisteredProject) {
-  return path.join(project.planningPath, 'implementation', 'cards');
-}
-
-async function checkStorageRoot(project: RegisteredProject, create = false) {
-  let directory = await realpath(project.planningPath);
-  for (const part of ['implementation', 'cards']) {
-    directory = path.join(directory, part);
-    if (create)
-      await mkdir(directory).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== 'EEXIST') throw error;
-      });
-    try {
-      const info = await lstat(directory);
-      if (!info.isDirectory() || info.isSymbolicLink())
-        throw new Error('Invalid Planning storage directory.');
-    } catch (error) {
-      if (!create && (error as NodeJS.ErrnoException).code === 'ENOENT') return;
-      throw error;
-    }
-  }
-}
-function revisionRef(cardId: string, revision: number, name: string) {
-  return `implementation/cards/${cardId}/${String(revision).padStart(8, '0')}/${name}`;
-}
-function key(project: RegisteredProject, cardId: string) {
-  return `${project.planningPath}:${cardId}`;
-}
-function assertRevision(value: number) {
-  if (!Number.isSafeInteger(value) || value < 1)
-    throw new PublicApiError('Invalid expected revision.', 400);
-}
+const root = planningCardRoot;
+const checkStorageRoot = checkPlanningCardStorageRoot;
+const revisionRef = planningCardRevisionRef;
+const key = planningCardKey;
+const assertRevision = assertPlanningCardRevision;
 
 export function validatePlanningProfile(profile: PlanningProfile) {
   validateAgentProfile(profile);
@@ -151,115 +122,22 @@ export function createPlanningService(
   timeoutMs = 600_000,
   trashCard: (path: string) => Promise<unknown> = trash,
 ) {
-  async function load(project: RegisteredProject, cardId: string) {
-    await checkStorageRoot(project);
-    const log = await readCardWorklog(root(project), cardId);
-    if (!log.revision)
-      throw new PublicApiError('Planning Card not found.', 400);
-    const card = JSON.parse(
-      await readCardWorkDocument(
-        root(project),
-        cardId,
-        log.revision,
-        'planning-state.json',
-      ),
-    ) as PlanningCard;
-    if (
-      card.schemaVersion !== 1 ||
-      card.id !== cardId ||
-      card.revision !== log.revision ||
-      !card.source ||
-      !Array.isArray(card.actions) ||
-      !Array.isArray(card.resources)
-    )
-      throw new Error('Invalid Planning Card state.');
-    return { card, log };
-  }
+  const load = (project: RegisteredProject, cardId: string) =>
+    loadPlanningCard<PlanningCard>(project, cardId);
 
-  async function commit(
+  const commit = (
     project: RegisteredProject,
     previous: number,
     card: PlanningCard,
     record: CardWorkRecord,
     files: Record<string, string> = {},
-  ) {
-    await checkStorageRoot(project, true);
-    const next = {
-      ...card,
-      revision: previous + 1,
-      updatedAt: new Date().toISOString(),
-    };
-    await appendCardWorkRecord(root(project), card.id, previous, record, {
-      ...files,
-      'planning-state.json': JSON.stringify(next),
-    });
-    return next;
-  }
+  ) => commitPlanningCard(project, previous, card, record, files);
 
-  async function read(
-    project: RegisteredProject,
-    cardId: string,
-  ): Promise<PlanningCard> {
-    const { card } = await load(project, cardId);
-    if (
-      card.run?.status === 'running' &&
-      active.get(key(project, cardId))?.id !== card.run.id
-    ) {
-      if (card.run.hostPid !== process.pid) {
-        try {
-          process.kill(card.run.hostPid, 0);
-          return card;
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
-        }
-      }
-      const next = {
-        ...card,
-        run: {
-          ...card.run,
-          status: 'failed' as const,
-          endedAt: new Date().toISOString(),
-          error:
-            'Planning was interrupted. Your previous plan and input are retained; retry when ready.',
-        },
-      };
-      try {
-        return await commit(project, card.revision, next, {
-          kind: 'system-event',
-          stage: 'planning',
-          actionId: null,
-          event: 'run-ended',
-          text: next.run.error!,
-          refs: [],
-        });
-      } catch (error) {
-        if (/revision conflict/.test(String(error)))
-          return (await load(project, cardId)).card;
-        throw error;
-      }
-    }
-    return card;
-  }
+  const read = (project: RegisteredProject, cardId: string) =>
+    readPlanningCard<PlanningCard>(project, cardId, active);
 
-  async function list(project: RegisteredProject) {
-    await checkStorageRoot(project);
-    const names = await readdir(root(project)).catch(
-      (error: NodeJS.ErrnoException) => {
-        if (error.code === 'ENOENT') return [];
-        throw error;
-      },
-    );
-    const cards: PlanningCard[] = [];
-    for (const name of names) {
-      try {
-        assertCardUuid(name);
-      } catch {
-        continue;
-      }
-      cards.push(await read(project, name));
-    }
-    return cards.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
+  const list = (project: RegisteredProject) =>
+    listPlanningCards<PlanningCard>(project, active);
 
   async function dependencyReview(
     project: RegisteredProject,
@@ -400,65 +278,18 @@ export function createPlanningService(
     return { deleted: true as const, cardId };
   }
 
-  async function stageDeleteCard(
+  const stageDeleteCard = (
     project: RegisteredProject,
     cardId: string,
     expectedRevision: number,
-  ) {
-    assertCardUuid(cardId);
-    assertRevision(expectedRevision);
-    const card = await read(project, cardId);
-    if (card.revision !== expectedRevision)
-      throw new PublicApiError(
-        'Card changed. Reload before trying again.',
-        409,
-      );
-    if (card.run?.status === 'running')
-      throw new PublicApiError(
-        'Stop the Planning Agent before deleting this Card.',
-        400,
-      );
-    if (
-      card.plan?.status === 'finalized' ||
-      card.actions.length ||
-      card.execution?.runs.length
-    )
-      throw new PublicApiError(
-        'Only a Card without a confirmed Plan or execution may be deleted.',
-        400,
-      );
-    const directory = path.join(root(project), cardId);
-    const actualRoot = await realpath(root(project));
-    const actualDirectory = await realpath(directory);
-    const info = await lstat(actualDirectory);
-    if (
-      !info.isDirectory() ||
-      info.isSymbolicLink() ||
-      !actualDirectory.startsWith(actualRoot + path.sep)
-    )
-      throw new Error('Card storage ownership changed.');
-    const stagingRoot = path.join(actualRoot, '.superseded');
-    await mkdir(stagingRoot, { recursive: true });
-    const stagingInfo = await lstat(stagingRoot);
-    if (!stagingInfo.isDirectory() || stagingInfo.isSymbolicLink())
-      throw new Error('Invalid Card removal staging directory.');
-    const stagedDirectory = path.join(stagingRoot, `${cardId}-${randomUUID()}`);
-    await rename(actualDirectory, stagedDirectory);
-    let settled = false;
-    return {
+  ) =>
+    stagePlanningCardDeletion(
+      project,
       cardId,
-      async rollback() {
-        if (settled) return;
-        await rename(stagedDirectory, actualDirectory);
-        settled = true;
-      },
-      async finalize() {
-        if (settled) return;
-        await trashCard(stagedDirectory);
-        settled = true;
-      },
-    };
-  }
+      expectedRevision,
+      trashCard,
+      active,
+    );
 
   async function importSourceUnlocked(
     project: RegisteredProject,
