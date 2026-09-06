@@ -68,10 +68,13 @@ export async function prepareDeliveryWorkspace(
       `refs/remotes/origin/${branch}`,
     );
   }
-  const branch = `delivery/${record.sourceUid}`;
+  const suffix = record.attempt
+    ? `${record.sourceUid}-${record.attempt}`
+    : record.sourceUid;
+  const branch = `delivery/${suffix}`;
   const workspace = path.join(
     path.dirname(repository),
-    `.praxis-delivery-${project.id}-${record.sourceUid}`,
+    `.praxis-delivery-${project.id}-${suffix}`,
   );
   await deliveryGit(
     repository,

@@ -188,7 +188,7 @@ export function DeliveryWorkspace({
   const [tick, setTick] = useState<number | null>(null);
   const target = workspace.targets.find((entry) => entry.sourceUid === uid);
   const record = workspace.records.find((entry) => entry.sourceUid === uid);
-  const run = record?.runs.at(-1);
+  const run = record?.lastWithdrawal ? undefined : record?.runs.at(-1);
   const running = run?.status === 'running';
   const load = useCallback(async () => {
     const response = await fetch(`/api/projects/${projectId}/delivery`, {
@@ -336,9 +336,15 @@ export function DeliveryWorkspace({
       )
     : 0;
   const canvasRecord = workspace.records
-    .filter((entry) => entry.source.sourceKind === layer && entry.runs.length)
+    .filter(
+      (entry) =>
+        entry.source.sourceKind === layer &&
+        (entry.runs.length || entry.lastWithdrawal),
+    )
     .sort((a, b) =>
-      b.runs.at(-1)!.startedAt.localeCompare(a.runs.at(-1)!.startedAt),
+      (b.lastWithdrawal?.at ?? b.runs.at(-1)!.startedAt).localeCompare(
+        a.lastWithdrawal?.at ?? a.runs.at(-1)!.startedAt,
+      ),
     )[0];
   const canvasResponse = deliveryResponse(projectId, canvasRecord);
   const targetPresentation = target
@@ -497,9 +503,9 @@ export function DeliveryWorkspace({
               {record?.response && (
                 <p className="mt-2 line-clamp-3 text-xs text-muted-foreground">
                   <span className="font-medium">
-                    {record.response.title} —{' '}
+                    {t(record.response.title)} —{' '}
                   </span>
-                  {record.response.detail}
+                  {t(record.response.detail)}
                 </p>
               )}
               {running &&
@@ -512,12 +518,17 @@ export function DeliveryWorkspace({
                   </p>
                 )}
               <div className="mt-3 flex flex-wrap gap-2">
-                {run && (
+                {(run || record?.lastWithdrawal) && (
                   <a
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex h-6 items-center rounded-md border px-2 text-[11px]"
-                    href={`/projects/${projectId}/delivery/${uid}/logs/${run.id}`}
+                    href={
+                      record?.lastWithdrawal &&
+                      (!run || record.lastWithdrawal.at > run.startedAt)
+                        ? record.lastWithdrawal.logUrlPath
+                        : `/projects/${projectId}/delivery/${uid}/logs/${run!.id}`
+                    }
                   >
                     {t('Log')}
                   </a>
@@ -547,6 +558,26 @@ export function DeliveryWorkspace({
               </div>
             </div>
             <div className="flex flex-col items-end gap-2">
+              {record &&
+                !record.acceptedHead &&
+                record.status !== 'completed' && (
+                  <Button
+                    variant="outline"
+                    disabled={pending}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          t(
+                            'Withdraw this unaccepted delivery? Running work will stop, unaccepted workspace changes will be discarded, and any open delivery PR will be closed. Other targets and merged code are unchanged.',
+                          ),
+                        )
+                      )
+                        void command('withdraw');
+                    }}
+                  >
+                    {t('Withdraw delivery')}
+                  </Button>
+                )}
               {running ? (
                 <Button
                   variant="outline"

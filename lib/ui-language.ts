@@ -5,6 +5,12 @@ export function isUiLanguage(value: unknown): value is UiLanguage {
 }
 
 export const chineseUi: Record<string, string> = {
+  'Delivery withdrawn': '本次交付已撤销',
+  'This unaccepted attempt was withdrawn. Prepare a new brief; the next execution will start from latest main. Previously merged code is unchanged.':
+    '本次未验收交付已撤销。可以重新准备交付简报，下一次执行将从最新 main 开始；已合并代码不受影响。',
+  'Withdraw delivery': '撤销本次交付',
+  'Withdraw this unaccepted delivery? Running work will stop, unaccepted workspace changes will be discarded, and any open delivery PR will be closed. Other targets and merged code are unchanged.':
+    '撤销本次未验收交付？正在运行的任务会先停止，当前工作区的未验收改动会被丢弃，已有未合并 PR 会被关闭。其他任务和已合并代码不受影响。',
   'Orchestrator model': 'Orchestrator 编排模型',
   'Understands the target, delegates tasks and brings the delivery together.':
     '负责理解目标、分配任务和汇总交付。',

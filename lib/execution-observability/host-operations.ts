@@ -15,6 +15,7 @@ export const HOST_OPERATION_KINDS = [
   'github-refresh',
   'candidate-publish',
   'acceptance',
+  'withdraw-delivery',
 ] as const;
 export type HostOperationKind = (typeof HOST_OPERATION_KINDS)[number];
 

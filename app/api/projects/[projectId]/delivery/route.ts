@@ -21,6 +21,7 @@ import { resolvePlanningPath } from '@/lib/planning-paths';
 import { deliveryTargetBusy } from '@/lib/modules/delivery/ownership';
 import { revealDeliveryWorkspace } from '@/lib/modules/delivery/workspace';
 import { acceptExistingDelivery } from '@/lib/modules/delivery/existing-delivery';
+import { withdrawDelivery } from '@/lib/modules/delivery/withdraw';
 
 export const runtime = 'nodejs';
 type RouteContext = { params: Promise<{ projectId: string }> };
@@ -120,6 +121,8 @@ export async function POST(request: Request, context: RouteContext) {
       await acceptDelivery(project, input.uid, input.expectedRevision);
     else if (input.action === 'cancel')
       await cancelDeliveryRun(project, input.uid);
+    else if (input.action === 'withdraw')
+      await withdrawDelivery(project, input.uid, input.expectedRevision);
     else if (input.action === 'instructions') {
       if (typeof input.instructions !== 'string')
         throw new PublicApiError('Invalid module instructions.');

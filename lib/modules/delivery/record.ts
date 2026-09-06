@@ -49,6 +49,13 @@ export type DeliveryRun = {
   error: string | null;
 };
 export type DeliveryRecord = DeliverySummary & {
+  attempt?: number;
+  lastWithdrawal?: {
+    at: string;
+    logUrlPath: string;
+    logRef: string;
+    operationId: string;
+  };
   actor?: DeliveryActor;
   schemaVersion: 1;
   revision: number;

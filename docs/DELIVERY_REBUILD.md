@@ -8,6 +8,8 @@ The delivery workspace projects accepted Discovery MVPs, formal decomposition ta
 
 One target owns a continuing worktree, branch and PR. Its Orchestrator maintains the outcome and delegates bounded work with models selected from user-configured Worker and Reviewer pools. Internal progress items are observation, not independently accepted Actions. Ordinary recovery stays in the same delivery. Independent Review is optional and selected for actual scope and risk; findings must have concrete evidence. User feedback revises the same candidate. The user initiates acceptance and merge.
 
+Before user acceptance, the user can explicitly withdraw the current delivery attempt. The Host stops the Agent and drains outstanding Host operations, closes an open PR, removes only the registered Target worktree and clears active scope, sessions and evidence. Source identity and model settings remain; prior records and logs are retained for investigation. The next confirmed execution creates a new attempt branch/worktree from the latest main. Previously merged code and other Targets are never reverted. Cancellation alone continues to preserve the attempt and its work. Withdrawal requires a destructive-action confirmation and writes a Host log; accepted deliveries cannot be withdrawn.
+
 ## Implemented checkpoints
 
 - Source discovery, fingerprints, prerequisite projection and serialized target records.

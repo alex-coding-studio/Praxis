@@ -45,6 +45,7 @@ export type DeliveryDriverFactory = (
 type ActiveDelivery = {
   canceled: boolean;
   turns: Set<AgentRuntimeTurn>;
+  operations: Set<Promise<unknown>>;
   completion?: Promise<void>;
 };
 const state = globalThis as typeof globalThis & {
@@ -131,7 +132,11 @@ export async function startDeliveryRun(
   if (activeRuns.has(key))
     throw new PublicApiError('This delivery is already running.', 409);
   const release = claimDeliveryTarget(project, uid);
-  const active: ActiveDelivery = { canceled: false, turns: new Set() };
+  const active: ActiveDelivery = {
+    canceled: false,
+    turns: new Set(),
+    operations: new Set(),
+  };
   activeRuns.set(key, active);
   let log: RunLogWriter | undefined;
   try {
@@ -176,6 +181,7 @@ export async function startDeliveryRun(
       current.messages.push(deliveryMessage('USER', input));
       current.status = kind === 'brief' ? 'briefing' : 'running';
       current.response = null;
+      current.lastWithdrawal = undefined;
     });
     active.completion = executeDelivery(
       project,
@@ -743,6 +749,32 @@ async function executeDelivery(
       },
     ),
   ];
+  for (const tool of tools) {
+    const call = tool.call;
+    tool.call = async (args) => {
+      const operation = call(args);
+      active.operations.add(operation);
+      try {
+        const result = await operation;
+        if (
+          result &&
+          typeof result === 'object' &&
+          'continuation' in result &&
+          result.continuation instanceof Promise
+        ) {
+          const continuation = result.continuation;
+          active.operations.add(continuation);
+          void continuation.then(
+            () => active.operations.delete(continuation),
+            () => active.operations.delete(continuation),
+          );
+        }
+        return result;
+      } finally {
+        active.operations.delete(operation);
+      }
+    };
+  }
   try {
     let current = await record();
     if (run.kind !== 'brief') {
@@ -830,6 +862,7 @@ async function executeDelivery(
       };
     });
   } finally {
+    while (active.operations.size) await Promise.allSettled(active.operations);
     for (const driver of drivers) await driver.close().catch(() => undefined);
     await log.close();
   }
