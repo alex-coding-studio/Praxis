@@ -3,7 +3,10 @@ import {
   validateAgentGraphRecomposePlan,
 } from '../../graph/agent/recompose.ts';
 import { MaterializationError } from '../../materialization/receipt.ts';
+import type { WhatToDoDeliveryMap } from './map.ts';
 import type {
+  DeliveryContractReference,
+  DeliveryMapResult,
   WhatToDoContractCandidate,
   WhatToDoContractDependencyUpdate,
   WhatToDoMapProposal,
@@ -393,4 +396,99 @@ function requireUnique(values: string[], message: string) {
 
 function fail(message: string): never {
   throw new MaterializationError('validation', message);
+}
+
+function deliveryReferenceKey(reference: DeliveryContractReference) {
+  return reference.kind === 'proposal'
+    ? `proposal:${reference.localKey}`
+    : `contract:${reference.id}`;
+}
+
+export function validateDeliveryMapReferences(
+  basis: {
+    operation: 'create-map' | 'adjust-map';
+    currentMap: WhatToDoDeliveryMap | null;
+  },
+  result: Extract<DeliveryMapResult, { outcome: 'map-proposal' }>,
+) {
+  const proposed = result.contracts.map(
+    (contract) => `proposal:${contract.localKey}`,
+  );
+  requireUnique(proposed, 'Contract Candidate identifiers must be unique.');
+  requireUnique(
+    result.sourceClaims.map((claim) => claim.claimId),
+    'Source Claim identifiers must be unique.',
+  );
+  if (basis.operation === 'create-map') {
+    if (result.contracts.length === 0)
+      fail('A new Delivery Map requires at least one Contract Candidate.');
+    if (result.sourceClaimUpdates?.length)
+      fail('A new Delivery Map cannot update an existing Source Claim.');
+    if (result.contractDependencyUpdates?.length)
+      fail('A new Delivery Map cannot update an existing Contract dependency.');
+  } else if (!result.recomposition)
+    fail('An adjusted Delivery Map requires Recompose effects.');
+
+  const known = new Map(
+    (basis.currentMap?.contracts ?? []).map((contract) => [
+      `contract:${contract.id}`,
+      contract,
+    ]),
+  );
+  const resolvable = new Set([...proposed, ...known.keys()]);
+  const requireResolvable = (
+    references: readonly DeliveryContractReference[],
+  ) => {
+    for (const reference of references)
+      if (!resolvable.has(deliveryReferenceKey(reference)))
+        fail(
+          `The Delivery Map references an unknown Contract: ${deliveryReferenceKey(reference)}.`,
+        );
+  };
+  for (const contract of result.contracts)
+    requireResolvable(contract.dependsOn);
+  for (const claim of result.sourceClaims) requireResolvable(claim.contracts);
+  for (const update of result.sourceClaimUpdates ?? [])
+    requireResolvable(update.contracts);
+  for (const update of result.contractDependencyUpdates ?? []) {
+    requireResolvable([update.contract]);
+    requireResolvable(update.dependsOn);
+  }
+  for (const effect of result.recomposition?.effects ?? []) {
+    requireResolvable(effect.from);
+    requireResolvable(effect.to);
+  }
+
+  const retained = new Set(
+    result.recomposition?.effects
+      .filter((effect) => effect.kind === 'retain')
+      .flatMap((effect) => effect.from.map(deliveryReferenceKey)) ?? [],
+  );
+  const updated = new Map(
+    (result.contractDependencyUpdates ?? []).map((update) => [
+      deliveryReferenceKey(update.contract),
+      update.dependsOn.map(deliveryReferenceKey),
+    ]),
+  );
+  const completeMap = [
+    ...[...known].flatMap(([candidateId, contract]) =>
+      retained.has(candidateId)
+        ? [
+            {
+              candidateId,
+              dependsOn:
+                updated.get(candidateId) ??
+                contract.dependsOn.map(
+                  (dependency) => `contract:${dependency}`,
+                ),
+            },
+          ]
+        : [],
+    ),
+    ...result.contracts.map((contract) => ({
+      candidateId: `proposal:${contract.localKey}`,
+      dependsOn: contract.dependsOn.map(deliveryReferenceKey),
+    })),
+  ];
+  validateCompleteMap(completeMap);
 }

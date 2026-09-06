@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { prepareDeliveryMapBasis } from '../lib/modules/delivery-planning/basis.ts';
@@ -134,6 +134,83 @@ void test('a structurally invalid result fails at the validation boundary', asyn
       error instanceof MaterializationError &&
       error.boundary === 'validation' &&
       error.status === 400,
+  );
+  const canonical = await readWhatToDoCurrentMapWithFingerprint(project);
+  assert.equal(canonical.fingerprint, 'absent');
+});
+
+void test('a self-dependent Contract is rejected before anything is published', async (t) => {
+  const project = await fixture(t);
+  await assert.rejects(
+    submitDeliveryMapResult(
+      project,
+      await emptyBasis(project),
+      {
+        ...example,
+        contracts: [
+          {
+            ...example.contracts[0]!,
+            dependsOn: [{ kind: 'proposal', localKey: 'example-contract' }],
+          },
+        ],
+      },
+      { runId: RUN_ID, ...evidence },
+      store,
+    ),
+    (error: unknown) =>
+      error instanceof MaterializationError &&
+      error.boundary === 'validation' &&
+      error.message === 'A Contract Candidate cannot depend on itself.',
+  );
+  const canonical = await readWhatToDoCurrentMapWithFingerprint(project);
+  assert.equal(canonical.fingerprint, 'absent');
+  await assert.rejects(
+    readdir(path.join(project.planningPath, 'what-to-do', 'runs')),
+    (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT',
+  );
+});
+
+void test('an unresolvable Contract reference is rejected', async (t) => {
+  const project = await fixture(t);
+  await assert.rejects(
+    submitDeliveryMapResult(
+      project,
+      await emptyBasis(project),
+      {
+        ...example,
+        sourceClaims: [
+          {
+            ...example.sourceClaims[0]!,
+            contracts: [{ kind: 'proposal', localKey: 'missing-contract' }],
+          },
+        ],
+      },
+      { runId: RUN_ID, ...evidence },
+      store,
+    ),
+    (error: unknown) =>
+      error instanceof MaterializationError &&
+      error.message ===
+        'The Delivery Map references an unknown Contract: proposal:missing-contract.',
+  );
+  const canonical = await readWhatToDoCurrentMapWithFingerprint(project);
+  assert.equal(canonical.fingerprint, 'absent');
+});
+
+void test('a new Delivery Map without a Contract is rejected', async (t) => {
+  const project = await fixture(t);
+  await assert.rejects(
+    submitDeliveryMapResult(
+      project,
+      await emptyBasis(project),
+      { ...example, contracts: [], sourceClaims: [] },
+      { runId: RUN_ID, ...evidence },
+      store,
+    ),
+    (error: unknown) =>
+      error instanceof MaterializationError &&
+      error.message ===
+        'A new Delivery Map requires at least one Contract Candidate.',
   );
   const canonical = await readWhatToDoCurrentMapWithFingerprint(project);
   assert.equal(canonical.fingerprint, 'absent');
