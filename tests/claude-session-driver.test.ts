@@ -94,7 +94,7 @@ async function fixture(
       ),
     hostTools,
   });
-  t.after(() => driver.close());
+  t.after(() => driver.dispose());
   const invocations = async () =>
     (await readFile(log, 'utf8'))
       .trim()
@@ -106,6 +106,8 @@ async function fixture(
             sessionId: string;
             prompt: string;
             args: string[];
+            turn: number;
+            pid: number;
           },
       );
   return { root, driver, jobs, invocations };
@@ -133,6 +135,11 @@ void test('Claude session arguments keep the read-only coordinator without Bash 
   assert.equal(readOnly[readOnly.indexOf('--tools') + 1], 'Read,Glob,Grep');
   assert.ok(!readOnly.includes('--permission-mode'));
   assert.ok(readOnly.includes('--strict-mcp-config'));
+  assert.equal(
+    readOnly[readOnly.indexOf('--input-format') + 1],
+    'stream-json',
+    'the resident process reads queued turns from stdin instead of one closed prompt',
+  );
   assert.equal(
     readOnly[readOnly.indexOf('--allowedTools') + 1],
     `mcp__${claudeMcpServerName}__dispatch_worker`,
@@ -211,7 +218,7 @@ void test('a suspending Host tool over loopback MCP ends the physical turn and r
   resolveWorker();
   const result = await turn.completion;
   assert.equal(result.threadId, thread.threadId);
-  assert.equal(result.finalOutput, 'RESUMED:WORKER_COMPLETED {"checks":[]}');
+  assert.equal(result.finalOutput, 'CONTINUED:WORKER_COMPLETED {"checks":[]}');
   assert.deepEqual(
     perTurnUsage,
     [10, 10],
@@ -234,9 +241,13 @@ void test('a suspending Host tool over loopback MCP ends the physical turn and r
   assert.equal(runs[0].sessionId, thread.threadId);
   assert.equal(runs[0].prompt, 'prepare');
   assert.ok(!runs[0].args.join(' ').includes('mcp__praxis__run_job'));
-  assert.equal(runs[1].resume, true);
   assert.equal(runs[1].sessionId, thread.threadId);
   assert.ok(runs[1].prompt.startsWith('WORKER_COMPLETED'));
+  assert.equal(
+    runs[0].pid,
+    runs[1].pid,
+    'the continuation reaches the same resident process instead of a respawn',
+  );
 });
 
 void test('Claude run_job goes through the Host broker and the job result resumes the session', async (t) => {
@@ -251,7 +262,7 @@ void test('Claude run_job goes through the Host broker and the job result resume
     prompt: 'build',
     onEvent: (event) => events.push(event.type),
   }).completion;
-  assert.ok(result.finalOutput.startsWith('RESUMED:HOST_JOB_COMPLETED'));
+  assert.ok(result.finalOutput.startsWith('CONTINUED:HOST_JOB_COMPLETED'));
   assert.deepEqual(f.jobs, ['running', 'completed']);
   assert.ok(events.includes('job-started'));
   assert.ok(events.includes('job-completed'));
@@ -259,6 +270,11 @@ void test('Claude run_job goes through the Host broker and the job result resume
   assert.equal(runs.length, 2);
   assert.match(runs[1].prompt, /"status":"completed"/);
   assert.ok(runs[0].args.join(' ').includes('mcp__praxis__run_job'));
+  assert.equal(
+    runs[0].pid,
+    runs[1].pid,
+    'the Host job result resumes the same process rather than relaunching Claude',
+  );
 });
 
 void test('a Claude thread without Host jobs does not list run_job', async (t) => {
@@ -364,7 +380,7 @@ void test('a Claude coordinator profile receives the push driver without touchin
   assert.ok(session.driver instanceof ClaudeSessionDriver);
   assert.equal(session.driver.capabilities.pushToolResults, true);
   assert.equal(session.decoratePrompt('p'), 'p');
-  await session.driver.close();
+  await session.driver.dispose();
 });
 
 void test('a model that never ends its physical turn after a suspension fails on the Host grace deadline', async (t) => {
@@ -475,7 +491,7 @@ void test('coordinator thread instructions reach both initial and resumed CLI pr
   );
 });
 
-void test('a second logical turn resumes the same Claude session instead of recreating it', async (t) => {
+void test('a second logical turn continues the same resident process instead of relaunching Claude', async (t) => {
   const f = await fixture(t, 'echo');
   const thread = await f.driver.startThread({
     profile: { agent: 'claude', model: 'fixture', effort: 'low' },
@@ -486,12 +502,13 @@ void test('a second logical turn resumes the same Claude session instead of recr
   const first = await f.driver.startTurn(thread, { prompt: 'one' }).completion;
   const second = await f.driver.startTurn(thread, { prompt: 'two' }).completion;
   assert.equal(first.finalOutput, 'ECHO:one');
-  assert.equal(second.finalOutput, 'RESUMED:two');
+  assert.equal(second.finalOutput, 'CONTINUED:two');
   const runs = await f.invocations();
   assert.equal(runs.length, 2);
+  assert.equal(runs[0].pid, runs[1].pid, 'both turns reach one process');
   assert.equal(runs[0].resume, false);
+  assert.equal(runs[1].resume, false, 'a live process is never re-resumed');
   assert.deepEqual(runs[0].args.slice(-2), ['--session-id', thread.threadId]);
-  assert.equal(runs[1].resume, true);
-  assert.deepEqual(runs[1].args.slice(-2), ['--resume', thread.threadId]);
+  assert.deepEqual(runs[1].args.slice(-2), ['--session-id', thread.threadId]);
   assert.equal(runs[0].sessionId, runs[1].sessionId);
 });

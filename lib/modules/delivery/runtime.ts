@@ -891,7 +891,12 @@ async function executeDelivery(
     });
   } finally {
     while (active.operations.size) await Promise.allSettled(active.operations);
-    for (const driver of drivers) await driver.close().catch(() => undefined);
+    for (const driver of drivers)
+      await (
+        active.canceled
+          ? (driver.dispose?.('Delivery canceled.') ?? driver.close())
+          : driver.close()
+      ).catch(() => undefined);
     await log.close();
   }
 }
