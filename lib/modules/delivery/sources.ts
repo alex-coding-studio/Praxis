@@ -88,7 +88,7 @@ export async function readDeliverySources(project: RegisteredProject) {
   return { sources, contextUids };
 }
 
-async function fingerprint(
+export async function fingerprint(
   project: RegisteredProject,
   value: unknown,
   outputPaths: string[],

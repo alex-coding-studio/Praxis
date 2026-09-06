@@ -33,6 +33,7 @@ import {
   WORKER_INSTRUCTIONS,
 } from './instructions.ts';
 import type { DeliveryRecord, DeliveryRun } from './record.ts';
+import { claimDeliveryTarget } from './ownership.ts';
 
 export type DeliveryDriverFactory = (
   project: RegisteredProject,
@@ -128,6 +129,7 @@ export async function startDeliveryRun(
   const key = runtimeKey(project, uid);
   if (activeRuns.has(key))
     throw new PublicApiError('This delivery is already running.', 409);
+  const release = claimDeliveryTarget(project, uid);
   const active: ActiveDelivery = { canceled: false, turns: new Set() };
   activeRuns.set(key, active);
   let log: RunLogWriter | undefined;
@@ -143,6 +145,7 @@ export async function startDeliveryRun(
         'Configure the Worker model pool before starting delivery.',
       );
     const run: DeliveryRun = {
+      hostPid: process.pid,
       id: randomUUID(),
       kind,
       input,
@@ -179,10 +182,14 @@ export async function startDeliveryRun(
       active,
       log,
       createDriver,
-    ).finally(() => activeRuns.delete(key));
+    ).finally(() => {
+      activeRuns.delete(key);
+      release();
+    });
     return run;
   } catch (error) {
     activeRuns.delete(key);
+    release();
     await log?.close();
     throw error;
   }
@@ -610,6 +617,8 @@ async function executeDelivery(
           await updateDeliveryRecord(project, uid, (value) => {
             value.agents.find((agent) => agent.id === assignmentId)!.result =
               result.finalOutput;
+            value.agents.find((agent) => agent.id === assignmentId)!.usage =
+              result.usage;
             value.status = 'running';
             if (role === 'reviewer') {
               let review: {
@@ -684,6 +693,7 @@ async function executeDelivery(
     await updateDeliveryRecord(project, uid, (value) => {
       const storedRun = value.runs.find((entry) => entry.id === run.id)!;
       storedRun.status = 'completed';
+      storedRun.usage = result.usage;
       storedRun.endedAt = new Date().toISOString();
       value.messages.push(deliveryMessage('ORCHESTRATOR', result.finalOutput));
       value.status = 'waiting-for-user';

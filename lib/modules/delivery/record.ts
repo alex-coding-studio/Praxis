@@ -1,4 +1,5 @@
 import type { AgentProfile } from '../../agents/profile.ts';
+import type { LocalAgentUsage } from '../../agents/transport.ts';
 import type {
   DeliveryBrief,
   DeliveryModels,
@@ -26,6 +27,7 @@ export type DeliveryMessage = {
   content: string;
 };
 export type DeliveryAgent = {
+  usage?: LocalAgentUsage | null;
   id: string;
   role: 'worker' | 'reviewer';
   profile: AgentProfile;
@@ -34,6 +36,8 @@ export type DeliveryAgent = {
   result: string | null;
 };
 export type DeliveryRun = {
+  usage?: LocalAgentUsage | null;
+  hostPid: number;
   id: string;
   kind: 'brief' | 'execution' | 'feedback';
   startedAt: string;

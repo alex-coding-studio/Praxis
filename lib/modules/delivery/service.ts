@@ -13,6 +13,32 @@ import {
 import { validateDeliveryModels } from './models.ts';
 import { startDeliveryRun } from './runtime.ts';
 import type { DeliveryModels } from './types.ts';
+import type { DeliverySource } from './types.ts';
+
+function sourceOnly(target: DeliverySource): DeliverySource {
+  const {
+    sourceKind,
+    sourceModule,
+    sourceId,
+    sourceUid,
+    title,
+    summary,
+    dependsOn,
+    outputPaths,
+    sourceFingerprint,
+  } = target;
+  return {
+    sourceKind,
+    sourceModule,
+    sourceId,
+    sourceUid,
+    title,
+    summary,
+    dependsOn,
+    outputPaths,
+    sourceFingerprint,
+  };
+}
 
 export async function readDeliveryWorkspace(project: RegisteredProject) {
   const [{ sources, contextUids }, records, instructions] = await Promise.all([
@@ -20,6 +46,38 @@ export async function readDeliveryWorkspace(project: RegisteredProject) {
     listDeliveryRecords(project),
     readDeliveryInstructions(project),
   ]);
+  for (const record of records) {
+    const run = record.runs.at(-1);
+    if (run?.status !== 'running') continue;
+    let alive = false;
+    if (run.hostPid) {
+      try {
+        process.kill(run.hostPid, 0);
+        alive = true;
+      } catch (error) {
+        alive = (error as NodeJS.ErrnoException).code === 'EPERM';
+      }
+    }
+    if (alive) continue;
+    Object.assign(
+      record,
+      await updateDeliveryRecord(project, record.sourceUid, (current) => {
+        const latest = current.runs.at(-1);
+        if (!latest || latest.id !== run.id || latest.status !== 'running')
+          return;
+        latest.status = 'failed';
+        latest.endedAt = new Date().toISOString();
+        latest.error =
+          'The delivery process stopped. Continue from the saved workspace and session.';
+        current.status = 'failed';
+        current.response = {
+          status: 'fail',
+          title: 'Delivery interrupted',
+          detail: latest.error,
+        };
+      }),
+    );
+  }
   return {
     models: await readDeliveryModels(project),
     targets: projectDeliveryTargets(sources, records, contextUids),
@@ -38,7 +96,7 @@ export async function prepareTarget(
   const target = targets.find((entry) => entry.sourceUid === uid);
   if (!target)
     throw new PublicApiError('Executable source no longer exists.', 404);
-  return createDeliveryRecord(project, target, models);
+  return createDeliveryRecord(project, sourceOnly(target), models);
 }
 
 export async function confirmDeliveryBrief(
@@ -98,7 +156,7 @@ export async function submitDeliveryInput(
       project,
       uid,
       (record) => {
-        record.source = target;
+        record.source = sourceOnly(target);
         record.sourceFingerprint = target.sourceFingerprint;
         if (record.brief) record.brief.confirmedAt = null;
       },

@@ -23,7 +23,14 @@ export function projectDeliveryTargets(
     );
   }
   return sources.map((source) => {
-    const delivery = deliveries.get(source.sourceUid) ?? null;
+    const stored = deliveries.get(source.sourceUid);
+    const delivery = stored
+      ? {
+          sourceUid: stored.sourceUid,
+          sourceFingerprint: stored.sourceFingerprint,
+          status: stored.status,
+        }
+      : null;
     const sourceChanged =
       delivery !== null &&
       delivery.sourceFingerprint !== source.sourceFingerprint;

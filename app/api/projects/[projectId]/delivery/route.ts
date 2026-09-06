@@ -15,6 +15,9 @@ import {
 } from '@/lib/modules/delivery/storage';
 import { validateDeliveryModels } from '@/lib/modules/delivery/models';
 import { acceptDelivery } from '@/lib/modules/delivery/publication';
+import { saveDeliveryAttachments } from '@/lib/modules/delivery/attachments';
+import { resolvePlanningPath } from '@/lib/planning-paths';
+import { deliveryTargetBusy } from '@/lib/modules/delivery/ownership';
 
 export const runtime = 'nodejs';
 type RouteContext = { params: Promise<{ projectId: string }> };
@@ -42,11 +45,42 @@ export async function POST(request: Request, context: RouteContext) {
     const project = await getProject((await context.params).projectId);
     if (!project) throw new PublicApiError('Project not found.', 404);
     const body = await request.text();
-    if (Buffer.byteLength(body) > 1_048_576)
+    if (Buffer.byteLength(body) > 22 * 1024 * 1024)
       throw new PublicApiError('Delivery input is too large.');
     const input = JSON.parse(body);
+    if (input.action === 'prepare' || input.action === 'send') {
+      if (input.contextRefs !== undefined) {
+        if (
+          !Array.isArray(input.contextRefs) ||
+          input.contextRefs.length > 20 ||
+          input.contextRefs.some((ref: unknown) => typeof ref !== 'string')
+        )
+          throw new PublicApiError('Invalid delivery context references.');
+        const refs = await Promise.all(
+          input.contextRefs.map(
+            async (ref: string) =>
+              (
+                await resolvePlanningPath(project, ref, {
+                  require: 'file',
+                  maxBytes: 1_048_576,
+                })
+              ).absolutePath,
+          ),
+        );
+        if (refs.length)
+          input.message = `${input.message ?? ''}\n\nUser-selected context:\n${refs.join('\n')}`;
+      }
+    }
     if (input.action === 'prepare') {
       const prepared = await prepareTarget(project, input.uid, input.models);
+      if (input.files?.length) {
+        const files = await saveDeliveryAttachments(
+          project,
+          input.uid,
+          input.files,
+        );
+        input.message = `${input.message ?? ''}\n\nUser attachments:\n${files.map((file) => `${file.name}: ${file.path}`).join('\n')}`;
+      }
       if (typeof input.message === 'string' && input.message.trim())
         await submitDeliveryInput(
           project,
@@ -57,6 +91,14 @@ export async function POST(request: Request, context: RouteContext) {
     } else if (input.action === 'confirm-brief')
       await confirmDeliveryBrief(project, input.uid, input.expectedRevision);
     else if (input.action === 'send') {
+      if (input.files?.length) {
+        const files = await saveDeliveryAttachments(
+          project,
+          input.uid,
+          input.files,
+        );
+        input.message = `${input.message ?? ''}\n\nUser attachments:\n${files.map((file) => `${file.name}: ${file.path}`).join('\n')}`;
+      }
       if (typeof input.message !== 'string' || !input.message.trim())
         throw new PublicApiError('Enter delivery instructions.');
       await submitDeliveryInput(
@@ -74,6 +116,11 @@ export async function POST(request: Request, context: RouteContext) {
         throw new PublicApiError('Invalid module instructions.');
       await writeDeliveryInstructions(project, input.instructions);
     } else if (input.action === 'models') {
+      if (input.uid && deliveryTargetBusy(project, input.uid))
+        throw new PublicApiError(
+          'Wait for the current delivery operation.',
+          409,
+        );
       validateDeliveryModels(input.models);
       await writeDeliveryModels(project, input.models);
       if (input.uid)
@@ -83,6 +130,11 @@ export async function POST(request: Request, context: RouteContext) {
           (record) => {
             if (record.runs.at(-1)?.status === 'running')
               throw new PublicApiError('Wait for the current response.', 409);
+            if (
+              record.models.orchestrator.agent !==
+              input.models.orchestrator.agent
+            )
+              record.orchestratorSessionId = null;
             record.models = input.models;
           },
           input.expectedRevision,

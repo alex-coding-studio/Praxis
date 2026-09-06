@@ -23,6 +23,7 @@ import {
   type AgentGraphActivityRecorder,
 } from '../../graph/agent/run.ts';
 import { PublicApiError } from '../../api-errors.ts';
+import { assertDeliveryMapPreservesTargets } from '../delivery/map-boundary.ts';
 import {
   startLocalAgentRun,
   type LocalAgentRun,
@@ -601,6 +602,7 @@ export async function publishDeliveryMap(
   store: DeliveryPlanningStore = planningService,
 ) {
   await withDeliveryState(project, async () => {
+    await assertDeliveryMapPreservesTargets(project, map);
     const nextSources = new Map(
       map.contracts.map((contract) => {
         const source = deliveryContractPlanningSource(contract);

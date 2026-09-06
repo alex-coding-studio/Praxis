@@ -1,0 +1,170 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import { acceptDelivery } from '../lib/modules/delivery/publication.ts';
+import { claimDeliveryTarget } from '../lib/modules/delivery/ownership.ts';
+import {
+  createDeliveryRecord,
+  readDeliveryRecord,
+  updateDeliveryRecord,
+} from '../lib/modules/delivery/storage.ts';
+import type { RegisteredProject } from '../lib/project-registry.ts';
+import type { HostCommandRunner } from '../lib/card-host-operations.ts';
+
+async function fixture(t: test.TestContext) {
+  const rootPath = await mkdtemp(path.join(os.tmpdir(), 'delivery-accept-'));
+  t.after(() => rm(rootPath, { recursive: true, force: true }));
+  const project = {
+    id: 'project',
+    name: 'Fixture',
+    rootPath,
+    planningPath: rootPath,
+    codePath: rootPath,
+  } as RegisteredProject;
+  const uid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  await createDeliveryRecord(
+    project,
+    {
+      sourceUid: uid,
+      sourceId: 'NODE-aaaaaaaa',
+      sourceKind: 'mvp',
+      sourceModule: 'whats-next',
+      title: 'Fixture',
+      summary: '',
+      dependsOn: [],
+      outputPaths: [],
+      sourceFingerprint: 'source',
+    },
+    {
+      orchestrator: { agent: 'codex', model: '', effort: '' },
+      workers: [],
+      reviewers: [],
+    },
+  );
+  const record = await updateDeliveryRecord(project, uid, (value) => {
+    value.workspace = {
+      path: rootPath,
+      branch: 'delivery/fixture',
+      base: 'base',
+    };
+    value.brief = {
+      revision: 1,
+      outcome: 'Fixture',
+      included: [],
+      excluded: [],
+      openDecisions: [],
+      confirmedAt: 'confirmed',
+      criteria: [
+        { id: 'AC1', description: 'Required behavior', verification: 'unit' },
+      ],
+    };
+    value.checks = [
+      {
+        id: 'AC1',
+        status: 'passed',
+        evidence: 'unit test output',
+        head: 'head',
+      },
+    ];
+    value.review = {
+      head: 'head',
+      disposition: 'not-required',
+      reason: 'Bounded local edit with adequate evidence',
+      approved: false,
+      reviewerSessionId: null,
+    };
+    value.publication = {
+      head: 'head',
+      url: 'https://github.com/fixture/repository/pull/1',
+      number: 1,
+      state: 'OPEN',
+      draft: true,
+    };
+  });
+  return { project, uid, record };
+}
+
+void test('acceptance merges only the verified head and tolerates a retry after GitHub already merged', async (t) => {
+  const { project, uid, record } = await fixture(t);
+  let state = 'OPEN';
+  const calls: string[][] = [];
+  const runner: HostCommandRunner = async (_command, args) => {
+    calls.push(args);
+    if (args[0] === 'api') return 'cunqi-bot';
+    if (args[1] === 'view')
+      return JSON.stringify({
+        state,
+        headRefOid: 'head',
+        isDraft: state === 'OPEN',
+      });
+    if (args[1] === 'merge') {
+      assert.ok(args.includes('--match-head-commit'));
+      assert.equal(args.at(-1), 'head');
+      state = 'MERGED';
+    }
+    return '';
+  };
+  let syncs = 0;
+  const dependencies = {
+    runner,
+    git: async (_cwd: string, ...args: string[]) =>
+      args[0] === 'status' ? '' : 'head',
+    syncMain: async () => {
+      syncs++;
+      return { head: 'merged', updated: true, checkoutUpdated: true };
+    },
+  };
+  const release = claimDeliveryTarget(project, uid);
+  await assert.rejects(
+    () => acceptDelivery(project, uid, record.revision, dependencies),
+    /already running/,
+  );
+  assert.equal(calls.length, 0);
+  release();
+  const completed = await acceptDelivery(
+    project,
+    uid,
+    record.revision,
+    dependencies,
+  );
+  assert.equal(completed?.status, 'completed');
+  assert.equal(completed?.acceptedHead, 'head');
+  assert.equal(syncs, 1);
+  await updateDeliveryRecord(project, uid, (value) => {
+    value.status = 'waiting-for-user';
+    value.publication!.state = 'OPEN';
+  });
+  await acceptDelivery(
+    project,
+    uid,
+    (await readDeliveryRecord(project, uid))!.revision,
+    dependencies,
+  );
+  assert.equal(calls.filter((args) => args[1] === 'merge').length, 1);
+});
+
+void test('a changed remote head does not merge or erase the existing candidate', async (t) => {
+  const { project, uid, record } = await fixture(t);
+  const runner: HostCommandRunner = async (_command, args) => {
+    if (args[0] === 'api') return 'cunqi-bot';
+    assert.equal(args[1], 'view');
+    return JSON.stringify({
+      state: 'OPEN',
+      headRefOid: 'other',
+      isDraft: true,
+    });
+  };
+  await assert.rejects(
+    () =>
+      acceptDelivery(project, uid, record.revision, {
+        runner,
+        git: async (_cwd, ...args) => (args[0] === 'status' ? '' : 'head'),
+      }),
+    /pull request changed/,
+  );
+  const after = await readDeliveryRecord(project, uid);
+  assert.deepEqual(after?.publication, record.publication);
+  assert.deepEqual(after?.checks, record.checks);
+});

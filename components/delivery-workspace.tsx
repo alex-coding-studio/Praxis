@@ -13,10 +13,32 @@ import {
 } from '@xyflow/react';
 import dagre from '@dagrejs/dagre';
 import '@xyflow/react/dist/style.css';
-import { ArrowLeft, ArrowUp, Check, Settings, Square } from 'lucide-react';
+import { ArrowLeft, Check, Settings, Square } from 'lucide-react';
 import { AgentGraphComposerCard } from '@/components/agent-graph-composer-card';
-import { AgentComposerShell } from '@/components/agent-composer-shell';
+import {
+  AgentComposerShell,
+  AgentComposerAttachments,
+} from '@/components/agent-composer-shell';
 import { AgentProfileSelector } from '@/components/agent-profile-selector';
+import { AgentRunControls } from '@/components/agent-run-controls';
+import {
+  ContextAttachmentPicker,
+  contextAttachmentTitle,
+} from '@/components/context-attachment-picker';
+import { Textarea } from '@/components/ui/textarea';
+import type { ContextBrowserFolder } from '@/lib/modules/product-context/catalog';
+import { CanvasNodeCardFrame } from '@/components/canvas-node-card-frame';
+import { ExecutionStickyHeaderFrame } from '@/components/execution-sticky-header';
+import {
+  CANVAS_NODE_CARD_WIDTH,
+  canvasNodeCardMinHeight,
+} from '@/lib/graph/canvas-node-card-metrics';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useUiText } from '@/components/ui-language-provider';
 import type {
@@ -54,34 +76,52 @@ const labels: Record<string, string> = {
   completed: 'Completed',
 };
 
-function TargetNode({ data }: NodeProps<Node<{ target: ExecutableTarget }>>) {
+function TargetNode({
+  data,
+  selected,
+}: NodeProps<Node<{ target: ExecutableTarget }>>) {
   const { t } = useUiText();
   const target = data.target;
+  const busy = ['running', 'reviewing', 'briefing'].includes(target.status);
   return (
-    <div className="h-full rounded-2xl border border-border bg-card p-4 shadow-sm">
+    <>
       <Handle type="target" position={Position.Left} isConnectable={false} />
-      <div className="text-[11px] text-muted-foreground">
-        {t(layers.find((layer) => layer.id === target.sourceKind)!.label)}
-      </div>
-      <div className="mt-2 line-clamp-2 text-sm font-medium">
-        {target.title}
-      </div>
-      <div
-        className={cn(
-          'mt-4 text-xs',
-          target.status === 'completed'
-            ? 'text-emerald-600'
-            : ['running', 'reviewing', 'briefing'].includes(target.status)
-              ? 'text-sky-500'
-              : target.status === 'failed'
-                ? 'text-red-500'
-                : 'text-muted-foreground',
-        )}
-      >
-        {t(labels[target.status])}
-      </div>
+      <CanvasNodeCardFrame
+        density="standard"
+        focused={selected}
+        busy={busy}
+        accentColor={busy ? 'var(--graph-running)' : undefined}
+        kindLabel={
+          <span className="rounded-lg bg-foreground px-1.5 py-0.5 text-[9px] font-medium text-background">
+            {t(layers.find((layer) => layer.id === target.sourceKind)!.label)}
+          </span>
+        }
+        title={target.title}
+        summary={target.summary}
+        status={
+          <span
+            className={cn(
+              'text-[11px]',
+              target.status === 'completed'
+                ? 'text-emerald-600'
+                : busy
+                  ? 'text-sky-500'
+                  : target.status === 'failed'
+                    ? 'text-red-500'
+                    : 'text-muted-foreground',
+            )}
+          >
+            {t(labels[target.status])}
+          </span>
+        }
+        footer={
+          <span className="font-mono text-[9px] text-muted-foreground">
+            {target.sourceId}
+          </span>
+        }
+      />
       <Handle type="source" position={Position.Right} isConnectable={false} />
-    </div>
+    </>
   );
 }
 const nodeTypes = { target: TargetNode };
@@ -89,15 +129,22 @@ const nodeTypes = { target: TargetNode };
 export function DeliveryWorkspace({
   projectId,
   initialWorkspace,
+  folders,
 }: {
   projectId: string;
   initialWorkspace: Workspace;
+  folders: ContextBrowserFolder[];
 }) {
   const { t } = useUiText();
   const [workspace, setWorkspace] = useState<Workspace>(initialWorkspace);
   const [layer, setLayer] = useState<DeliverySourceKind>('mvp');
   const [uid, setUid] = useState<string | null>(null);
   const [input, setInput] = useState('');
+  const [files, setFiles] = useState<Array<{ name: string; base64: string }>>(
+    [],
+  );
+  const [contextRefs, setContextRefs] = useState<string[]>([]);
+  const [folderPath, setFolderPath] = useState('');
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   const [settings, setSettings] = useState(false);
@@ -179,6 +226,35 @@ export function DeliveryWorkspace({
       setPending(false);
     }
   }
+  async function attach(selected: FileList | File[] | null) {
+    if (!selected) return;
+    try {
+      const next = await Promise.all(
+        Array.from(selected).map(
+          (file) =>
+            new Promise<{ name: string; base64: string }>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => {
+                if (typeof reader.result !== 'string') {
+                  reject(new Error('Could not read attachment.'));
+                  return;
+                }
+                resolve({
+                  name: file.name,
+                  base64: reader.result.split(',')[1],
+                });
+              };
+              reader.onerror = () =>
+                reject(new Error('Could not read attachment.'));
+              reader.readAsDataURL(file);
+            }),
+        ),
+      );
+      setFiles((current) => [...current, ...next]);
+    } catch (failure) {
+      setError(String(failure));
+    }
+  }
   const graph = useMemo(() => {
     const visible = workspace.targets.filter(
       (entry) => entry.sourceKind === layer,
@@ -199,7 +275,10 @@ export function DeliveryWorkspace({
     layout.setGraph({ rankdir: 'LR', ranksep: 80, nodesep: 36 });
     layout.setDefaultEdgeLabel(() => ({}));
     for (const entry of visible)
-      layout.setNode(entry.sourceUid, { width: 250, height: 145 });
+      layout.setNode(entry.sourceUid, {
+        width: CANVAS_NODE_CARD_WIDTH,
+        height: canvasNodeCardMinHeight('standard'),
+      });
     for (const edge of edges) layout.setEdge(edge.source, edge.target);
     dagre.layout(layout);
     return {
@@ -208,10 +287,12 @@ export function DeliveryWorkspace({
         id: entry.sourceUid,
         type: 'target',
         position: {
-          x: layout.node(entry.sourceUid).x - 125,
-          y: layout.node(entry.sourceUid).y - 72.5,
+          x: layout.node(entry.sourceUid).x - CANVAS_NODE_CARD_WIDTH / 2,
+          y:
+            layout.node(entry.sourceUid).y -
+            canvasNodeCardMinHeight('standard') / 2,
         },
-        style: { width: 250, height: 145 },
+        style: { width: CANVAS_NODE_CARD_WIDTH },
         data: { target: entry },
       })),
     };
@@ -302,12 +383,7 @@ export function DeliveryWorkspace({
           className="relative min-h-0 flex-1 overflow-y-auto p-5 pb-64"
         >
           <div ref={setSentinel} aria-hidden="true" className="h-px" />
-          <header
-            className={cn(
-              'sticky top-0 z-20 flex flex-wrap items-start justify-between gap-4 border border-border bg-background/95 p-4 shadow-sm backdrop-blur',
-              stuck ? 'rounded-b-xl border-t-0' : 'rounded-xl',
-            )}
-          >
+          <ExecutionStickyHeaderFrame stuck={stuck}>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-sm font-medium">
@@ -394,7 +470,7 @@ export function DeliveryWorkspace({
                 )
               )}
             </div>
-          </header>
+          </ExecutionStickyHeaderFrame>
           <details className="my-5 text-sm">
             <summary className="cursor-pointer text-muted-foreground">
               {t('Source')}
@@ -478,9 +554,11 @@ export function DeliveryWorkspace({
           {error}
         </div>
       )}
-      {settings && (
-        <section className="absolute right-5 top-20 z-40 max-h-[75vh] w-[min(440px,90%)] space-y-4 overflow-y-auto rounded-2xl border bg-background p-5 shadow-xl">
-          <h2>{t('Delivery settings')}</h2>
+      <Dialog open={settings} onOpenChange={setSettings}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{t('Delivery settings')}</DialogTitle>
+          </DialogHeader>
           <label className="block text-sm">
             {t('Module instructions')}
             <textarea
@@ -555,8 +633,8 @@ export function DeliveryWorkspace({
           >
             {t('Save')}
           </Button>
-        </section>
-      )}
+        </DialogContent>
+      </Dialog>
       {target && (
         <AgentGraphComposerCard
           title={t(
@@ -565,37 +643,107 @@ export function DeliveryWorkspace({
               : 'Discuss delivery',
           )}
           running={running}
-          description={
-            !record
-              ? t('Prepare this target with your selected models.')
-              : undefined
-          }
         >
+          <AgentComposerAttachments
+            className="mb-3"
+            label={t('Optional sources')}
+            items={[
+              ...contextRefs.map((ref) => ({
+                id: ref,
+                label: contextAttachmentTitle(folders, ref),
+                onRemove: () =>
+                  setContextRefs((current) =>
+                    current.filter((item) => item !== ref),
+                  ),
+              })),
+              ...files.map((file, index) => ({
+                id: `${file.name}:${index}`,
+                label: file.name,
+                onRemove: () =>
+                  setFiles((current) => current.filter((_, i) => i !== index)),
+              })),
+            ]}
+          />
           <AgentComposerShell
             controls={
-              <div className="flex justify-end">
-                <Button
-                  disabled={pending || !input.trim()}
-                  size="icon"
-                  onClick={async () => {
-                    if (!record) {
-                      if (await command('prepare', { models, message: input }))
-                        setInput('');
-                    } else if (await command('send', { message: input }))
+              <AgentRunControls
+                extraInfo={
+                  <ContextAttachmentPicker
+                    embedded
+                    folders={folders}
+                    folderPath={folderPath}
+                    onFolderPath={setFolderPath}
+                    refs={contextRefs}
+                    onToggleRef={(ref) =>
+                      setContextRefs((current) =>
+                        current.includes(ref)
+                          ? current.filter((item) => item !== ref)
+                          : [...current, ref],
+                      )
+                    }
+                    files={files}
+                    onAddFiles={(added) => void attach(added)}
+                    onRemoveFile={(index) =>
+                      setFiles((current) =>
+                        current.filter((_, i) => i !== index),
+                      )
+                    }
+                    label={t('Optional sources')}
+                    accept=".md,.markdown,.txt,.html,.htm,.pdf,.png,.jpg,.jpeg,.webp,.gif"
+                    disabled={pending || running}
+                  />
+                }
+                extraInfoCount={contextRefs.length + files.length}
+                extraInfoLabel="Optional sources"
+                value={record?.models.orchestrator ?? models.orchestrator}
+                onChange={(profile) => {
+                  if (record)
+                    void command('models', {
+                      models: { ...record.models, orchestrator: profile },
+                    });
+                  else setModels({ ...models, orchestrator: profile });
+                }}
+                disabled={pending || !input.trim()}
+                running={pending}
+                label="Orchestrator"
+                actionLabel={
+                  record?.brief?.confirmedAt
+                    ? 'Continue delivery'
+                    : 'Prepare delivery brief'
+                }
+                onRun={() =>
+                  void (async () => {
+                    const sent = !record
+                      ? await command('prepare', {
+                          models,
+                          message: input,
+                          files,
+                          contextRefs,
+                        })
+                      : await command('send', {
+                          message: input,
+                          files,
+                          contextRefs,
+                        });
+                    if (sent) {
                       setInput('');
-                  }}
-                  aria-label={t('Send')}
-                >
-                  <ArrowUp className="size-4" />
-                </Button>
-              </div>
+                      setFiles([]);
+                      setContextRefs([]);
+                    }
+                  })()
+                }
+              />
             }
           >
-            <textarea
+            <Textarea
               value={input}
               onChange={(event) => setInput(event.target.value)}
+              maxLength={20000}
+              disabled={pending || running}
+              rows={4}
+              className="min-h-24 resize-none text-sm"
               placeholder={t('Describe the outcome or your feedback.')}
-              className="min-h-28 w-full resize-none p-2 text-sm outline-none"
+              aria-label={t('Delivery feedback')}
             />
           </AgentComposerShell>
         </AgentGraphComposerCard>

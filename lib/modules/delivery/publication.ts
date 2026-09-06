@@ -16,6 +16,7 @@ import { deliveryGit } from './workspace.ts';
 import { readDeliveryRecord, updateDeliveryRecord } from './storage.ts';
 import { deliveryCandidateReady } from './record.ts';
 import { syncProjectMain } from '../implementation/sync-main.ts';
+import { claimDeliveryTarget } from './ownership.ts';
 
 const execute = promisify(execFile);
 const runner: HostCommandRunner = async (command, args, options) =>
@@ -87,109 +88,129 @@ export async function acceptDelivery(
   project: RegisteredProject,
   uid: string,
   expectedRevision: number,
+  dependencies: {
+    runner?: HostCommandRunner;
+    git?: typeof deliveryGit;
+    syncMain?: typeof syncProjectMain;
+  } = {},
 ) {
+  const runCommand = dependencies.runner ?? runner;
+  const git = dependencies.git ?? deliveryGit;
+  const syncMain = dependencies.syncMain ?? syncProjectMain;
   return serializeCandidatePublication(async () => {
-    const record = await readDeliveryRecord(project, uid);
-    if (!record?.workspace || record.revision !== expectedRevision)
-      throw new PublicApiError(
-        'Refresh the current delivery before accepting.',
-        409,
-      );
-    if (record.runs.at(-1)?.status === 'running')
-      throw new PublicApiError('Wait for the current run.', 409);
-    const head = await deliveryGit(record.workspace.path, 'rev-parse', 'HEAD');
-    if (!deliveryCandidateReady(record, head))
-      throw new PublicApiError(
-        'Current delivery verification or review is incomplete.',
-        409,
-      );
-    if (await deliveryGit(record.workspace.path, 'status', '--porcelain'))
-      throw new PublicApiError(
-        'The workspace changed after verification.',
-        409,
-      );
-    const pr = record.publication!;
-    const match = pr.url.match(
-      /^https:\/\/github.com\/([^/]+\/[^/]+)\/pull\/(\d+)$/,
-    );
-    if (!match) throw new PublicApiError('Invalid delivery pull request.');
-    const repository = match[1];
-    await withGitHubPublicationIdentity(
-      runner,
-      record.workspace.path,
-      process.env.PRAXIS_BOT_GITHUB_LOGIN ?? 'cunqi-bot',
-      async (gh) => {
-        const observed = JSON.parse(
-          await gh('gh', [
-            'pr',
-            'view',
-            String(pr.number),
-            '--repo',
-            repository,
-            '--json',
-            'headRefOid,state,isDraft',
-          ]),
-        );
-        if (observed.headRefOid !== head || observed.state !== 'OPEN')
-          throw new PublicApiError(
-            'The pull request changed. Refresh the current candidate.',
-            409,
-          );
-        if (observed.isDraft)
-          await gh('gh', [
-            'pr',
-            'ready',
-            String(pr.number),
-            '--repo',
-            repository,
-          ]);
-        await gh('gh', [
-          'pr',
-          'merge',
-          String(pr.number),
-          '--repo',
-          repository,
-          '--merge',
-          '--match-head-commit',
-          head,
-        ]);
-        const merged = JSON.parse(
-          await gh('gh', [
-            'pr',
-            'view',
-            String(pr.number),
-            '--repo',
-            repository,
-            '--json',
-            'state',
-          ]),
-        );
-        if (merged.state !== 'MERGED')
-          throw new PublicApiError('The pull request has not merged yet.', 409);
-      },
-    );
-    await updateDeliveryRecord(project, uid, (current) => {
-      current.acceptedHead = head;
-      current.publication!.state = 'MERGED';
-      current.publication!.draft = false;
-      current.status = 'completed';
-      current.response = {
-        status: 'completed',
-        title: 'Delivery accepted',
-        detail: `Merged ${pr.url}`,
-      };
-    });
+    const release = claimDeliveryTarget(project, uid);
     try {
-      await syncProjectMain(project.codePath ?? project.rootPath);
-    } catch (error) {
+      const record = await readDeliveryRecord(project, uid);
+      if (!record?.workspace || record.revision !== expectedRevision)
+        throw new PublicApiError(
+          'Refresh the current delivery before accepting.',
+          409,
+        );
+      if (record.runs.at(-1)?.status === 'running')
+        throw new PublicApiError('Wait for the current run.', 409);
+      const head = await git(record.workspace.path, 'rev-parse', 'HEAD');
+      if (!deliveryCandidateReady(record, head))
+        throw new PublicApiError(
+          'Current delivery verification or review is incomplete.',
+          409,
+        );
+      if (await git(record.workspace.path, 'status', '--porcelain'))
+        throw new PublicApiError(
+          'The workspace changed after verification.',
+          409,
+        );
+      const pr = record.publication!;
+      const match = pr.url.match(
+        /^https:\/\/github.com\/([^/]+\/[^/]+)\/pull\/(\d+)$/,
+      );
+      if (!match) throw new PublicApiError('Invalid delivery pull request.');
+      const repository = match[1];
+      await withGitHubPublicationIdentity(
+        runCommand,
+        record.workspace.path,
+        process.env.PRAXIS_BOT_GITHUB_LOGIN ?? 'cunqi-bot',
+        async (gh) => {
+          const observed = JSON.parse(
+            await gh('gh', [
+              'pr',
+              'view',
+              String(pr.number),
+              '--repo',
+              repository,
+              '--json',
+              'headRefOid,state,isDraft',
+            ]),
+          );
+          if (
+            observed.headRefOid !== head ||
+            !['OPEN', 'MERGED'].includes(observed.state)
+          )
+            throw new PublicApiError(
+              'The pull request changed. Refresh the current candidate.',
+              409,
+            );
+          if (observed.state === 'MERGED') return;
+          if (observed.isDraft)
+            await gh('gh', [
+              'pr',
+              'ready',
+              String(pr.number),
+              '--repo',
+              repository,
+            ]);
+          await gh('gh', [
+            'pr',
+            'merge',
+            String(pr.number),
+            '--repo',
+            repository,
+            '--merge',
+            '--match-head-commit',
+            head,
+          ]);
+          const merged = JSON.parse(
+            await gh('gh', [
+              'pr',
+              'view',
+              String(pr.number),
+              '--repo',
+              repository,
+              '--json',
+              'state',
+            ]),
+          );
+          if (merged.state !== 'MERGED')
+            throw new PublicApiError(
+              'The pull request has not merged yet.',
+              409,
+            );
+        },
+      );
       await updateDeliveryRecord(project, uid, (current) => {
+        current.acceptedHead = head;
+        current.publication!.state = 'MERGED';
+        current.publication!.draft = false;
+        current.status = 'completed';
         current.response = {
-          status: 'warning',
-          title: 'Delivery merged; local sync needs attention',
-          detail: String(error),
+          status: 'completed',
+          title: 'Delivery accepted',
+          detail: `Merged ${pr.url}`,
         };
       });
+      try {
+        await syncMain(project.codePath ?? project.rootPath);
+      } catch (error) {
+        await updateDeliveryRecord(project, uid, (current) => {
+          current.response = {
+            status: 'warning',
+            title: 'Delivery merged; local sync needs attention',
+            detail: String(error),
+          };
+        });
+      }
+      return readDeliveryRecord(project, uid);
+    } finally {
+      release();
     }
-    return readDeliveryRecord(project, uid);
   });
 }

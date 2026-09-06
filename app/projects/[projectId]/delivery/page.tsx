@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { ProjectShell } from '@/components/project-shell';
 import { DeliveryWorkspace } from '@/components/delivery-workspace';
 import { readDeliveryWorkspace } from '@/lib/modules/delivery/service';
+import { readContextBrowser } from '@/lib/modules/product-context/catalog';
 import {
   getProject,
   listProjects,
@@ -25,6 +26,7 @@ export default async function DeliveryPage({
       <DeliveryWorkspace
         projectId={project.id}
         initialWorkspace={await readDeliveryWorkspace(project)}
+        folders={await readContextBrowser(project)}
       />
     </ProjectShell>
   );

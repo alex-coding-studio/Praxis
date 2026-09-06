@@ -1,7 +1,7 @@
 'use client';
 
 import { FolderOpen, GitPullRequest } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useUiText } from '@/components/ui-language-provider';
 import type { LatestResponseDocument } from '@/lib/execution-observability/types';
 import {
@@ -13,6 +13,25 @@ import {
 import type { GitHubPullRequest } from '@/lib/github-delivery';
 import type { ActionRun } from '@/lib/modules/implementation/execution-types';
 import { cn } from '@/lib/utils';
+
+export function ExecutionStickyHeaderFrame({
+  stuck,
+  children,
+}: {
+  stuck: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <header
+      className={cn(
+        'sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border border-border bg-background/95 p-4 shadow-sm backdrop-blur transition-[border-radius] duration-150',
+        stuck ? 'rounded-b-xl border-t-0' : 'rounded-xl',
+      )}
+    >
+      {children}
+    </header>
+  );
+}
 
 export function PullRequestChip({
   pr,
