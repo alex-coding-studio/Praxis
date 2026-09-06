@@ -587,15 +587,15 @@ void test('readPlanningFile keeps its internal messages and size boundary', asyn
 
 void test('the migrated call sites import the shared resolver', async () => {
   const { readFile } = await import('node:fs/promises');
-  for (const name of [
-    'graph/task/nodes.ts',
-    'modules/implementation/planning-sources.ts',
+  for (const [name, resolver] of [
+    ['graph/task/nodes.ts', '../../planning-paths.ts'],
+    ['planning-documents.ts', './planning-paths.ts'],
   ]) {
     const source = await readFile(
       new URL(`../lib/${name}`, import.meta.url),
       'utf8',
     );
-    assert.match(source, /from '\.\.\/\.\.\/planning-paths\.ts'/, name);
+    assert.ok(source.includes(`from '${resolver}'`), name);
     assert.match(source, /resolvePlanningPath\(/, name);
     assert.ok(
       !/startsWith\(`\$\{[a-zA-Z]+Root\}\$\{path\.sep\}`\)/.test(source),
