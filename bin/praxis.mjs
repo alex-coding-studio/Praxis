@@ -23,6 +23,8 @@ const packageRoot = path.resolve(
   '..',
 );
 const DEFAULT_PORT = 3000;
+const MCP_SUBCOMMANDS = ['info', 'enable', 'disable', 'rotate'];
+const MCP_ENDPOINT_PATH = '/api/mcp';
 const DEFAULT_READY_TIMEOUT_MS = 10_000;
 const STOP_GRACE_MS = 5_000;
 const LOG_TAIL_BYTES = 256 * 1024;
@@ -57,6 +59,9 @@ async function main(rawArgs) {
     case 'logs':
       await printLogs(parsed);
       return;
+    case 'mcp':
+      await runMcpCommand(parsed);
+      return;
     default:
       console.error(`Unknown command: ${parsed.command}`);
       printHelp();
@@ -67,14 +72,24 @@ async function main(rawArgs) {
 function parseArgs(argv) {
   const command = argv.shift();
   if (
-    !['start', 'dev', 'stop', 'restart', 'status', 'logs'].includes(command)
+    !['start', 'dev', 'stop', 'restart', 'status', 'logs', 'mcp'].includes(
+      command,
+    )
   ) {
     console.error(`Unknown command: ${command}`);
     printHelp();
     process.exit(1);
   }
+  const subcommand = command === 'mcp' ? argv.shift() : null;
+  if (command === 'mcp' && !MCP_SUBCOMMANDS.includes(subcommand)) {
+    console.error(
+      `Unknown 'mcp' subcommand: ${subcommand ?? '(missing)'}. Expected ${MCP_SUBCOMMANDS.join(', ')}.`,
+    );
+    process.exit(1);
+  }
   const result = {
     command,
+    subcommand,
     detach: false,
     follow: false,
     port: DEFAULT_PORT,
@@ -162,6 +177,21 @@ function parseArgs(argv) {
     (result.detach || result.hostname !== null || result.nextArgs.length > 0)
   )
     fail("Unexpected argument for 'logs'.");
+  if (
+    result.command === 'mcp' &&
+    (result.detach ||
+      result.follow ||
+      result.linesGiven ||
+      result.hostname !== null ||
+      result.nextArgs.length > 0)
+  )
+    fail("Unexpected argument for 'mcp'.");
+  if (
+    result.command === 'mcp' &&
+    result.subcommand !== 'info' &&
+    result.portGiven
+  )
+    fail(`'praxis mcp ${result.subcommand}' takes no --port.`);
   return result;
 }
 
@@ -632,6 +662,77 @@ async function printLogs(parsed) {
   });
 }
 
+async function mcpCredentials() {
+  return import('../lib/mcp/credentials.ts');
+}
+
+function runningMcpPorts() {
+  return listStates()
+    .filter((state) => verifyState(state) === 'running')
+    .map((state) => state.port);
+}
+
+async function runMcpCommand(parsed) {
+  const credentials = await mcpCredentials();
+  if (parsed.subcommand === 'enable') {
+    const { file, issued } = await credentials.enableMcpEndpoint();
+    console.log(
+      issued
+        ? `Issued a new MCP credential and enabled the endpoint.`
+        : `Enabled the MCP endpoint with the existing credential.`,
+    );
+    console.log(`  Credential file: ${file}`);
+    console.log('  Restart the Praxis server so it reads the new setting.');
+    return;
+  }
+  if (parsed.subcommand === 'disable') {
+    const { file, changed } = await credentials.disableMcpEndpoint();
+    console.log(
+      changed
+        ? 'Disabled the MCP endpoint. The credential is retained.'
+        : 'The MCP endpoint was already disabled.',
+    );
+    console.log(`  Credential file: ${file}`);
+    console.log(
+      '  Disabling denies new work; an operation that is already publishing continues.',
+    );
+    return;
+  }
+  if (parsed.subcommand === 'rotate') {
+    const { file } = await credentials.rotateMcpToken();
+    console.log(
+      'Issued a new MCP credential. The previous one no longer works.',
+    );
+    console.log(`  Credential file: ${file}`);
+    console.log('  Update every configured client, then restart the server.');
+    return;
+  }
+  const stored = await credentials.readMcpCredentials();
+  const file = credentials.mcpCredentialPath();
+  const ports = parsed.portGiven ? [parsed.port] : runningMcpPorts();
+  console.log(
+    `MCP endpoint: ${stored?.enabled ? 'enabled' : 'not enabled'} for this installation.`,
+  );
+  console.log(`  Credential file: ${file}`);
+  if (!stored) console.log("  Run 'praxis mcp enable' to issue a credential.");
+  else if (!stored.enabled)
+    console.log("  Run 'praxis mcp enable' to serve the endpoint again.");
+  if (ports.length === 0) {
+    console.log('  No managed background Praxis server is running.');
+    console.log(
+      `  Start one with 'praxis start -d --port <n>', then the endpoint is http://127.0.0.1:<n>${MCP_ENDPOINT_PATH}.`,
+    );
+  } else
+    for (const port of ports)
+      console.log(`  Endpoint: http://127.0.0.1:${port}${MCP_ENDPOINT_PATH}`);
+  console.log(
+    '  The endpoint answers loopback requests only and requires the bearer credential in that file.',
+  );
+  console.log(
+    '  This command does not start, restart or modify a running project.',
+  );
+}
+
 function serverUrl(port, hostname) {
   return `http://${hostname ?? 'localhost'}:${port}`;
 }
@@ -775,6 +876,8 @@ Usage:
   praxis restart [--port <n>]
   praxis status [--port <n>]
   praxis logs [--port <n>] [-n <lines>] [-f]
+  praxis mcp info [--port <n>]
+  praxis mcp enable | disable | rotate
 
 Lifecycle options:
   -d, --detach      Run start or dev in the background
@@ -783,6 +886,9 @@ Lifecycle options:
   -H, --hostname    Hostname to advertise (passed to Next.js)
   -n, --lines <n>   Log lines to show (default 50)
   -f, --follow      Follow the log output
+
+The MCP commands manage the local MCP endpoint credential under PRAXIS_HOME/mcp.
+'praxis mcp info' only reports; it never starts, restarts or modifies a server.
 
 Lifecycle commands manage only processes started with --detach.
 Restart reuses the stored mode, hostname, port and Next.js arguments exactly.
@@ -797,5 +903,7 @@ Examples:
   praxis logs --port 3100 -n 100
   praxis restart --port 3100
   praxis stop --port 3100
-  praxis dev --port 3100`);
+  praxis dev --port 3100
+  praxis mcp enable
+  praxis mcp info --port 3100`);
 }
