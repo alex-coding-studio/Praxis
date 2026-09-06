@@ -31,10 +31,19 @@ import {
   createDomainModelRequest,
   domainModelHarnessVersion,
   domainModelPrompt,
-  parseDomainModelResult,
+  parseDomainModelEnvelope,
+  type DomainModelEnvelope,
   type DomainModelAgentResult,
   type DomainModelRequest,
 } from './harness.ts';
+import {
+  assertDomainModelSelection,
+  prepareDomainModelBasis,
+  type DomainModelBasis,
+} from './basis.ts';
+import { composeDomainModel } from './materializer.ts';
+import { toDomainModelSemanticResult } from './producer-adapter.ts';
+import type { DomainModelResult } from './contract.ts';
 import {
   startLocalAgentRun,
   type LocalAgentUsage,
@@ -158,16 +167,8 @@ export async function startDomainModelRun(
     startMessage: `Domain Modeling Run started with ${input.profile.agent}`,
     validate: async () => {
       const model = await readDomainModel(project);
-      const available = new Set([
-        ...model.entities.map((item) => item.id),
-        ...model.relationships.map((item) => item.id),
-      ]);
       const selectedIds = [...new Set(input.selectedIds)];
-      if (selectedIds.some((id) => !available.has(id)))
-        throw new PublicApiError(
-          'A selected Domain element is no longer available.',
-          409,
-        );
+      assertDomainModelSelection(model, selectedIds);
       const previousSummary = await latestSummary(project);
       coordinatorRun = (await listLatestDomainModelRuns(project, 20)).find(
         (candidate) =>
@@ -407,6 +408,33 @@ export async function listLatestDomainModelRuns(
     .slice(0, limit);
 }
 
+function settledDomainModelResult(
+  envelope: DomainModelEnvelope,
+  basis: DomainModelBasis,
+  semantic: DomainModelResult,
+): DomainModelAgentResult {
+  const identity = {
+    harnessVersion: envelope.harnessVersion,
+    requestId: envelope.requestId,
+    baseVersion: envelope.baseVersion,
+    inputFingerprint: envelope.inputFingerprint,
+    summary: envelope.summary,
+  };
+  if (semantic.outcome === 'clarification')
+    return {
+      ...identity,
+      outcome: 'clarification',
+      question: semantic.question,
+    };
+  if (semantic.outcome === 'no-change')
+    return { ...identity, outcome: 'no-change', reason: semantic.reason };
+  return {
+    ...identity,
+    outcome: 'applied',
+    model: composeDomainModel(basis.model, semantic),
+  };
+}
+
 async function settle(
   project: RegisteredProject,
   request: DomainModelRequest,
@@ -423,11 +451,17 @@ async function settle(
   active.settling = true;
   active.agentOutput = agent.finalOutput;
   active.reservation?.setPhase('finalizing', 'HOST');
-  let result = parseDomainModelResult(agent.finalOutput, request);
+  const envelope = parseDomainModelEnvelope(agent.finalOutput, request);
+  const basis = prepareDomainModelBasis(project, {
+    model: request.model,
+    selectedIds: request.selectedIds,
+  });
+  const semantic = toDomainModelSemanticResult(envelope);
+  let result = settledDomainModelResult(envelope, basis, semantic);
   let change: DomainChange | null = null;
   if (result.outcome === 'applied') {
     const applied = await applyProposedDomainModel(project, {
-      baseVersion: request.baseVersion,
+      baseVersion: basis.stateVersion,
       runId: original.id,
       userInputPath: original.userInputPath ?? null,
       summary: result.summary,
