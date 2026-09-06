@@ -390,3 +390,69 @@ void test('identity keying distinguishes a retained Contract from a new proposal
     added.id,
   ]);
 });
+
+void test('a proposal localKey shaped like a Candidate label cannot capture a retained identity', () => {
+  const uids = [
+    '55555555-5555-4555-8555-555555555555',
+    '66666666-6666-4666-8666-666666666666',
+  ];
+  const created = materializeWhatToDoDeliveryMap(
+    {
+      runId: 'RUN-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      updatedAt: '2026-09-02T00:00:00.000Z',
+      sourceUids: ['feature-1'],
+      result: {
+        outcome: 'map-proposal',
+        contracts: [semanticContract('foundation')],
+        sourceClaims: [
+          {
+            ...result.sourceClaims[0]!,
+            contracts: [{ kind: 'proposal', localKey: 'foundation' }],
+          },
+        ],
+      },
+      basis: { currentMap: null, userInput },
+      sourceSnapshots,
+    },
+    () => uids.shift()!,
+  );
+  const retained = created.contracts[0]!;
+  const collidingKey = `CANDIDATE-${retained.id.slice(5)}`;
+
+  const adjusted = materializeWhatToDoDeliveryMap(
+    {
+      runId: 'RUN-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      updatedAt: '2026-09-02T01:00:00.000Z',
+      sourceUids: ['feature-1'],
+      basis: { currentMap: created, userInput },
+      sourceSnapshots,
+      result: {
+        outcome: 'map-proposal',
+        contracts: [semanticContract(collidingKey)],
+        sourceClaims: [
+          {
+            ...result.sourceClaims[0]!,
+            contracts: [{ kind: 'contract', id: retained.id }],
+          },
+        ],
+        recomposition: {
+          effects: [
+            {
+              kind: 'retain',
+              from: [{ kind: 'contract', id: retained.id }],
+              to: [{ kind: 'contract', id: retained.id }],
+            },
+            {
+              kind: 'add',
+              from: [],
+              to: [{ kind: 'proposal', localKey: collidingKey }],
+            },
+          ],
+        },
+      },
+    },
+    () => uids.shift()!,
+  );
+
+  assert.deepEqual(adjusted.sourceClaims[0]!.contractIds, [retained.id]);
+});

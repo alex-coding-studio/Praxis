@@ -125,10 +125,14 @@ export function whatToDoCurrentMapPromptView(map: WhatToDoDeliveryMap) {
   };
 }
 
+function contractIdentityKey(id: string) {
+  return `contract:${id}`;
+}
+
 function contractReferenceKey(reference: DeliveryContractReference) {
   return reference.kind === 'proposal'
-    ? reference.localKey
-    : `CANDIDATE-${reference.id.slice(5)}`;
+    ? `proposal:${reference.localKey}`
+    : contractIdentityKey(reference.id);
 }
 
 function requireIdentity(
@@ -168,12 +172,12 @@ export function materializeWhatToDoDeliveryMap(
   const identities = new Map([
     ...(input.basis.currentMap?.contracts ?? [])
       .filter((contract) =>
-        retainedCandidateIds.has(whatToDoContractCandidateId(contract)),
+        retainedCandidateIds.has(contractIdentityKey(contract.id)),
       )
       .map(
         (contract) =>
           [
-            whatToDoContractCandidateId(contract),
+            contractIdentityKey(contract.id),
             { uid: contract.uid, id: contract.id },
           ] as const,
       ),
@@ -190,15 +194,18 @@ export function materializeWhatToDoDeliveryMap(
         }
       }
       if (!id) throw new Error('Cannot allocate a Delivery Contract identity.');
-      return [contract.localKey, { uid, id }] as const;
+      return [
+        contractReferenceKey({ kind: 'proposal', localKey: contract.localKey }),
+        { uid, id },
+      ] as const;
     }),
   ]);
   const retainedContracts = (input.basis.currentMap?.contracts ?? [])
     .filter((contract) =>
-      retainedCandidateIds.has(whatToDoContractCandidateId(contract)),
+      retainedCandidateIds.has(contractIdentityKey(contract.id)),
     )
     .map((contract) => {
-      const candidateId = whatToDoContractCandidateId(contract);
+      const candidateId = contractIdentityKey(contract.id);
       const update = input.result.contractDependencyUpdates?.find(
         (item) => contractReferenceKey(item.contract) === candidateId,
       );
@@ -238,7 +245,7 @@ export function materializeWhatToDoDeliveryMap(
     };
   });
   const contracts = [...retainedContracts, ...newContracts].map((contract) => {
-    const candidateId = whatToDoContractCandidateId(contract);
+    const candidateId = contractIdentityKey(contract.id);
     return {
       ...contract,
       sourceClaimIds: input.result.sourceClaims
