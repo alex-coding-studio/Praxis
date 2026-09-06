@@ -49,6 +49,7 @@ import { ProjectModuleHeader } from '@/components/project-module-header';
 import { ModuleInstructionsDialog } from '@/components/module-instructions-dialog';
 import { LatestResponseCard } from '@/components/latest-response-card';
 import { deliveryResponse } from '@/lib/modules/delivery/response';
+import { statusPresentation } from '@/lib/execution-observability/status-presentation';
 import { useSurfacePreference } from '@/hooks/use-surface-preference';
 import { useUiText } from '@/components/ui-language-provider';
 import type {
@@ -340,6 +341,17 @@ export function DeliveryWorkspace({
       b.runs.at(-1)!.startedAt.localeCompare(a.runs.at(-1)!.startedAt),
     )[0];
   const canvasResponse = deliveryResponse(projectId, canvasRecord);
+  const targetPresentation = target
+    ? running
+      ? statusPresentation('running')
+      : target.status === 'completed'
+        ? statusPresentation('completed')
+        : target.status === 'failed'
+          ? statusPresentation('fail')
+          : target.status === 'warning'
+            ? statusPresentation('warning')
+            : null
+    : null;
   return (
     <main className="relative flex h-dvh min-w-0 flex-col overflow-hidden">
       <ProjectModuleHeader
@@ -437,7 +449,23 @@ export function DeliveryWorkspace({
           <ExecutionStickyHeaderFrame stuck={stuck}>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-3">
-                <span className="text-sm font-medium">
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium',
+                    targetPresentation?.badge ??
+                      'bg-secondary text-muted-foreground',
+                  )}
+                >
+                  {targetPresentation && (
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'size-1.5 rounded-full',
+                        targetPresentation.dot,
+                        targetPresentation.pulse && 'animate-pulse',
+                      )}
+                    />
+                  )}
                   {t(labels[target.status])}
                 </span>
                 {run && (
@@ -450,9 +478,21 @@ export function DeliveryWorkspace({
               </div>
               {record?.response && (
                 <p className="mt-2 line-clamp-3 text-xs text-muted-foreground">
+                  <span className="font-medium">
+                    {record.response.title} —{' '}
+                  </span>
                   {record.response.detail}
                 </p>
               )}
+              {running &&
+                record?.progress.find((item) => item.status === 'running') && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {
+                      record.progress.find((item) => item.status === 'running')!
+                        .title
+                    }
+                  </p>
+                )}
               <div className="mt-3 flex flex-wrap gap-2">
                 {run && (
                   <a

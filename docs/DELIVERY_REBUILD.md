@@ -17,15 +17,23 @@ One target owns a continuing worktree, branch and PR. Its Orchestrator maintains
 - Standalone logs using the existing LogViewer and actor-tagged log format.
 - Preview at `/projects/<projectId>/delivery`, using the shared CanvasNodeCardFrame, Composer controls, ContextAttachmentPicker and sticky-header frame.
 - Provider fixture regressions for read-only briefing to writable worktree resume, DeepSeek role/access handling, and invalidating checks when the Brief changes.
+- User acceptance of verified existing main when a Target is already satisfied, without manufacturing a commit or PR. The Host rechecks current main and the evidence before accepting.
+- Confirmed Briefs and accepted delivery evidence exposed through the existing Product Context browser as derived Markdown. The delivery record remains authoritative; superseded unconfirmed scope is not current context.
+- Shared Markdown reader for Briefs and responses, including selection feedback into the unchanged Composer. Acceptance actions remain in the Target sticky header.
+- New production navigation and source status projections. Old implementation URLs redirect to the Target workspace, and old execution mutation endpoints have been removed.
+- Scoped reset command with a non-destructive default: `node --experimental-strip-types scripts/reset-legacy-delivery.ts --project=<id>`. Add `--execute` only at the rollout boundary.
 
 ## Remaining work before rollout
 
-- Finish source-context loading and durable brief/evidence artifacts, cancellation/restart and submission concurrency verification.
-- Complete Target header and Canvas response/status integration, workspace opening and source-linked navigation. Keep the shared Composer and context picker unchanged.
-- Replace production implementation navigation and Card-based completion/protection consumers with Target records. Remove retired Card/Plan/Action workflows and their obsolete tests after shared utilities have been extracted.
-- Implement and verify the scoped one-time Locus execution reset, then run it only after the new flow is ready. Existing source graphs, repository commits and remote PRs remain intact.
-- Validate both independent-review and justified-review-skip delivery paths with a real provider, obtain user UI acceptance, then finish final review and publication.
+- Finish extracting shared publication, path and log utilities from the old implementation module. Remove retired Card/Plan/Action consumers and their obsolete tests at the reset boundary, without deleting graph-module behavior.
+- Complete final UI and real-project dogfood before rollout. Keep the shared Composer and context picker unchanged.
+- Run the verified one-time Locus execution reset only after the new flow is ready. Existing source graphs, repository commits and remote PRs remain intact.
+- Obtain user UI acceptance, complete final exact-head review and repository gates, then publish the final result.
 
 ## Validation boundaries
 
-`npm run test:delivery` exercises projection, storage, brief/session continuity, model-pool choice, provider resume and merge eligibility. Existing provider, publication, observability and UI suites remain applicable. Fixture tests prove orchestration mechanics, not model task quality or human visual acceptance. No real Locus execution or destructive reset has been run by this branch yet.
+`npm run test:delivery` exercises projection, storage, brief/session continuity, model-pool choice, provider resume, merge eligibility, existing-main acceptance, context artifacts and reset ownership. Existing provider, publication, observability and UI suites remain applicable. Fixture tests prove orchestration mechanics, not model task quality or human visual acceptance.
+
+Two opt-in real-provider smoke scripts have passed in temporary projects. `scripts/smoke-delivery-brief.ts` demonstrated two Brief turns in the same native Codex session. `scripts/smoke-delivery-execution.ts` demonstrated an Astra Orchestrator delegating code and unit checks to a Luna Worker, followed by an independent Luna Reviewer approving the same commit. These scripts incur model usage and are not part of the automatic unit suite. The execution smoke deliberately excludes remote publication; temporary repositories and worktrees are removed afterward.
+
+No real Locus execution, PR merge or destructive reset has been run by this branch yet. Real provider evidence does not substitute for the remaining user-facing rollout and acceptance.
