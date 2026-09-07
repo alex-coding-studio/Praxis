@@ -6,6 +6,7 @@ import { createRunLog, type RunLogWriter } from './run-log.ts';
 import { hostOperationLogUrlPath } from './types.ts';
 
 export const HOST_OPERATION_KINDS = [
+  'node-document-update',
   'sync-main',
   'undo-action',
   'reread-result',

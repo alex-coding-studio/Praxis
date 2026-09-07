@@ -541,3 +541,34 @@ business capabilities, explain their coverage of the source requirements, and le
 shared architecture in the source document. Do not present one aggregate Feature as a
 completed decomposition or invent technical Features merely to store architecture.
 Human acceptance of generated Candidates remains separate.
+
+## Updating an accepted node document
+
+`praxis_update_node_document` updates the Markdown body of an accepted formal node in
+Product Exploration or Scope Decomposition. This is separate from Candidate acceptance
+and refinement. Use only for a user-requested content edit; it does not accept anything,
+change relationships or mark delivery work complete.
+
+Read the node's output artifact using `praxis_read_resource`, then submit `projectId`,
+`module`, `nodeId`, `expectedRevision` (the returned document hash), and the complete new
+`markdown`. Keep the existing title as the first heading. The body allows 100,000
+characters. Title, card summary, metadata and graph structure are intentionally outside
+this operation, so the node JSON and original acceptance provenance remain unchanged.
+
+The update checks the current body under the existing canvas lock and atomically replaces
+only output.md. A stale edit returns RESOURCE_CHANGED without overwriting another edit;
+resending the already-current body returns changed:false. Prior content is preserved in
+the node's document-history/<previous-hash>.md before replacing the live body. A failed
+history write cannot publish the new body. No node is deleted or recreated.
+
+The response returns the new content revision, resource URI and Host log URL. Frozen
+operation snapshots and original Candidate documents remain immutable. Existing delivery
+source fingerprints include document contents and therefore change naturally; this tool
+does not rewrite historical delivery records or claim their previous checks apply to the
+new content. Review or refresh downstream work through its existing flow when needed.
+
+This is not a source/attachment editor, arbitrary path writer, bulk replacement operation,
+or a tool to update all related nodes implicitly. The caller must choose each node and
+read its current document before editing. A secondary log-finalization failure after the
+atomic document commit is reported as a warning with the committed revision, not as a
+claim that the content was rolled back.
