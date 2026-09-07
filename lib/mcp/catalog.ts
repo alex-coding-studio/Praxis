@@ -1,3 +1,7 @@
+import {
+  MCP_DISCOVERY_GUIDANCE,
+  SCOPE_DISCOVERY_GUIDANCE,
+} from './discovery-guide.ts';
 import { PRODUCT_EXPLORATION_DOCUMENT_GUIDANCE } from '../modules/product-discovery/contract.ts';
 import {
   whatsNextIntentionRegistry,
@@ -83,6 +87,8 @@ export const MCP_LOG_MEDIA_TYPE = 'text/plain';
 
 export const MCP_IMPLEMENTED_TOOLS = [
   'praxis_list_projects',
+  'praxis_list_context',
+  'praxis_list_candidates',
   'praxis_register_project',
   'praxis_create_source',
   'praxis_read_resource',
@@ -139,6 +145,7 @@ export function readCapabilities(options: McpReadOptions = {}) {
     release: 'graph-and-domain-submission',
     host: { activeRunRegistry: activeRunRegistryOwnership() },
     tools: MCP_IMPLEMENTED_TOOLS,
+    discovery: MCP_DISCOVERY_GUIDANCE,
     resources: {
       capabilities: capabilitiesUri(),
       projects: projectsUri(),
@@ -181,7 +188,9 @@ export function readCapabilities(options: McpReadOptions = {}) {
                 decomposition:
                   'When asked to decompose, propose independently meaningful business capabilities and explain where each source capability is covered. Do not treat a single aggregate document node as completed decomposition. Shared architecture remains source context, not a fabricated business Feature.',
               }
-            : undefined,
+            : module === 'scope-decomposition'
+              ? SCOPE_DISCOVERY_GUIDANCE
+              : undefined,
         implementationPath: definition.implementationPath,
         acceptance:
           module === 'product-exploration' || module === 'scope-decomposition'
@@ -457,7 +466,9 @@ export async function readModuleState(
             decomposition:
               'When asked to decompose, propose independently meaningful business capabilities and explain where each source capability is covered. Do not treat a single aggregate document node as completed decomposition. Shared architecture remains source context, not a fabricated business Feature.',
           }
-        : undefined,
+        : module === 'scope-decomposition'
+          ? SCOPE_DISCOVERY_GUIDANCE
+          : undefined,
     contract: {
       id: definition.contract.id,
       version: definition.contract.version,
@@ -521,6 +532,10 @@ export function readContract(
       compatibleOperations: definition.preparationOperations,
       schema: definition.contract.schema,
       example: definition.example,
+      workflow:
+        definition.module === 'scope-decomposition'
+          ? SCOPE_DISCOVERY_GUIDANCE
+          : undefined,
     },
     options,
   );

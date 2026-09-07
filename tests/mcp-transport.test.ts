@@ -118,6 +118,8 @@ void test(
       'praxis_discard_candidate',
       'praxis_get_operation',
       'praxis_inspect_node_deletion',
+      'praxis_list_candidates',
+      'praxis_list_context',
       'praxis_list_projects',
       'praxis_prepare',
       'praxis_read_log',
