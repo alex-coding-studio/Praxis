@@ -153,6 +153,10 @@ export async function submitProductExplorationResult(
         intention: record.request.intention as never,
         motion: record.request.motion as never,
         sourceNodeIds: record.request.sourceNodeIds as string[],
+        operation: record.request.operation as never,
+        revisionCandidateId: (record.request.revisionCandidateId ?? null) as
+          | string
+          | null,
       },
       record.basis.preparedAt,
     );

@@ -19,7 +19,10 @@ import {
   MAX_LOG_LINES,
   MAX_READ_BYTES,
 } from './pagination.ts';
-import { MAX_USER_INPUT_LENGTH } from './prepare.ts';
+import {
+  MAX_USER_INPUT_LENGTH,
+  PRODUCT_EXPLORATION_OPERATIONS,
+} from './prepare.ts';
 import {
   SCOPE_DECOMPOSITION_INTENTIONS,
   SCOPE_DECOMPOSITION_MOTIONS,
@@ -146,16 +149,21 @@ export const PREPARE_INPUT_SCHEMA = {
         },
         operation: {
           type: 'string',
-          enum: [...SCOPE_DECOMPOSITION_OPERATIONS],
+          enum: [
+            ...new Set([
+              ...SCOPE_DECOMPOSITION_OPERATIONS,
+              ...PRODUCT_EXPLORATION_OPERATIONS,
+            ]),
+          ],
           description:
-            'scope-decomposition: defaults to propose. revise-candidate names exactly one Candidate; recompose-candidates names a nonempty selection.',
+            'scope-decomposition: defaults to propose. revise-candidate names exactly one Candidate; recompose-candidates names a nonempty selection. product-exploration: defaults to explore. refine-candidate names exactly one open Candidate to revise in place.',
         },
         candidateIds: {
           type: 'array',
           items: { type: 'string', minLength: 1 },
           maxItems: 100,
           description:
-            'scope-decomposition: open Candidate ids this operation revises or recomposes.',
+            'scope-decomposition: open Candidate ids this operation revises or recomposes. product-exploration: exactly one open Candidate id for refine-candidate.',
         },
         selectionIds: {
           type: 'array',

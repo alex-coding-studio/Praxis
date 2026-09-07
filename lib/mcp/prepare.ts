@@ -9,7 +9,11 @@ import {
 import {
   prepareProductExplorationMaterializationBasis,
   type ProductExplorationMaterializationBasis,
+  type ProductExplorationOperation,
 } from '../modules/product-discovery/basis.ts';
+import { findPendingProductExplorationCandidate } from '../modules/product-discovery/acceptance.ts';
+import { toProductExplorationCandidate } from '../modules/product-discovery/producer-adapter.ts';
+import type { ProductExplorationCandidateInput } from '../modules/product-discovery/contract.ts';
 import {
   intentionDestination,
   whatsNextIntentions,
@@ -35,12 +39,19 @@ import { contractUri, moduleUri, operationSourceUri } from './uri.ts';
 
 export const MAX_USER_INPUT_LENGTH = 20_000;
 
+export const PRODUCT_EXPLORATION_OPERATIONS = [
+  'explore',
+  'refine-candidate',
+] as const satisfies readonly ProductExplorationOperation[];
+
 export type ProductExplorationPrepareRequest = {
   userInput: string;
   layer: WhatsNextLayer;
   intention?: WhatsNextIntention;
   motion?: WhatsNextMotion;
   sourceNodeIds?: string[];
+  operation?: ProductExplorationOperation;
+  candidateIds?: string[];
 };
 
 export function assertUserInput(value: unknown): string {
@@ -81,6 +92,28 @@ function resolveIntention(
   return supplied as WhatsNextIntention;
 }
 
+function assertProductExplorationOperation(
+  supplied: unknown,
+): ProductExplorationOperation {
+  if (supplied === undefined || supplied === null) return 'explore';
+  if (
+    !(PRODUCT_EXPLORATION_OPERATIONS as readonly unknown[]).includes(supplied)
+  )
+    throw invalidArgument(
+      `request.operation must be one of ${PRODUCT_EXPLORATION_OPERATIONS.join(', ')} for product-exploration.`,
+    );
+  return supplied as ProductExplorationOperation;
+}
+
+function assertSingleRefineTarget(supplied: string[] | undefined) {
+  const candidateIds = supplied ?? [];
+  if (candidateIds.length !== 1)
+    throw invalidArgument(
+      'A refine-candidate operation names exactly one open Candidate in request.candidateIds.',
+    );
+  return candidateIds[0] as string;
+}
+
 function resolveMotion(supplied: unknown): WhatsNextMotion {
   if (supplied === undefined || supplied === null) return 'unspecified';
   if (!(whatsNextMotions as readonly unknown[]).includes(supplied))
@@ -94,43 +127,98 @@ export type ProductExplorationPreparedRequest = {
   layer: WhatsNextLayer;
   intention: WhatsNextIntention;
   motion: WhatsNextMotion;
-  operation: 'explore';
+  operation: ProductExplorationOperation;
   sourceNodeIds: string[];
+  revisionCandidateId: string | null;
   userInputSha256: string;
 };
+
+export async function resolveProductExplorationRefineTarget(
+  project: RegisteredProject,
+  candidateId: string,
+) {
+  const pending = await findPendingProductExplorationCandidate(
+    project,
+    candidateId,
+  );
+  if (!pending)
+    throw invalidArgument(
+      `Candidate ${JSON.stringify(candidateId)} is not an open Product Exploration Candidate in this project. Read pendingCandidates in the module resource; an accepted Candidate is a formal Node and is not refined here.`,
+    );
+  const candidate = pending.candidate;
+  if (!candidate.uid)
+    throw invalidArgument(
+      `Candidate ${JSON.stringify(candidateId)} has no stable identity to revise.`,
+    );
+  return {
+    runId: pending.runId,
+    revisionTarget: {
+      candidateId,
+      revision: typeof candidate.revision === 'number' ? candidate.revision : 1,
+      uid: candidate.uid,
+    },
+    revisionSource: toProductExplorationCandidate(
+      candidate as unknown as ProductExplorationCandidateInput,
+      new Set<string>(),
+    ),
+  };
+}
 
 export async function assembleProductExplorationBasis(
   project: RegisteredProject,
   request: Pick<
     ProductExplorationPreparedRequest,
     'intention' | 'motion' | 'sourceNodeIds'
-  >,
+  > &
+    Partial<Pick<ProductExplorationPreparedRequest, 'operation'>> & {
+      revisionCandidateId?: string | null;
+    },
   preparedAt?: string,
 ) {
   const nodes = await listTaskGraphNodes(
     project,
     PRODUCT_EXPLORATION_GRAPH_ROOT,
   );
+  const operation = request.operation ?? 'explore';
+  const refining = operation === 'refine-candidate';
+  const subject = {
+    intention: request.intention,
+    motion: request.motion,
+    sourceNodeIds: request.sourceNodeIds,
+    knownNodeIds: nodes.map((node) => node.id),
+    acceptedCandidateIds: await collectAcceptedCandidateIds(project),
+    knownResourcePaths: [
+      ...new Set(
+        nodes.flatMap((node) =>
+          node.resources.map((resource) => resource.path),
+        ),
+      ),
+    ],
+    reservedCandidateIds: refining
+      ? []
+      : await collectReservedCandidateIds(project),
+    currentCandidates: await collectLatestUnacceptedCandidateStates(project),
+  };
+  const now = preparedAt ? () => preparedAt : undefined;
+  if (!refining)
+    return prepareProductExplorationMaterializationBasis(
+      project,
+      { ...subject, operation: 'explore' },
+      now,
+    );
+  const target = await resolveProductExplorationRefineTarget(
+    project,
+    request.revisionCandidateId as string,
+  );
   return prepareProductExplorationMaterializationBasis(
     project,
     {
-      operation: 'explore',
-      intention: request.intention,
-      motion: request.motion,
-      sourceNodeIds: request.sourceNodeIds,
-      knownNodeIds: nodes.map((node) => node.id),
-      acceptedCandidateIds: await collectAcceptedCandidateIds(project),
-      knownResourcePaths: [
-        ...new Set(
-          nodes.flatMap((node) =>
-            node.resources.map((resource) => resource.path),
-          ),
-        ),
-      ],
-      reservedCandidateIds: await collectReservedCandidateIds(project),
-      currentCandidates: await collectLatestUnacceptedCandidateStates(project),
+      ...subject,
+      operation: 'refine-candidate',
+      revisionTarget: target.revisionTarget,
+      revisionSource: target.revisionSource,
     },
-    preparedAt ? () => preparedAt : undefined,
+    now,
   );
 }
 
@@ -148,6 +236,15 @@ export async function prepareProductExplorationOperation(
   const layer = assertLayer(request.layer);
   const intention = resolveIntention(layer, request.intention);
   const motion = resolveMotion(request.motion);
+  const operation = assertProductExplorationOperation(request.operation);
+  const revisionCandidateId =
+    operation === 'refine-candidate'
+      ? assertSingleRefineTarget(request.candidateIds)
+      : null;
+  if (operation === 'explore' && (request.candidateIds ?? []).length > 0)
+    throw invalidArgument(
+      'request.candidateIds is only read by the refine-candidate operation.',
+    );
 
   const nodes = await listTaskGraphNodes(
     project,
@@ -175,7 +272,16 @@ export async function prepareProductExplorationOperation(
     intention,
     motion,
     sourceNodeIds,
+    operation,
+    revisionCandidateId,
   });
+  const revisionTarget = basis.revisionTarget
+    ? {
+        candidateId: basis.revisionTarget.candidateId,
+        revision: basis.revisionTarget.revision,
+        requiredRevision: basis.revisionTarget.revision + 1,
+      }
+    : null;
 
   const operationId = newMcpOperationId();
   const userInputPath = await writeMcpOperationUserInput(
@@ -209,8 +315,10 @@ export async function prepareProductExplorationOperation(
       layer,
       intention,
       motion,
-      operation: 'explore',
+      operation,
       sourceNodeIds,
+      revisionCandidateId,
+      revisionTarget,
       userInputSha256: sha256Hex(userInput),
     },
     userInputPath,
@@ -254,6 +362,16 @@ export function preparedOperationProjection(record: McpOperationRecord) {
         ),
       })),
     },
+    refine:
+      record.request.operation === 'refine-candidate'
+        ? {
+            ...(record.request.revisionTarget as object),
+            rules:
+              'Return exactly this candidateId as localKey at requiredRevision, refining only its title, summary and outputMarkdown. Type, origins, dependencies, layer, artifact kind, Resources, type template, metadata and presentation must be returned unchanged.',
+            nextStep:
+              'Refinement republishes the Candidate; it does not accept it. Accept it separately with praxis_accept_candidate once the user decides to.',
+          }
+        : null,
     contractUri: contractUri(record.contract.id, record.contract.version),
     moduleUri: moduleUri(record.projectId, record.module),
     operationUri: `praxis://projects/${record.projectId}/operations/${record.operationId}`,

@@ -7,7 +7,7 @@ import type {
   ProductExplorationCandidateInput,
   ProductExplorationResult,
 } from './contract.ts';
-import type { WhatsNextHarnessResult } from './harness.ts';
+import type { WhatsNextHarnessResult } from './harness-result.ts';
 
 export function toProductExplorationCandidate(
   candidate: ProductExplorationCandidateInput,

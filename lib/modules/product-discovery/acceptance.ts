@@ -201,3 +201,16 @@ async function acceptProductExplorationCandidateUnlocked(
     provenanceFeature: 'whats-next',
   });
 }
+
+export async function findPendingProductExplorationCandidate(
+  project: RegisteredProject,
+  candidateId: string,
+) {
+  const accepted = new Set(await collectAcceptedCandidateIds(project));
+  return (
+    latestPendingCandidates(
+      await readVisibleProposalRuns(project),
+      accepted,
+    ).find((entry) => entry.candidate.candidateId === candidateId) ?? null
+  );
+}

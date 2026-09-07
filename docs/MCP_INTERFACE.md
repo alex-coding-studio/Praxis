@@ -299,16 +299,34 @@ next cursor. `limitBytes` controls pagination, not which documents are reachable
 Input `{ projectId, module, request }`. `request` is a discriminated per-module shape,
 not a bag of options. Beyond the required `userInput`, each module reads:
 
-| Module                | Request fields                                                    | Operations                                                                 |
-| --------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `product-exploration` | required `layer`; optional `intention`, `motion`, `sourceNodeIds` | `explore`                                                                  |
-| `scope-decomposition` | required `sourceNodeId`; optional `operation`, `candidateIds`     | `propose`, `append-candidates`, `revise-candidate`, `recompose-candidates` |
-| `domain-modeling`     | optional `selectionIds`, `contextIds`                             | `change-model`                                                             |
-| `delivery-planning`   | optional `sourceUids`, `selectionIds`, `contextIds`               | `create-map`, `adjust-map`                                                 |
+| Module                | Request fields                                                                                 | Operations                                                                 |
+| --------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `product-exploration` | required `layer`; optional `intention`, `motion`, `sourceNodeIds`, `operation`, `candidateIds` | `explore`, `refine-candidate`                                              |
+| `scope-decomposition` | required `sourceNodeId`; optional `operation`, `candidateIds`                                  | `propose`, `append-candidates`, `revise-candidate`, `recompose-candidates` |
+| `domain-modeling`     | optional `selectionIds`, `contextIds`                                                          | `change-model`                                                             |
+| `delivery-planning`   | optional `sourceUids`, `selectionIds`, `contextIds`                                            | `create-map`, `adjust-map`                                                 |
 
 Preparation freezes the module Basis, the User Input and the source documents the result
 may cite, then returns the operation identity, the Result Contract to write against and
 the submission tool to call. It starts no Agent Run and calls no model.
+
+Product Exploration defaults to `explore`. `refine-candidate` names exactly one open
+Candidate in `candidateIds` and revises it in place instead of appending a near-duplicate.
+Preparation resolves that Candidate's current revision, stable identity and revision
+source **server-side** from the module's own pending state; no client-supplied Basis or
+prior-Candidate body is trusted, and nothing outside `pendingCandidates` has to be read to
+name a target. An accepted Candidate is refused — it is a formal Node, and editing a
+Node's body is `praxis_update_node_document`, a different operation.
+
+The prepared operation carries a `refine` block with `candidateId`, the current
+`revision`, the `requiredRevision` to return, the fields refinement may not change, and a
+`nextStep` saying that republishing a Candidate is not accepting it. Submission runs the
+module's existing refine rules unchanged: exactly the requested `localKey`, and type,
+origins, dependencies, layer, artifact kind, Resources, type template, metadata and
+presentation returned unchanged — a widened Candidate is refused as `INVALID_RESULT`.
+Because the Candidate's revision is part of the frozen Basis, a refine prepared against a
+revision that has since advanced is refused as `STALE_BASIS` rather than overwriting the
+newer body, and unrelated Candidates keep their revisions and documents.
 
 Delivery Planning chooses `create-map` when no Delivery Map exists and `adjust-map`
 otherwise. `sourceUids` name accepted Product Design Features to plan from; at least one
@@ -562,6 +580,14 @@ npm run test:mcp
   place, a stale `expectedRevision` refused, an accepted Candidate refused with its
   formal Node intact, the last Candidate in a Run taking its Run with it, and the
   existing UI PATCH discard route using the same exported service.
+- [tests/mcp-product-refinement.test.ts](../tests/mcp-product-refinement.test.ts) — a
+  real SDK client exploring two Candidates then refining one through
+  `operation: refine-candidate`, keeping its uid while advancing its revision and leaving
+  the sibling byte-identical; a widened Candidate refused with the module's own refine
+  rule and the published revision intact; unknown, accepted, missing and ambiguous
+  targets refused at preparation; a refine prepared against a superseded revision refused
+  as `STALE_BASIS` without advancing the revision twice; and `praxis://capabilities`
+  advertising `refine-candidate` as served.
 - [tests/mcp-transport.test.ts](../tests/mcp-transport.test.ts) — a real SDK client over
   HTTP completing initialization, discovery and reads, with bounded 20-second timeouts,
   including both sides of the argument-failure split, and `praxis://capabilities` naming

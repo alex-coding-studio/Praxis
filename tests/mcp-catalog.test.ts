@@ -60,7 +60,7 @@ void test('capabilities name the served modules, contracts and limits', async ()
 void test('every module advertises its own operations and submission tool', async () => {
   const value = parse(catalog.readCapabilities());
   const expected = new Map([
-    ['product-exploration', ['explore']],
+    ['product-exploration', ['explore', 'refine-candidate']],
     [
       'scope-decomposition',
       [
