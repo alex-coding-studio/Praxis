@@ -84,6 +84,8 @@ export const MCP_IMPLEMENTED_TOOLS = [
   'praxis_register_project',
   'praxis_create_source',
   'praxis_read_resource',
+  'praxis_read_source',
+  'praxis_update_source',
   'praxis_update_node_document',
   'praxis_prepare',
   'praxis_submit_product_exploration',
@@ -399,6 +401,15 @@ export async function readModuleState(
               'Read the output artifact with praxis_read_resource and pass its revision as expectedRevision.',
             scope:
               'Accepted formal node body only. Keep the title heading. IDs, metadata, relationships, original acceptance and frozen evidence are not rewritten.',
+          }
+        : null,
+    sourceEditing:
+      module === 'product-exploration' || module === 'scope-decomposition'
+        ? {
+            readTool: 'praxis_read_source',
+            updateTool: 'praxis_update_source',
+            scope:
+              'Start/source nodes only. Read the source revision, then explicitly add, replace or remove attachments. Unspecified documents and frozen evidence are preserved.',
           }
         : null,
     layers: definition.layers,

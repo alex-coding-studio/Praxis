@@ -572,3 +572,34 @@ or a tool to update all related nodes implicitly. The caller must choose each no
 read its current document before editing. A secondary log-finalization failure after the
 atomic document commit is reported as a warning with the committed revision, not as a
 claim that the content was rolled back.
+
+## Updating an existing source (task 03)
+
+`praxis_read_source` takes projectId, module (`product-exploration` or
+`scope-decomposition`) and nodeId. It returns the source title, revision and its current
+resource paths/URIs. The revision binds source metadata and resource contents.
+
+`praxis_update_source` takes those identities plus expectedRevision. Optional title and
+idea update those fields; omission preserves them. An idea must be nonempty; clearing
+ideas is not exposed by this operation. Existing Context Library links are retained.
+
+`attachments` adds Markdown documents with fileName and markdown. To replace an existing
+attachment, set its `replaces` to the existing path returned by read_source. Only paths
+explicitly named in `removeAttachmentRefs` or `replaces` leave the current attachment
+list. Other attachments remain untouched. No arbitrary filesystem read or write path is
+accepted. Documents may contain up to 100,000 characters each.
+
+The adapter delegates to updateStartNode and checks expectedRevision inside its canvas
+lock. Source IDs and graph relations stay intact; a stale request fails without applying.
+After a timeout or conflict, read the source again rather than blindly retrying uploads.
+No new root or Candidate is created, and this tool does not edit accepted-node bodies.
+
+Replaced/removed files remain as historical source evidence so prior node references
+remain readable; they are detached from the current source list, not overwritten.
+Previously prepared operation snapshots stay immutable. A new preparation sees the new
+source set, while an operation prepared before the edit follows existing stale-Basis
+checks. Ordinary UI callers retain their existing cleanup behavior unless they opt into
+preserving prior documents.
+
+Validation includes SDK read/update/readback, exact node identity, attachment retention,
+explicit removal, source-only target selection, stale/concurrent edits and frozen evidence.
