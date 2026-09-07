@@ -587,7 +587,7 @@ void test('rejects a non-JSON result', () => {
   );
 });
 
-void test('the composed Harness output schema is byte-identical to the schema before fragment extraction', () => {
+void test('the composed Harness output schema matches the approved contract baseline', () => {
   const fixture = readFileSync(
     new URL('./fixtures/harness-schemas/whats-next.json', import.meta.url),
     'utf8',
