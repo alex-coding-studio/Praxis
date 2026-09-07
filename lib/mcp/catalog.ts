@@ -200,10 +200,7 @@ export function readCapabilities(options: McpReadOptions = {}) {
           hash: definition.contract.hash,
           uri: contractUri(definition.contract.id, definition.contract.version),
         },
-        preparationOperations:
-          module === 'product-exploration'
-            ? ['explore']
-            : [...definition.preparationOperations],
+        preparationOperations: [...definition.preparationOperations],
         submissionTool: definition.submissionTool,
         plannedPreparationOperations: definition.preparationOperations,
         plannedSubmissionTool: definition.submissionTool,
