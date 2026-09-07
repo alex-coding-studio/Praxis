@@ -656,3 +656,28 @@ preserving prior documents.
 
 Validation includes SDK read/update/readback, exact node identity, attachment retention,
 explicit removal, source-only target selection, stale/concurrent edits and frozen evidence.
+
+## Deleting a formal graph node (task 04)
+
+Call `praxis_inspect_node_deletion` with projectId, module and nodeId to obtain the
+current deletion revision, canDelete and blockerNodeIds. This is a read, not consent or
+a reserved operation. Only accepted formal nodes in Product Exploration and Scope
+Decomposition are eligible; source nodes and unaccepted Candidates remain separate.
+
+For a user-requested deletion, call `praxis_delete_node` with those identities and
+expectedRevision. The existing deletion service rechecks the node content/metadata
+version and incoming dependency/lineage references under the module mutation queue and
+canvas lock. A stale version or new dependent refuses deletion; no edges are rewired and
+no related nodes are removed. The normal UI route shares the same deletion service.
+
+Deletion uses the existing OS Trash mechanism. The response identifies whether the node
+was deleted or was already absent, with a module readback link and Host log URL. A missing
+target is not claimed to have been deleted. No project, worktree, execution record or
+frozen operation snapshot is removed. The original Candidate is not discarded and may
+become pending again; use the separately authorized Candidate discard operation if that
+is also intended. This tool does not silently combine the two decisions.
+
+The inspect revision binds the node metadata and resource contents. Publication does not
+perform a fallible graph reread after Trash succeeds; it returns the already-locked
+remaining set. A subsequent logging failure is reported with the completed result rather
+than claiming the deletion rolled back.

@@ -1,3 +1,4 @@
+import { registerNodeDeletionTools } from './node-deletion-tools.ts';
 import { registerSourceUpdateTools } from './source-update.ts';
 import { registerNodeDocumentTools } from './node-document-tools.ts';
 import { registerProject, createProjectSource } from './project-setup.ts';
@@ -706,5 +707,6 @@ export function createPraxisMcpServer() {
   );
   registerNodeDocumentTools(server);
   registerSourceUpdateTools(server);
+  registerNodeDeletionTools(server);
   return server;
 }
