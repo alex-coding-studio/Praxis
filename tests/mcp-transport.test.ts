@@ -119,12 +119,14 @@ void test(
       'praxis_prepare',
       'praxis_read_log',
       'praxis_read_resource',
+      'praxis_read_source',
       'praxis_register_project',
       'praxis_submit_delivery_map',
       'praxis_submit_domain_model',
       'praxis_submit_product_exploration',
       'praxis_submit_scope_decomposition',
       'praxis_update_node_document',
+      'praxis_update_source',
     ]);
     assert.deepEqual(
       tools.tools.map((tool) => tool.name).sort(),
@@ -132,6 +134,7 @@ void test(
       'praxis://capabilities must name exactly the tools the server registers',
     );
     const writeTools = [
+      'praxis_update_source',
       'praxis_update_node_document',
       'praxis_accept_candidate',
       'praxis_prepare',
@@ -150,7 +153,9 @@ void test(
       );
       assert.equal(
         tool.annotations?.destructiveHint,
-        tool.name === 'praxis_update_node_document',
+        ['praxis_update_node_document', 'praxis_update_source'].includes(
+          tool.name,
+        ),
         tool.name,
       );
       assert.equal(

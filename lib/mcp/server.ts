@@ -1,3 +1,4 @@
+import { registerSourceUpdateTools } from './source-update.ts';
 import { registerNodeDocumentTools } from './node-document-tools.ts';
 import { registerProject, createProjectSource } from './project-setup.ts';
 import { acceptCandidate, type AcceptanceModule } from './accept.ts';
@@ -704,5 +705,6 @@ export function createPraxisMcpServer() {
     (input) => runStructured(() => createProjectSource(input)),
   );
   registerNodeDocumentTools(server);
+  registerSourceUpdateTools(server);
   return server;
 }

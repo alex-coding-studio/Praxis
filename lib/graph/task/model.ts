@@ -1,3 +1,5 @@
+import { semanticResultHash, sha256Hex } from '../../materialization/hash.ts';
+import { resolvePlanningPath } from '../../planning-paths.ts';
 import { PublicApiError } from '../../api-errors.ts';
 import { validateProductContextReferences } from '../../modules/product-context/resource.ts';
 import {
@@ -185,10 +187,51 @@ async function createStartNodeWithinCanvas(
   }
 }
 
+async function sourceRevision(project: RegisteredProject, node: TaskGraphNode) {
+  const contents = await Promise.all(
+    node.resources.map(async (resource) => {
+      const resolved = await resolvePlanningPath(project, resource.path, {
+        require: 'file',
+      });
+      return {
+        path: resource.path,
+        hash: sha256Hex(await readFile(resolved.absolutePath, 'utf8')),
+      };
+    }),
+  );
+  return semanticResultHash({
+    node: {
+      id: node.id,
+      uid: node.uid,
+      title: node.title,
+      updatedAt: node.updatedAt,
+      resources: node.resources,
+      metadata: node.metadata,
+    },
+    contents,
+  });
+}
+
+export async function readStartNodeForUpdate(
+  project: RegisteredProject,
+  id: string,
+  graphRoot: GraphRoot,
+) {
+  return mutateCanvas(project, graphRoot, async () => {
+    const node = (await listCanvasNodesWithinCanvas(project, graphRoot)).find(
+      (entry) => entry.id === id && entry.role === 'start',
+    );
+    if (!node) throw new PublicApiError('The source node was not found.', 400);
+    return { node, revision: await sourceRevision(project, node) };
+  });
+}
+
 export async function updateStartNode(
   project: RegisteredProject,
   input: {
     id: string;
+    expectedRevision?: string;
+    preservePreviousDocuments?: boolean;
     title: string;
     contextRefs: string[];
     retainedAttachmentRefs: string[];
@@ -206,6 +249,8 @@ async function updateStartNodeWithinCanvas(
   project: RegisteredProject,
   input: {
     id: string;
+    expectedRevision?: string;
+    preservePreviousDocuments?: boolean;
     title: string;
     contextRefs: string[];
     retainedAttachmentRefs: string[];
@@ -261,6 +306,15 @@ async function updateStartNodeWithinCanvas(
   ) {
     throw new Error('The start node could not be edited.');
   }
+
+  if (
+    input.expectedRevision !== undefined &&
+    (await sourceRevision(project, node)) !== input.expectedRevision
+  )
+    throw new PublicApiError(
+      'The source changed. Read praxis_read_source again before applying the edit.',
+      409,
+    );
 
   const contextRefs = await validateContextRefs(
     project,
@@ -320,7 +374,7 @@ async function updateStartNodeWithinCanvas(
       });
     }
 
-    if (idea && ideaResource) {
+    if (idea) {
       const fileName = chooseUniqueName('user-input', usedNames);
       const absolutePath = path.join(resourcesPath, fileName);
       await writeFile(absolutePath, `# ${title}\n\n${idea}\n`, { flag: 'wx' });
@@ -353,7 +407,12 @@ async function updateStartNodeWithinCanvas(
     await rename(temporaryJsonPath, nodeJsonPath);
     committed = true;
 
-    if (stagedIdea && ideaResource && ideaResource.path !== stagedIdea.path)
+    if (
+      !input.preservePreviousDocuments &&
+      stagedIdea &&
+      ideaResource &&
+      ideaResource.path !== stagedIdea.path
+    )
       await unlink(path.join(project.planningPath, ideaResource.path)).catch(
         () => undefined,
       );
@@ -362,7 +421,7 @@ async function updateStartNodeWithinCanvas(
       (ref) => !retainedAttachmentRefs.includes(ref),
     );
     await Promise.all(
-      removedAttachments.map((ref) =>
+      (input.preservePreviousDocuments ? [] : removedAttachments).map((ref) =>
         unlink(path.join(project.planningPath, ref)).catch(() => undefined),
       ),
     );
