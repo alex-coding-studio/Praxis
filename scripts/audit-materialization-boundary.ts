@@ -102,6 +102,8 @@ export const MATERIALIZATION_REQUIRED_FILES = [
   'lib/mcp/prepare-scope-decomposition.ts',
   'lib/mcp/schema-adapter.ts',
   'lib/mcp/evidence.ts',
+  'lib/mcp/node-document-tools.ts',
+  'lib/graph/task/document-revision.ts',
   'lib/mcp/project-setup.ts',
   'lib/mcp/prepare-domain-model.ts',
   'lib/mcp/submit-domain-model.ts',

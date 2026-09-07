@@ -84,6 +84,7 @@ export const MCP_IMPLEMENTED_TOOLS = [
   'praxis_register_project',
   'praxis_create_source',
   'praxis_read_resource',
+  'praxis_update_node_document',
   'praxis_prepare',
   'praxis_submit_product_exploration',
   'praxis_submit_scope_decomposition',
@@ -390,6 +391,16 @@ export async function readModuleState(
     projectId: project.id,
     module,
     responseOwner: definition.responseOwner,
+    documentEditing:
+      module === 'product-exploration' || module === 'scope-decomposition'
+        ? {
+            tool: 'praxis_update_node_document',
+            inputVersion:
+              'Read the output artifact with praxis_read_resource and pass its revision as expectedRevision.',
+            scope:
+              'Accepted formal node body only. Keep the title heading. IDs, metadata, relationships, original acceptance and frozen evidence are not rewritten.',
+          }
+        : null,
     layers: definition.layers,
     workflow:
       module === 'product-exploration'
