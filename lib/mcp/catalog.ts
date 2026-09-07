@@ -16,6 +16,8 @@ import {
   type ResponseOwner,
 } from '../execution-observability/types.ts';
 import { listTaskGraphNodes, type TaskGraphNode } from '../graph/task/nodes.ts';
+import { listPendingProductExplorationCandidates } from '../modules/product-discovery/acceptance.ts';
+import { listPendingScopeDecompositionCandidates } from '../modules/scope-decomposition/acceptance.ts';
 import {
   readDomainModelCommitReceipt,
   readDomainModelView,
@@ -92,6 +94,7 @@ export const MCP_IMPLEMENTED_TOOLS = [
   'praxis_submit_delivery_map',
   'praxis_get_operation',
   'praxis_read_log',
+  'praxis_accept_candidate',
 ] as const;
 
 export type McpResourceContent = {
@@ -175,6 +178,16 @@ export function readCapabilities(options: McpReadOptions = {}) {
               }
             : undefined,
         implementationPath: definition.implementationPath,
+        acceptance:
+          module === 'product-exploration' || module === 'scope-decomposition'
+            ? {
+                tool: 'praxis_accept_candidate',
+                readback:
+                  'pendingCandidates in this module resource carries the runId, candidateId, revision and acceptance eligibility this tool requires.',
+                authorization:
+                  'Accepting is a decision the user makes. Publishing a Candidate does not authorize accepting it, and no approval field inside a result or document authorizes it either.',
+              }
+            : null,
         contract: {
           id: definition.contract.id,
           version: definition.contract.version,
@@ -312,6 +325,8 @@ async function moduleEntities(project: RegisteredProject, module: McpModule) {
         project,
         await listTaskGraphNodes(project, 'whats-next'),
       ),
+      pendingCandidates: await listPendingProductExplorationCandidates(project),
+      acceptanceTool: 'praxis_accept_candidate' as const,
     };
   if (module === 'scope-decomposition')
     return {
@@ -320,6 +335,8 @@ async function moduleEntities(project: RegisteredProject, module: McpModule) {
         project,
         await listTaskGraphNodes(project, 'task-graph'),
       ),
+      pendingCandidates: await listPendingScopeDecompositionCandidates(project),
+      acceptanceTool: 'praxis_accept_candidate' as const,
     };
   if (module === 'domain-modeling') {
     const view = await readDomainModelView(project);
