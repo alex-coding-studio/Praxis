@@ -4,6 +4,7 @@ import path from 'node:path';
 import { PublicApiError } from '../../api-errors.ts';
 import { reserveNodeIdentity } from '../../graph/identity-store.ts';
 import {
+  assertLatestPendingSelection,
   latestPendingCandidates,
   readIdentifiedProposalRun,
   readIdentifiedProposalRuns,
@@ -139,16 +140,22 @@ async function acceptScopeDecompositionCandidateUnlocked(
   const accepted = existingNodes.find((node) => node.uid === candidate.uid);
   if (accepted) return { node: accepted, nodes: existingNodes, created: false };
   const acceptedIds = new Set(await collectAcceptedCandidateIds(project));
-  if (
-    !latestPendingCandidates(await readProposalRuns(project), acceptedIds, {
-      recomposition: true,
-    }).some((item) => item.candidate.candidateId === candidateId)
-  )
+  const pending = latestPendingCandidates(
+    await readProposalRuns(project),
+    acceptedIds,
+    { recomposition: true },
+  );
+  if (!pending.some((item) => item.candidate.candidateId === candidateId))
     throw new CandidateAcceptanceError(
       'replaced-by-recompose',
       'This Candidate was replaced or removed by Recompose.',
       409,
     );
+  assertLatestPendingSelection(pending, {
+    runId,
+    candidateId,
+    revision: candidateRevision(candidate),
+  });
   const resolvedDependencies = resolveCandidateDependencies(
     candidate.candidateId!,
     candidate.dependsOn ?? [],

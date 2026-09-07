@@ -350,14 +350,20 @@ consumer never parses a private `run.json`. Each entry carries `runId`, `candida
 revision Run. `praxis://capabilities` names the tool under each serving module's
 `acceptance` entry.
 
-`expectedRevision` is required. It is checked against the Candidate revision read under
-the module's own serialized mutation boundary, not before it, so a Candidate revised
-after the read is refused as `RESOURCE_CHANGED` rather than accepted silently. A
-Candidate that Recompose replaced is refused the same way, an active revision Run is
-refused as `ACTIVE_RUN_CONFLICT`, and an unknown Run or Candidate is
+`expectedRevision` is required. Under the module's own serialized mutation boundary — not
+before acquiring it — acceptance resolves the Candidate's **latest pending** entry and
+requires that the supplied `runId` and revision identify exactly it. A `runId` naming an
+older Run is refused even when its own Candidate still carries the revision the caller
+named, so a refinement or revision published after the read cannot be overwritten by
+promoting the superseded body. The refusal names the current Run and revision.
+
+A Candidate that Recompose replaced is refused as `RESOURCE_CHANGED` too, an active
+revision Run is `ACTIVE_RUN_CONFLICT`, and an unknown Run or Candidate is
 `RESOURCE_NOT_FOUND`. Every refusal leaves the graph unchanged. Accepting the same
-Candidate again returns the existing Node with `created: false`; it never promotes a
-duplicate.
+Candidate again returns the existing Node with `created: false`: an already-promoted
+Candidate has no pending entry left to compare against, so the retry stays idempotent
+rather than becoming stale. The same guard runs on the UI acceptance route, which shares
+this service.
 
 Acceptance is a decision the user makes. A consumer may act on a natural-language
 instruction from its own user, and this interface does not add a per-call approval
@@ -508,8 +514,11 @@ npm run test:mcp
   accepting it, discovering the formal Node and its artifacts through public resources,
   a stale `expectedRevision` refused with every Node unchanged, a repeated acceptance
   returning the same Node rather than a duplicate, an unknown Candidate and an unserved
-  module refused, Scope Decomposition accepted through the same tool, and the existing UI
-  PATCH route promoting through the same exported service.
+  module refused, Scope Decomposition accepted through the same tool, the existing UI
+  PATCH route promoting through the same exported service, and — for both modules — a
+  Candidate published as revision 1 then revised to revision 2 in a second Run, where
+  accepting the original Run with its own revision 1 is refused, no formal Node is
+  promoted, and the current Run promotes the revised body.
 - [tests/mcp-transport.test.ts](../tests/mcp-transport.test.ts) — a real SDK client over
   HTTP completing initialization, discovery and reads, with bounded 20-second timeouts,
   including both sides of the argument-failure split, and `praxis://capabilities` naming

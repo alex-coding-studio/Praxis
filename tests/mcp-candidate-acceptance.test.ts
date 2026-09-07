@@ -31,6 +31,12 @@ const { prepareScopeDecompositionOperation } =
   await import('../lib/mcp/prepare-scope-decomposition.ts');
 const { submitScopeDecompositionOperation } =
   await import('../lib/mcp/submit-scope-decomposition.ts');
+const { startWhatsNextRun } =
+  await import('../lib/modules/product-discovery/runs.ts');
+const { WHATS_NEXT_HARNESS_ID, WHATS_NEXT_HARNESS_REVISION } =
+  await import('../lib/modules/product-discovery/harness.ts');
+const { deferredLaunch, settledRun } =
+  await import('./helpers/graph-materialization-golden.ts');
 const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
 const { StreamableHTTPClientTransport } =
   await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
@@ -522,5 +528,215 @@ void test(
       'a UI acceptance must be visible through the MCP readback',
     );
     assert.deepEqual(after.state.pendingCandidates, []);
+  },
+);
+
+void test(
+  'a superseded Scope Run cannot accept the revision it published',
+  { timeout: 20_000 },
+  async (t) => {
+    const { project, sourceNodeId } = await fixture(t, 'task-graph');
+    await publishDecomposition(project as never, sourceNodeId, [
+      ['first', 'Import the reading list'],
+    ]);
+    const client = await connect(t);
+    const original = (
+      await readModule(client, project.id, 'scope-decomposition')
+    ).state.pendingCandidates[0]!;
+
+    const { record } = await prepareScopeDecompositionOperation(project, {
+      userInput: 'Sharpen the first unit.',
+      sourceNodeId,
+      operation: 'revise-candidate',
+      candidateIds: [original.candidateId],
+    } as never);
+    await submitScopeDecompositionOperation(
+      project,
+      record.operationId,
+      record.contract,
+      {
+        outcome: 'proposal',
+        candidates: [
+          {
+            localKey: original.candidateId,
+            type: 'module',
+            title: 'Import the reading list, precisely',
+            summary: 'One bounded unit of work with a judgeable outcome.',
+            derivedFrom: [{ kind: 'node' as const, id: sourceNodeId }],
+            dependsOn: [],
+            resources: [],
+            typeTemplateRef: null,
+            metadata: {},
+            presentation: {},
+            assumptions: [],
+          },
+        ],
+      },
+    );
+
+    const current = (
+      await readModule(client, project.id, 'scope-decomposition')
+    ).state.pendingCandidates[0]!;
+    assert.equal(current.candidateId, original.candidateId);
+    assert.equal(current.revision, original.revision + 1);
+    assert.notEqual(current.runId, original.runId);
+
+    const stale = await client.callTool({
+      name: 'praxis_accept_candidate',
+      arguments: {
+        projectId: project.id,
+        module: 'scope-decomposition',
+        runId: original.runId,
+        candidateId: original.candidateId,
+        expectedRevision: original.revision,
+      },
+    });
+    assert.equal(stale.isError, true, JSON.stringify(stale));
+    assert.equal(
+      (stale.structuredContent as { code: string }).code,
+      'RESOURCE_CHANGED',
+    );
+    assert.deepEqual(
+      (await listTaskGraphNodes(project)).map((node) => node.role),
+      ['start'],
+      'a superseded Run must promote no formal Node',
+    );
+
+    const accepted = await client.callTool({
+      name: 'praxis_accept_candidate',
+      arguments: {
+        projectId: project.id,
+        module: 'scope-decomposition',
+        runId: current.runId,
+        candidateId: current.candidateId,
+        expectedRevision: current.revision,
+      },
+    });
+    assert.notEqual(accepted.isError, true, JSON.stringify(accepted));
+    const node = (
+      accepted.structuredContent as {
+        node: {
+          id: string;
+          title: string;
+          provenance: { revision: number } | null;
+        };
+      }
+    ).node;
+    assert.equal(node.title, 'Import the reading list, precisely');
+    assert.equal(node.provenance?.revision, current.revision);
+  },
+);
+
+void test(
+  'a superseded Product Exploration Run cannot accept the revision it published',
+  { timeout: 20_000 },
+  async (t) => {
+    const { project, sourceNodeId } = await fixture(t, 'whats-next');
+    await publishExploration(project as never, sourceNodeId, [
+      ['first', 'Import the reading list'],
+    ]);
+    const original = (
+      await productAcceptance.listPendingProductExplorationCandidates(project)
+    )[0]!;
+
+    const refine = deferredLaunch();
+    const refined = await startWhatsNextRun(
+      project,
+      {
+        sourceNodeIds: [sourceNodeId],
+        agent: 'codex' as const,
+        instruction: 'Sharpen the outcome statement.',
+        contextRefs: [],
+        files: [],
+        intention: 'mvp-exploration' as const,
+        revisionRunId: original.runId,
+        revisionCandidateId: original.candidateId,
+      },
+      refine.launch,
+    );
+    refine.respond(
+      JSON.stringify({
+        schemaVersion: 1,
+        harness: {
+          id: WHATS_NEXT_HARNESS_ID,
+          revision: WHATS_NEXT_HARNESS_REVISION,
+        },
+        request: {
+          sessionId: refined.sessionId,
+          requestId: refined.requestId,
+          inputFingerprint: refined.inputFingerprint,
+        },
+        reflection: {
+          markdown: 'The direction now states one outcome.',
+          continuationAdvice: {
+            action: 'continue',
+            recommendedFocus: 'concretize',
+            reason: 'Turn the chosen direction into a bounded outcome.',
+          },
+        },
+        exploration: { consideredNodeIds: [sourceNodeId], notes: [] },
+        outcome: 'proposal',
+        candidates: [
+          {
+            candidateId: original.candidateId,
+            revision: original.revision + 1,
+            type: 'mvp',
+            title: 'Import the reading list, precisely',
+            summary: 'One bounded outcome the reader asked for.',
+            derivedFrom: [sourceNodeId],
+            dependsOn: [],
+            resources: [],
+            typeTemplateRef: null,
+            metadata: {},
+            presentation: {},
+            assumptions: ['The reader already has the source material.'],
+            outputMarkdown:
+              '# Import the reading list, precisely\n\n## Why this direction\n\n- It states the outcome the reader asked for.\n- It remains judgeable without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.\n',
+            layer: 'discovery',
+            artifactKind: 'mvp',
+          },
+        ],
+      }),
+    );
+    const settled = await settledRun(project, refined.runId);
+    assert.equal(settled.status, 'proposal', settled.error ?? undefined);
+
+    const current = (
+      await productAcceptance.listPendingProductExplorationCandidates(project)
+    )[0]!;
+    assert.equal(current.candidateId, original.candidateId);
+    assert.equal(current.revision, original.revision + 1);
+    assert.notEqual(current.runId, original.runId);
+
+    await assert.rejects(
+      () =>
+        productAcceptance.acceptProductExplorationCandidate(
+          project,
+          original.runId,
+          original.candidateId,
+          { expectedRevision: original.revision },
+        ),
+      (error: Error) => {
+        assert.match(error.message, /revision/);
+        return true;
+      },
+    );
+    assert.deepEqual(
+      (await listTaskGraphNodes(project, 'whats-next')).map(
+        (node) => node.role,
+      ),
+      ['start'],
+      'a superseded Run must promote no formal Node',
+    );
+
+    const accepted = await productAcceptance.acceptProductExplorationCandidate(
+      project,
+      current.runId,
+      current.candidateId,
+      { expectedRevision: current.revision },
+    );
+    assert.equal(accepted.created, true);
+    assert.equal(accepted.node.title, 'Import the reading list, precisely');
+    assert.equal(accepted.node.provenance?.revision, current.revision);
   },
 );

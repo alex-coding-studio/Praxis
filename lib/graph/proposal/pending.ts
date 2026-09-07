@@ -200,3 +200,21 @@ export function assertExpectedRevision(
       409,
     );
 }
+
+export function assertLatestPendingSelection(
+  pending: readonly PendingCandidateEntry[],
+  selection: { runId: string; candidateId: string; revision: number },
+) {
+  const latest = pending.find(
+    (entry) => entry.candidate.candidateId === selection.candidateId,
+  );
+  if (!latest) return;
+  const latestRevision = candidateRevision(latest.candidate);
+  if (latest.runId === selection.runId && latestRevision === selection.revision)
+    return;
+  throw new CandidateAcceptanceError(
+    'stale-revision',
+    `Candidate ${selection.candidateId} is now revision ${latestRevision} from Run ${latest.runId}, not revision ${selection.revision} from Run ${selection.runId}. Read the module resource again and accept the current revision.`,
+    409,
+  );
+}

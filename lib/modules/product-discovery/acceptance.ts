@@ -1,5 +1,6 @@
 import type { ProductExplorationCandidateRecord } from './contract.ts';
 import {
+  assertLatestPendingSelection,
   latestPendingCandidates,
   readIdentifiedProposalRuns,
   visibleProposalRuns,
@@ -150,6 +151,13 @@ async function acceptProductExplorationCandidateUnlocked(
       400,
     );
   assertExpectedRevision(candidate, options.expectedRevision);
+  assertLatestPendingSelection(
+    latestPendingCandidates(
+      runs,
+      new Set(await collectAcceptedCandidateIds(project)),
+    ),
+    { runId, candidateId, revision: candidateRevision(candidate) },
+  );
   if (!candidate.uid || !candidate.relations)
     throw new CandidateAcceptanceError(
       'no-stable-identity',
