@@ -2,7 +2,21 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { PublicApiError } from '../../api-errors.ts';
 import { readDomainModel } from '../domain-modeling/model.ts';
-import type { PlanningCard } from '../implementation/planning-service.ts';
+type PlanningCard = {
+  schemaVersion: number;
+  id: string;
+  revision: number;
+  plan?: { status: string } | null;
+  planRef?: string | null;
+  execution?: {
+    acceptedActionIds: string[];
+    runs: Array<{
+      actionId: string;
+      status: string;
+      outputRef?: string | null;
+    }>;
+  } | null;
+};
 import { readDeliveryRecord } from '../delivery/storage.ts';
 import { ensureDeliveryArtifacts } from '../delivery/artifacts.ts';
 import {

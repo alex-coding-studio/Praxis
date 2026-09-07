@@ -155,6 +155,12 @@ export async function prepareProductExplorationOperation(
   );
   const knownNodeIds = nodes.map((node) => node.id);
   const sourceNodeIds = request.sourceNodeIds ?? [];
+  if (sourceNodeIds.length === 0)
+    throw invalidArgument(
+      nodes.length === 0
+        ? 'This project has no Product Source. Call praxis_create_source with the full document first, then prepare with its sourceNodeId in sourceNodeIds.'
+        : `Select sourceNodeIds from the module resource before preparing: ${nodes.map((node) => `${node.id} (${node.title})`).join(', ')}. Read its intention guidance; no source will be created implicitly.`,
+    );
   for (const id of sourceNodeIds)
     if (!knownNodeIds.includes(id))
       throw invalidArgument(
