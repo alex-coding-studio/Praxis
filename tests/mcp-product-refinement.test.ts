@@ -38,6 +38,22 @@ type ModuleState = {
   state: { pendingCandidates: PendingCandidate[] };
 };
 
+type RevisionSource = {
+  localKey: string;
+  type: string;
+  title: string;
+  summary: string;
+  derivedFrom: Array<{ kind: string; id: string }>;
+  dependsOn: unknown[];
+  resources: Array<{ kind: string; path: string }>;
+  typeTemplateRef: { kind: string; id: string } | null;
+  metadata: Record<string, unknown>;
+  presentation: Record<string, unknown>;
+  assumptions: string[];
+  layer: string;
+  artifactKind: string;
+};
+
 type Prepared = {
   operationId: string;
   contract: { id: string; version: number; hash: string };
@@ -47,6 +63,8 @@ type Prepared = {
     revision: number;
     requiredRevision: number;
     nextStep: string;
+    documentUri: string;
+    revisionSource: RevisionSource;
   } | null;
 };
 
@@ -72,8 +90,14 @@ async function fixture(t: test.TestContext) {
   return { project, sourceNodeId: start.node.id };
 }
 
-function body(title: string, detail: string) {
-  return `# ${title}\n\n## Why this direction\n\n- ${detail}\n- It can be judged without more evidence.\n\n## Assumptions\n\n- The reader already has the source material.`;
+const DEFAULT_ASSUMPTIONS = ['The reader already has the source material.'];
+
+function body(
+  title: string,
+  detail: string,
+  assumptions: string[] = DEFAULT_ASSUMPTIONS,
+) {
+  return `# ${title}\n\n## Why this direction\n\n- ${detail}\n- It can be judged without more evidence.\n\n## Assumptions\n\n${assumptions.map((entry) => `- ${entry}`).join('\n')}`;
 }
 
 function candidate(
@@ -81,6 +105,7 @@ function candidate(
   localKey: string,
   title: string,
   detail = 'It answers the stated need directly.',
+  immutable: Record<string, unknown> = {},
 ) {
   return {
     localKey,
@@ -94,9 +119,14 @@ function candidate(
     metadata: {},
     presentation: {},
     assumptions: ['The reader already has the source material.'],
-    outputMarkdown: body(title, detail),
     layer: 'discovery' as const,
     artifactKind: 'mvp' as const,
+    ...immutable,
+    outputMarkdown: body(
+      title,
+      detail,
+      (immutable.assumptions as string[]) ?? DEFAULT_ASSUMPTIONS,
+    ),
   };
 }
 
@@ -150,13 +180,31 @@ async function explore(
 }
 
 void test(
-  'a client refines one Candidate in place, keeping its identity and leaving its sibling untouched',
+  'a fresh client refines a Candidate using only public reads and leaves its sibling untouched',
   { timeout: 20_000 },
   async (t) => {
     const { project, sourceNodeId } = await fixture(t);
     const client = await connect(t);
+    const immutable = {
+      resources: [
+        {
+          kind: 'user-input',
+          path: `whats-next/nodes/${sourceNodeId}/resources/user-input.md`,
+        },
+      ],
+      typeTemplateRef: { kind: 'node' as const, id: sourceNodeId },
+      metadata: { horizon: 'first release', confidence: 3 },
+      presentation: { color: '#3366cc' },
+      assumptions: ['The reader already has the source material.', 'Offline.'],
+    };
     await explore(client, project.id, sourceNodeId, [
-      candidate(sourceNodeId, 'first', 'Import the reading list'),
+      candidate(
+        sourceNodeId,
+        'first',
+        'Import the reading list',
+        'It answers the stated need directly.',
+        immutable,
+      ),
       candidate(sourceNodeId, 'second', 'Show the reading list'),
     ]);
     const before = await readModule(client, project.id);
@@ -183,20 +231,42 @@ void test(
     assert.notEqual(prepared.isError, true, JSON.stringify(prepared));
     const operation = prepared.structuredContent as Prepared;
     assert.equal(operation.request.operation, 'refine-candidate');
-    assert.equal(operation.request.revisionCandidateId, target.candidateId);
     assert.equal(operation.refine?.candidateId, target.candidateId);
     assert.equal(operation.refine?.revision, 1);
     assert.equal(operation.refine?.requiredRevision, 2);
     assert.match(operation.refine?.nextStep ?? '', /praxis_accept_candidate/);
 
+    const source = operation.refine!.revisionSource;
+    assert.deepEqual(
+      source.resources,
+      immutable.resources,
+      'the frozen Candidate must carry the Resources refinement may not change',
+    );
+    assert.deepEqual(source.typeTemplateRef, immutable.typeTemplateRef);
+    assert.deepEqual(source.metadata, immutable.metadata);
+    assert.deepEqual(source.presentation, immutable.presentation);
+    assert.deepEqual(source.assumptions, immutable.assumptions);
+    assert.equal(
+      'outputMarkdown' in source,
+      false,
+      'the body is referenced, not inlined',
+    );
+
+    const document = await client.callTool({
+      name: 'praxis_read_resource',
+      arguments: { uri: operation.refine!.documentUri },
+    });
+    assert.notEqual(document.isError, true, JSON.stringify(document));
+    const currentBody = (document.structuredContent as { text: string }).text;
+    assert.match(currentBody, /# Import the reading list/);
+
     const refined = {
-      ...candidate(
-        sourceNodeId,
-        target.candidateId,
-        'Import the reading list',
+      ...source,
+      summary: 'Import the reading list with one stated outcome.',
+      outputMarkdown: currentBody.replace(
+        'It answers the stated need directly.',
         'It states the outcome the reader asked for.',
       ),
-      summary: 'Import the reading list with one stated outcome.',
     };
     const submitted = await client.callTool({
       name: 'praxis_submit_product_exploration',
@@ -248,7 +318,13 @@ void test(
         contract: widenedOperation.contract,
         result: {
           outcome: 'proposal',
-          candidates: [{ ...refined, type: 'feature' }],
+          candidates: [
+            {
+              ...widenedOperation.refine!.revisionSource,
+              outputMarkdown: currentBody,
+              type: 'feature',
+            },
+          ],
         },
       },
     });

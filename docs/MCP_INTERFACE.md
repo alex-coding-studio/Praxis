@@ -319,8 +319,16 @@ name a target. An accepted Candidate is refused — it is a formal Node, and edi
 Node's body is `praxis_update_node_document`, a different operation.
 
 The prepared operation carries a `refine` block with `candidateId`, the current
-`revision`, the `requiredRevision` to return, the fields refinement may not change, and a
-`nextStep` saying that republishing a Candidate is not accepting it. Submission runs the
+`revision`, the `requiredRevision` to return, and a `nextStep` saying that republishing a
+Candidate is not accepting it. It also carries the frozen Candidate the refinement is
+validated against: `revisionSource` holds every field the result must echo back —
+`type`, `derivedFrom`, `dependsOn`, `layer`, `artifactKind`, `resources`,
+`typeTemplateRef`, `metadata`, `presentation` and `assumptions` — and `documentUri` points
+at the current body as a bounded, paged artifact read rather than inlining up to 100,000
+characters. A client that has never seen the original submission can therefore build a
+valid refinement from `praxis_prepare` and `praxis_read_resource` alone, with no memory of
+its own earlier call and no private Run file. The same frozen Candidate is readable again
+from the operation resource. Submission runs the
 module's existing refine rules unchanged: exactly the requested `localKey`, and type,
 origins, dependencies, layer, artifact kind, Resources, type template, metadata and
 presentation returned unchanged — a widened Candidate is refused as `INVALID_RESULT`.
@@ -582,7 +590,10 @@ npm run test:mcp
   existing UI PATCH discard route using the same exported service.
 - [tests/mcp-product-refinement.test.ts](../tests/mcp-product-refinement.test.ts) — a
   real SDK client exploring two Candidates then refining one through
-  `operation: refine-candidate`, keeping its uid while advancing its revision and leaving
+  `operation: refine-candidate`, building the result **only** from the prepared
+  `revisionSource` and a `praxis_read_resource` of `documentUri` rather than from its own
+  fixture, against a Candidate carrying non-empty Resources, type template, metadata,
+  presentation and assumptions; keeping its uid while advancing its revision and leaving
   the sibling byte-identical; a widened Candidate refused with the module's own refine
   rule and the published revision intact; unknown, accepted, missing and ambiguous
   targets refused at preparation; a refine prepared against a superseded revision refused

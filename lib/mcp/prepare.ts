@@ -35,7 +35,13 @@ import {
   writeMcpOperationUserInput,
   type McpOperationRecord,
 } from './operations.ts';
-import { contractUri, moduleUri, operationSourceUri } from './uri.ts';
+import {
+  artifactUri,
+  contractUri,
+  moduleUri,
+  operationSourceUri,
+} from './uri.ts';
+import { encodeArtifactId } from './artifacts.ts';
 
 export const MAX_USER_INPUT_LENGTH = 20_000;
 
@@ -222,6 +228,13 @@ export async function assembleProductExplorationBasis(
   );
 }
 
+export function frozenRevisionSource(
+  source: NonNullable<ProductExplorationMaterializationBasis['revisionSource']>,
+) {
+  const { outputMarkdown: _body, ...immutable } = source;
+  return immutable;
+}
+
 export type PreparedProductExploration = {
   record: McpOperationRecord;
   basis: ProductExplorationMaterializationBasis;
@@ -268,6 +281,15 @@ export async function prepareProductExplorationOperation(
       'request.sourceNodeIds must name exactly one Product Source for product-design-completion.',
     );
 
+  const refineRunId =
+    operation === 'refine-candidate'
+      ? (
+          await resolveProductExplorationRefineTarget(
+            project,
+            revisionCandidateId as string,
+          )
+        ).runId
+      : null;
   const basis = await assembleProductExplorationBasis(project, {
     intention,
     motion,
@@ -275,13 +297,21 @@ export async function prepareProductExplorationOperation(
     operation,
     revisionCandidateId,
   });
-  const revisionTarget = basis.revisionTarget
-    ? {
-        candidateId: basis.revisionTarget.candidateId,
-        revision: basis.revisionTarget.revision,
-        requiredRevision: basis.revisionTarget.revision + 1,
-      }
-    : null;
+  const revisionTarget =
+    basis.revisionTarget && basis.revisionSource
+      ? {
+          candidateId: basis.revisionTarget.candidateId,
+          revision: basis.revisionTarget.revision,
+          requiredRevision: basis.revisionTarget.revision + 1,
+          documentUri: artifactUri(
+            project.id,
+            encodeArtifactId(
+              `${PRODUCT_EXPLORATION_GRAPH_ROOT}/runs/${refineRunId}/candidates/${basis.revisionTarget.candidateId}/output.md`,
+            ),
+          ),
+          revisionSource: frozenRevisionSource(basis.revisionSource),
+        }
+      : null;
 
   const operationId = newMcpOperationId();
   const userInputPath = await writeMcpOperationUserInput(
@@ -367,7 +397,7 @@ export function preparedOperationProjection(record: McpOperationRecord) {
         ? {
             ...(record.request.revisionTarget as object),
             rules:
-              'Return exactly this candidateId as localKey at requiredRevision, refining only its title, summary and outputMarkdown. Type, origins, dependencies, layer, artifact kind, Resources, type template, metadata and presentation must be returned unchanged.',
+              'Return exactly this candidateId as localKey at requiredRevision, refining only its title, summary and outputMarkdown. Every field in revisionSource other than title and summary must be returned unchanged; read documentUri for the current body. Nothing outside this projection has to be remembered or reopened to build the result.',
             nextStep:
               'Refinement republishes the Candidate; it does not accept it. Accept it separately with praxis_accept_candidate once the user decides to.',
           }
