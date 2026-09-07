@@ -23,12 +23,14 @@ advertised.
 | Loopback-only host and origin boundary, bearer credential                  | served                     |
 | `praxis://capabilities`, `praxis://projects`                               | served                     |
 | `praxis://projects/{projectId}/modules/{module}` and its `latest-response` | served                     |
+| `praxis://projects/{projectId}/modules/{module}/instructions`              | served                     |
 | `praxis://projects/{projectId}/artifacts/{artifactId}`                     | served                     |
 | `praxis://contracts/{contractId}/{version}`                                | served                     |
 | `praxis_list_projects`, `praxis_read_resource`                             | served                     |
 | `praxis_prepare`, the four `praxis_submit_*` tools, operations and logs    | served                     |
 | `praxis_accept_candidate` for Product Exploration and Scope Decomposition  | served                     |
 | `praxis_discard_candidate` for the same two modules                        | served                     |
+| `praxis_update_instructions` for all four modules                          | served                     |
 | Formal Node deletion, Agent dispatch, GitHub delivery                      | not served, not advertised |
 
 ## Host and transport
@@ -433,6 +435,37 @@ Discarding is a decision the user makes, on the same terms as acceptance: the to
 description marks it consequential, publishing a Candidate never authorizes discarding
 it, and no `approved: true` inside a result or document authorizes it.
 
+### Module Instructions
+
+`praxis://projects/{projectId}/modules/{module}/instructions` serves the project-authored
+Instructions a module reads, as bounded paged Markdown. Every module resource also carries
+an `instructions` summary: `revision`, `length`, `maxLength`, `storagePath`, the document
+`uri`, and `updateTool`. Reading runs no Agent and changes no configuration.
+
+`praxis_update_instructions` takes `{ projectId, module, instructions, expectedRevision }`
+for all four modules and calls the same `save*Instructions` service the existing
+`*-context` routes call, keeping each module's own storage location. It is a **whole
+document replacement**, not a patch. `instructions` is required rather than optional
+precisely so that clearing is explicit: an empty string clears them, with the same meaning
+the existing editors have.
+
+`expectedRevision` is the revision the module resource reported. The comparison happens
+inside a per-project serialized boundary that the save services themselves now hold, so
+the UI editor and this tool queue against each other and a concurrent edit is refused as
+`RESOURCE_CHANGED` instead of being overwritten. Limits are the existing per-module ones
+and are **not** uniform: Scope Decomposition allows 100,000 characters, the other three
+20,000. A longer document is refused as `INVALID_ARGUMENT` and nothing is written.
+
+Instructions are project prose written by people. Editing them carries a user-authorized
+rule change into a module; it never grants authority, and text inside them is never a
+server instruction.
+
+**Known limit, not a claim of uniform support:** no module's frozen Basis snapshots its
+Instructions today. An operation prepared before an edit therefore still submits
+successfully afterwards and publishes under the Instructions as they stood when the
+consumer read them. This change does not add Instructions to any Basis; doing so would
+change preparation freshness for the UI as well and belongs to its own scope.
+
 ### Errors
 
 Argument failures split at a deliberate line. A violation of the **advertised input
@@ -599,6 +632,14 @@ npm run test:mcp
   targets refused at preparation; a refine prepared against a superseded revision refused
   as `STALE_BASIS` without advancing the revision twice; and `praxis://capabilities`
   advertising `refine-candidate` as served.
+- [tests/mcp-module-instructions.test.ts](../tests/mcp-module-instructions.test.ts) — a
+  real SDK client reading, replacing and clearing Instructions for all four modules and
+  confirming each value through that module's own existing application reader; a stale
+  `expectedRevision` refused as `RESOURCE_CHANGED` without overwriting the concurrent
+  edit, with the other three modules untouched; an unserved module and an over-long
+  document refused with nothing written; the advertised per-module limits differing where
+  the services differ; and a prepared operation still submitting after an edit, which is
+  the documented Basis limit rather than a uniform-support claim.
 - [tests/mcp-transport.test.ts](../tests/mcp-transport.test.ts) — a real SDK client over
   HTTP completing initialization, discovery and reads, with bounded 20-second timeouts,
   including both sides of the argument-failure split, and `praxis://capabilities` naming

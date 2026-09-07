@@ -10,6 +10,11 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import { PublicApiError } from '../../api-errors.ts';
+import {
+  assertInstructionsRevision,
+  withInstructionsMutation,
+  type SaveInstructionsOptions,
+} from '../module-instructions.ts';
 import type { RegisteredProject } from '../../project-registry.ts';
 
 async function contextDirectory(project: RegisteredProject, create = false) {
@@ -50,14 +55,26 @@ export async function readDomainModelInstructions(project: RegisteredProject) {
 export async function saveDomainModelInstructions(
   project: RegisteredProject,
   instructions: string,
+  options?: SaveInstructionsOptions,
+) {
+  return withInstructionsMutation(project, () =>
+    saveDomainModelInstructionsUnlocked(project, instructions, options),
+  );
+}
+
+async function saveDomainModelInstructionsUnlocked(
+  project: RegisteredProject,
+  instructions: string,
+  options?: SaveInstructionsOptions,
 ) {
   if (typeof instructions !== 'string' || instructions.length > 20_000)
     throw new PublicApiError(
       'Instructions must be at most 20000 characters.',
       400,
     );
-  if ((await readDomainModelInstructions(project)) === instructions)
-    return { instructions };
+  const current = await readDomainModelInstructions(project);
+  assertInstructionsRevision(current, options);
+  if (current === instructions) return { instructions };
   const directory = await contextDirectory(project, true);
   const temporary = path.join(directory, `instructions-${randomUUID()}.tmp`);
   try {

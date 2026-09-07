@@ -20,6 +20,7 @@ import {
   type ResponseOwner,
 } from '../execution-observability/types.ts';
 import { listTaskGraphNodes, type TaskGraphNode } from '../graph/task/nodes.ts';
+import { moduleInstructionsSummary, readInstructions } from './instructions.ts';
 import { listPendingProductExplorationCandidates } from '../modules/product-discovery/acceptance.ts';
 import { listPendingScopeDecompositionCandidates } from '../modules/scope-decomposition/acceptance.ts';
 import {
@@ -61,6 +62,7 @@ import {
 import {
   artifactUri,
   capabilitiesUri,
+  instructionsUri,
   contractUri,
   latestResponseUri,
   moduleUri,
@@ -106,6 +108,7 @@ export const MCP_IMPLEMENTED_TOOLS = [
   'praxis_read_log',
   'praxis_accept_candidate',
   'praxis_discard_candidate',
+  'praxis_update_instructions',
 ] as const;
 
 export type McpResourceContent = {
@@ -152,6 +155,8 @@ export function readCapabilities(options: McpReadOptions = {}) {
       moduleTemplate: 'praxis://projects/{projectId}/modules/{module}',
       latestResponseTemplate:
         'praxis://projects/{projectId}/modules/{module}/latest-response',
+      instructionsTemplate:
+        'praxis://projects/{projectId}/modules/{module}/instructions',
       artifactTemplate: 'praxis://projects/{projectId}/artifacts/{artifactId}',
       operationTemplate:
         'praxis://projects/{projectId}/operations/{operationId}',
@@ -477,6 +482,7 @@ export async function readModuleState(
     },
     revision: sha256Hex(canonicalJson(state)),
     state,
+    instructions: await moduleInstructionsSummary(project, module),
     activeOperation: activeOperationSummary(owner, getActiveRun(owner)),
     latestResponse: latest
       ? {
@@ -489,6 +495,27 @@ export async function readModuleState(
     latestResponseUri: latestResponseUri(project.id, module),
   };
   return jsonDocument(moduleUri(project.id, module), value, options);
+}
+
+export async function readModuleInstructionsDocument(
+  projectId: string,
+  module: McpModule,
+  options: McpReadOptions = {},
+) {
+  const project = await requireProject(projectId);
+  const { instructions, revision } = await readInstructions(project, module);
+  const limitBytes = boundedLimit(
+    options.limitBytes,
+    DEFAULT_READ_BYTES,
+    MAX_READ_BYTES,
+  );
+  const page = pageContent(instructions, revision, options.cursor, limitBytes);
+  return {
+    uri: instructionsUri(project.id, module),
+    mimeType: 'text/markdown',
+    revision,
+    ...page,
+  } satisfies McpResourceContent;
 }
 
 export async function readLatestResponseProjection(
@@ -865,6 +892,12 @@ export async function resolveMcpResource(
     return readModuleState(reference.projectId, reference.module, options);
   if (reference.kind === 'latest-response')
     return readLatestResponseProjection(
+      reference.projectId,
+      reference.module,
+      options,
+    );
+  if (reference.kind === 'instructions')
+    return readModuleInstructionsDocument(
       reference.projectId,
       reference.module,
       options,
