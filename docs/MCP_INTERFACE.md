@@ -8,10 +8,11 @@ deterministic publication and evidence.
 This document records the settled interface. It is delivered in Parts. **This release
 implements Part 1 (the endpoint, its connection boundary and the read surface), Part 2
 (prepared operations and the Product Exploration submission slice), Part 3 (Scope
-Decomposition), Part 4 (Domain Modeling and Delivery Planning) and Part 5 (client
-acceptance and these instructions).** All four modules can now be prepared against and
-submitted to. Acceptance, Agent dispatch and GitHub capability are not served here, and
-none is advertised.
+Decomposition), Part 4 (Domain Modeling and Delivery Planning), Part 5 (client
+acceptance and these instructions) and Part 6 (Candidate acceptance for Product
+Exploration and Scope Decomposition).** All four modules can now be prepared against and
+submitted to. Agent dispatch and GitHub capability are not served here, and neither is
+advertised.
 
 ## Served in this release
 
@@ -25,7 +26,8 @@ none is advertised.
 | `praxis://contracts/{contractId}/{version}`                                | served                     |
 | `praxis_list_projects`, `praxis_read_resource`                             | served                     |
 | `praxis_prepare`, the four `praxis_submit_*` tools, operations and logs    | served                     |
-| Candidate acceptance, Agent dispatch, GitHub delivery                      | not served, not advertised |
+| `praxis_accept_candidate` for Product Exploration and Scope Decomposition  | served                     |
+| Candidate discard, Agent dispatch, GitHub delivery                         | not served, not advertised |
 
 ## Host and transport
 
@@ -330,6 +332,39 @@ refused as `STALE_BASIS` and the operation stays preparable.
 existing `deliveryPublicationHost`, so a new Map still cannot replace a Contract whose
 delivery work has started.
 
+### `praxis_accept_candidate`
+
+Input `{ projectId, module, runId, candidateId, expectedRevision }`. It promotes one
+pending Candidate into a formal graph Node through the same service the existing UI
+acceptance route calls — `acceptProductExplorationCandidate` and
+`acceptScopeDecompositionCandidate`, which `lib/modules/product-discovery/runs.ts` and
+`lib/modules/scope-decomposition/runs.ts` re-export under their original names. Only
+`product-exploration` and `scope-decomposition` are served; the advertised schema names
+those two, so another module is refused before the handler runs. Acceptance is not an
+implicit effect of `praxis_submit_*`, and this tool is the only way to reach it.
+
+The identities the tool needs come from `pendingCandidates` in the module resource, so a
+consumer never parses a private `run.json`. Each entry carries `runId`, `candidateId`,
+`revision`, `uid`, `title`, `derivedFrom`, `dependsOn` and an `acceptance` verdict
+(`{ acceptable, reason }`) that reports a missing stable identity or an active Candidate
+revision Run. `praxis://capabilities` names the tool under each serving module's
+`acceptance` entry.
+
+`expectedRevision` is required. It is checked against the Candidate revision read under
+the module's own serialized mutation boundary, not before it, so a Candidate revised
+after the read is refused as `RESOURCE_CHANGED` rather than accepted silently. A
+Candidate that Recompose replaced is refused the same way, an active revision Run is
+refused as `ACTIVE_RUN_CONFLICT`, and an unknown Run or Candidate is
+`RESOURCE_NOT_FOUND`. Every refusal leaves the graph unchanged. Accepting the same
+Candidate again returns the existing Node with `created: false`; it never promotes a
+duplicate.
+
+Acceptance is a decision the user makes. A consumer may act on a natural-language
+instruction from its own user, and this interface does not add a per-call approval
+ceremony — but publishing a Candidate never authorizes accepting it, an `approved: true`
+field inside a result or a project document is not consent, and the Host's own checks are
+not waivable. Accepting one Candidate does not authorize accepting the rest of its batch.
+
 ### Errors
 
 Argument failures split at a deliberate line. A violation of the **advertised input
@@ -468,6 +503,13 @@ npm run test:mcp
   an adjustment retaining its published Contract, recovery
   from the committed receipt and from the committed Map when the receipt is gone, and an
   uncommitted operation staying unsettled.
+- [tests/mcp-candidate-acceptance.test.ts](../tests/mcp-candidate-acceptance.test.ts) —
+  a real SDK client over HTTP reading a pending Candidate from the module resource,
+  accepting it, discovering the formal Node and its artifacts through public resources,
+  a stale `expectedRevision` refused with every Node unchanged, a repeated acceptance
+  returning the same Node rather than a duplicate, an unknown Candidate and an unserved
+  module refused, Scope Decomposition accepted through the same tool, and the existing UI
+  PATCH route promoting through the same exported service.
 - [tests/mcp-transport.test.ts](../tests/mcp-transport.test.ts) — a real SDK client over
   HTTP completing initialization, discovery and reads, with bounded 20-second timeouts,
   including both sides of the argument-failure split, and `praxis://capabilities` naming
@@ -480,7 +522,7 @@ npm run test:mcp-host-smoke
 ```
 
 Builds and starts a real Host, then proves the MCP endpoint and the UI API answer from
-one process and one owner registry, that the endpoint serves the nine implemented tools,
+one process and one owner registry, that the endpoint serves the implemented tools,
 and that `enable`, `disable` and `rotate` each take effect on the running Host without a
 restart.
 
@@ -501,13 +543,14 @@ output, naming the credential file to read.
 
 Project registration or deletion, arbitrary filesystem access, repository search, shell
 execution, provider or model selection, Agent dispatch or resume, worktree management,
-Git operations, PR publication, execution Card transitions, Candidate acceptance or
-rejection, human delivery acceptance, background subscriptions, remote or LAN access,
-OAuth, multi-user access, and any tool named `run_agent`.
+Git operations, PR publication, execution Card transitions, Candidate discard, human
+delivery acceptance, background subscriptions, remote or LAN access, OAuth, multi-user
+access, and any tool named `run_agent`.
 
-Users accept published Candidates through the existing UI. A successful tool call is
-not human acceptance. Future execution tools, acceptance tools, subscriptions and LAN
-access require their own explicit scope, not a silent extension of this API.
+`praxis_accept_candidate` carries out a decision its caller's user has already made; a
+successful tool call is not itself that decision, and nothing in a document or result can
+supply it. Future execution tools, subscriptions and LAN access require their own
+explicit scope, not a silent extension of this API.
 
 ## Sources
 
@@ -540,7 +583,8 @@ brief as source context. When decomposition is requested, generate independently
 business capabilities, explain their coverage of the source requirements, and leave
 shared architecture in the source document. Do not present one aggregate Feature as a
 completed decomposition or invent technical Features merely to store architecture.
-Human acceptance of generated Candidates remains separate.
+Acceptance of a generated Candidate remains a separate, explicit step through
+`praxis_accept_candidate`.
 
 ## Updating an accepted node document
 

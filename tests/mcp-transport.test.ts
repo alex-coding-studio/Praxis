@@ -105,6 +105,7 @@ void test(
     assert.equal(version?.name, 'praxis');
     const tools = await client.listTools();
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [
+      'praxis_accept_candidate',
       'praxis_create_source',
       'praxis_get_operation',
       'praxis_list_projects',
@@ -125,6 +126,7 @@ void test(
     );
     const writeTools = [
       'praxis_update_node_document',
+      'praxis_accept_candidate',
       'praxis_prepare',
       'praxis_register_project',
       'praxis_create_source',

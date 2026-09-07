@@ -45,7 +45,8 @@ export async function promoteCandidateToNode(
   return mutateCanvas(project, scope, async () => {
     const existingNodes = await listCanvasNodesWithinCanvas(project, scope);
     const promoted = existingNodes.find((node) => node.uid === candidate.uid);
-    if (promoted) return { node: promoted, nodes: existingNodes };
+    if (promoted)
+      return { node: promoted, nodes: existingNodes, created: false };
     const resolvedDependencies = resolveCandidateDependencies(
       candidate.candidateId,
       candidate.dependsOn,
@@ -127,6 +128,7 @@ export async function promoteCandidateToNode(
       return {
         node,
         nodes: await listCanvasNodesWithinCanvas(project, scope),
+        created: true,
       };
     } catch (error) {
       await rm(temporaryPath, { recursive: true, force: true });
