@@ -33,6 +33,7 @@ assert.ok(credentials);
 const token = credentials.token;
 
 async function listen(t: test.TestContext) {
+  let port = 0;
   const server: HttpServer = createServer((incoming, outgoing) => {
     const chunks: Buffer[] = [];
     incoming.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -44,7 +45,7 @@ async function listen(t: test.TestContext) {
           else if (Array.isArray(value)) headers.set(name, value.join(','));
         const method = incoming.method ?? 'GET';
         const request = new Request(
-          `http://127.0.0.1:${(server.address() as AddressInfo).port}${incoming.url ?? '/'}`,
+          `http://127.0.0.1:${port}${incoming.url ?? '/'}`,
           {
             method,
             headers,
@@ -60,18 +61,24 @@ async function listen(t: test.TestContext) {
             : method === 'DELETE'
               ? route.DELETE
               : route.GET;
-        const response = await handler(request);
-        outgoing.statusCode = response.status;
-        response.headers.forEach((value, name) =>
-          outgoing.setHeader(name, value),
-        );
-        outgoing.end(Buffer.from(await response.arrayBuffer()));
+        try {
+          const response = await handler(request);
+          outgoing.statusCode = response.status;
+          response.headers.forEach((value, name) =>
+            outgoing.setHeader(name, value),
+          );
+          outgoing.end(Buffer.from(await response.arrayBuffer()));
+        } catch (error) {
+          outgoing.statusCode = 500;
+          outgoing.end(String(error));
+        }
       })();
     });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  port = (server.address() as AddressInfo).port;
   t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
-  return `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/mcp`;
+  return `http://127.0.0.1:${port}/api/mcp`;
 }
 
 async function connect(t: test.TestContext, url: string, bearer = token) {
@@ -105,6 +112,7 @@ void test(
     assert.equal(version?.name, 'praxis');
     const tools = await client.listTools();
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [
+      'praxis_accept_candidate',
       'praxis_create_source',
       'praxis_get_operation',
       'praxis_list_projects',
@@ -128,6 +136,7 @@ void test(
     const writeTools = [
       'praxis_update_source',
       'praxis_update_node_document',
+      'praxis_accept_candidate',
       'praxis_prepare',
       'praxis_register_project',
       'praxis_create_source',

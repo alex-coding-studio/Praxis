@@ -7,6 +7,9 @@ import {
   whatsNextLayers,
   whatsNextMotions,
 } from '../modules/product-discovery/intention.ts';
+import { CANDIDATE_ALIAS_PATTERN } from '../graph/identity.ts';
+import { PROPOSAL_RUN_ID } from '../graph/proposal/run-state.ts';
+import { ACCEPTANCE_MODULES } from './accept.ts';
 import { MCP_OPERATION_ID_PATTERN } from './operations.ts';
 import {
   DEFAULT_LIST_LIMIT,
@@ -290,3 +293,39 @@ export const SUBMIT_DOMAIN_MODEL_INPUT_SCHEMA = submissionSchema(
 export const SUBMIT_DELIVERY_MAP_INPUT_SCHEMA = submissionSchema(
   DELIVERY_MAP_RESULT_SCHEMA,
 );
+
+export const ACCEPT_CANDIDATE_INPUT_SCHEMA = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  additionalProperties: false,
+  required: ['projectId', 'module', 'runId', 'candidateId', 'expectedRevision'],
+  properties: {
+    projectId: {
+      type: 'string',
+      minLength: 1,
+      description: 'A project id from praxis://projects.',
+    },
+    module: {
+      enum: [...ACCEPTANCE_MODULES],
+      description:
+        'The module that proposed the Candidate. Only Product Exploration and Scope Decomposition serve acceptance.',
+    },
+    runId: {
+      type: 'string',
+      pattern: PROPOSAL_RUN_ID.source,
+      description:
+        'The proposing Run id, as reported by pendingCandidates in the module resource.',
+    },
+    candidateId: {
+      type: 'string',
+      pattern: CANDIDATE_ALIAS_PATTERN,
+      description: 'The Candidate to accept.',
+    },
+    expectedRevision: {
+      type: 'integer',
+      minimum: 1,
+      description:
+        'The Candidate revision this acceptance was decided against. A newer revision is refused rather than accepted silently.',
+    },
+  },
+} as const;

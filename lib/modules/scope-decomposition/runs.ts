@@ -13,12 +13,10 @@ import { candidatePromptView } from '../../graph/identity.ts';
 import {
   ensureGraphIdentities,
   readIdentifiedEntities,
-  reserveNodeIdentity,
   reservedCandidateAliases,
 } from '../../graph/identity-store.ts';
 import {
   access,
-  copyFile,
   mkdir,
   readdir,
   readFile,
@@ -79,10 +77,12 @@ import {
   type ContextWorkspaceEntry,
   type ContextWorkspaceInput,
 } from '../../graph/agent/context-workspace.ts';
+import { candidateDependencyBlockers } from './dependencies.ts';
+import { acceptScopeDecompositionCandidate } from './acceptance.ts';
 import {
-  candidateDependencyBlockers,
-  resolveCandidateDependencies,
-} from './dependencies.ts';
+  moduleRunRegistry,
+  withModuleMutation,
+} from '../../graph/proposal/module-runtime.ts';
 import {
   startLocalAgentRun,
   type LocalAgentKind,
@@ -117,6 +117,9 @@ import {
   type TaskDecompositionMotion,
 } from './motion.ts';
 import { successfulRecomposeOutputCandidateIds } from '../../graph/agent/recompose.ts';
+
+export const acceptTaskDecompositionCandidate =
+  acceptScopeDecompositionCandidate;
 
 export type TaskDecompositionRunStatus =
   | 'running'
@@ -700,134 +703,6 @@ export async function cancelTaskDecompositionRun(
   await writeRunRecord(project, canceledRecord);
   if (reservation) await settleRun(reservation, { classification });
   return canceledRecord;
-}
-
-export async function acceptTaskDecompositionCandidate(
-  project: RegisteredProject,
-  runId: string,
-  candidateId: string,
-) {
-  return mutateTaskDecomposition(project, () =>
-    acceptTaskDecompositionCandidateUnlocked(project, runId, candidateId),
-  );
-}
-
-async function acceptTaskDecompositionCandidateUnlocked(
-  project: RegisteredProject,
-  runId: string,
-  candidateId: string,
-) {
-  if (
-    [...activeRuns.values()].some(
-      (active) =>
-        active.record.revisionOf === candidateId &&
-        ['running', 'validating'].includes(active.record.status),
-    )
-  ) {
-    throw new PublicApiError(
-      'Wait for the active Candidate revision to finish.',
-      400,
-    );
-  }
-  const run = await readAvailableProposalRun(project, runId);
-  if (run.result?.outcome !== 'proposal') {
-    throw new PublicApiError('The Candidate proposal is unavailable.', 400);
-  }
-  const candidate = run.result.candidates.find(
-    (value) => value.candidateId === candidateId,
-  );
-  if (!candidate)
-    throw new PublicApiError('The Candidate could not be found.', 400);
-
-  const existingNodes = await listTaskGraphNodes(project);
-  const accepted = existingNodes.find((node) => node.uid === candidate.uid);
-  if (accepted) return { node: accepted, nodes: existingNodes };
-  if (
-    !(await collectLatestUnacceptedCandidates(project)).some(
-      (item) => item.candidateId === candidateId,
-    )
-  )
-    throw new PublicApiError(
-      'This Candidate was replaced or removed by Recompose.',
-      409,
-    );
-  const resolvedDependencies = resolveCandidateDependencies(
-    candidate.candidateId,
-    candidate.dependsOn,
-    existingNodes,
-  );
-
-  if (!candidate.uid) throw new Error('Candidate stable identity is missing.');
-  const { id: nodeId } = await reserveNodeIdentity(
-    project.planningPath,
-    'task-graph',
-    candidate.uid,
-  );
-  const nodesPath = path.join(project.planningPath, 'task-graph', 'nodes');
-  const nodePath = path.join(nodesPath, nodeId);
-  const temporaryPath = path.join(nodesPath, `.${nodeId}-${randomUUID()}.tmp`);
-  const candidateOutput = path.join(
-    taskDecompositionRunPath(project, runId),
-    'candidates',
-    candidateId,
-    'output.md',
-  );
-  await mkdir(temporaryPath, { recursive: true });
-
-  try {
-    await copyFile(candidateOutput, path.join(temporaryPath, 'output.md'));
-    const timestamp = new Date().toISOString();
-    const matchingType = existingNodes.find(
-      (node) => node.type === candidate.type,
-    );
-    const node: TaskGraphNode = {
-      schemaVersion: 1,
-      id: nodeId,
-      uid: candidate.uid,
-      relations: candidate.relations,
-      role: 'node',
-      type: candidate.type,
-      title: candidate.title,
-      summary: candidate.summary,
-      status: 'accepted',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      resources: [
-        ...candidate.resources,
-        {
-          kind: 'output',
-          path: `task-graph/nodes/${nodeId}/output.md`,
-        },
-      ],
-      derivedFrom: candidate.derivedFrom,
-      dependsOn: resolvedDependencies,
-      typeTemplateRef:
-        candidate.typeTemplateRef ??
-        matchingType?.typeTemplateRef ??
-        matchingType?.id ??
-        nodeId,
-      metadata: candidate.metadata,
-      presentation: candidate.presentation,
-      provenance: {
-        runId,
-        candidateId,
-        revision: candidate.revision,
-      },
-    };
-    await writeFile(
-      path.join(temporaryPath, 'node.json'),
-      `${JSON.stringify(node, null, 2)}\n`,
-      { flag: 'wx' },
-    );
-    await mkdir(nodesPath, { recursive: true });
-    await rename(temporaryPath, nodePath);
-    return { node, nodes: await listTaskGraphNodes(project) };
-  } catch (error) {
-    await import('node:fs/promises').then(({ rm }) =>
-      rm(temporaryPath, { recursive: true, force: true }),
-    );
-    throw error;
-  }
 }
 
 export async function discardTaskDecompositionCandidate(
@@ -1676,35 +1551,19 @@ function runKey(project: RegisteredProject, runId: string) {
   return `${project.id}:${runId}`;
 }
 
-const mutationRuntime = globalThis as typeof globalThis & {
-  taskDecompositionMutations?: Map<string, Promise<unknown>>;
-};
-const mutations = (mutationRuntime.taskDecompositionMutations ??= new Map<
-  string,
-  Promise<unknown>
->());
-
 async function mutateTaskDecomposition<T>(
   project: RegisteredProject,
   work: () => Promise<T>,
 ): Promise<T> {
-  const previous = mutations.get(project.planningPath) ?? Promise.resolve();
-  const next = previous.catch(() => undefined).then(work);
-  mutations.set(project.planningPath, next);
-  try {
-    return (await next) as T;
-  } finally {
-    if (mutations.get(project.planningPath) === next)
-      mutations.delete(project.planningPath);
-  }
+  return withModuleMutation(
+    'taskDecompositionMutations',
+    project.planningPath,
+    work,
+  );
 }
 
 function getActiveRuns() {
-  const runtime = globalThis as typeof globalThis & {
-    __praxisRuns?: Map<string, ActiveRun>;
-  };
-  runtime.__praxisRuns ??= new Map<string, ActiveRun>();
-  return runtime.__praxisRuns;
+  return moduleRunRegistry<ActiveRun>('__praxisRuns');
 }
 
 async function ensureCandidateArtifacts(
