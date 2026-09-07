@@ -115,6 +115,7 @@ void test(
       'praxis_accept_candidate',
       'praxis_create_source',
       'praxis_delete_node',
+      'praxis_discard_candidate',
       'praxis_get_operation',
       'praxis_inspect_node_deletion',
       'praxis_list_projects',
@@ -140,6 +141,7 @@ void test(
       'praxis_update_source',
       'praxis_update_node_document',
       'praxis_accept_candidate',
+      'praxis_discard_candidate',
       'praxis_prepare',
       'praxis_register_project',
       'praxis_create_source',
@@ -160,6 +162,7 @@ void test(
           'praxis_update_node_document',
           'praxis_update_source',
           'praxis_delete_node',
+          'praxis_discard_candidate',
         ].includes(tool.name),
         tool.name,
       );

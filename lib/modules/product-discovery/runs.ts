@@ -71,7 +71,6 @@ import {
   type ProposalReplacement,
 } from './redo.ts';
 import { readWhatsNextAttachment, readWhatsNextContext } from './context.ts';
-import { candidateDependencyBlockers } from '../../graph/proposal/dependencies.ts';
 import {
   whatsNextValidationContext,
   type WhatsNextValidationContextInput,
@@ -97,11 +96,16 @@ import {
   acceptProductExplorationCandidate,
   renderLegacyCandidateMarkdown,
 } from './acceptance.ts';
+import { discardProductExplorationCandidate } from './discard.ts';
+import {
+  ensureProductExplorationRunArtifacts as ensureCandidateArtifacts,
+  normalizeProductExplorationRun,
+  writeProductExplorationRunRecord as writeRunRecord,
+} from './run-store.ts';
 import {
   moduleRunRegistry,
   withModuleMutation,
 } from '../../graph/proposal/module-runtime.ts';
-import { stageCandidateDocuments } from '../../graph/proposal/stage.ts';
 import {
   primarySourceResourcePaths,
   relatedContextNodeIds,
@@ -132,6 +136,7 @@ import {
 } from './intention.ts';
 
 export const acceptWhatsNextCandidate = acceptProductExplorationCandidate;
+export const discardWhatsNextCandidate = discardProductExplorationCandidate;
 
 const GRAPH_ROOT = 'whats-next' as const;
 
@@ -686,18 +691,8 @@ export async function readWhatsNextRun(
       'utf8',
     ),
   ) as Omit<WhatsNextRunRecord, 'operation'> & { operation?: string };
-  if (stored.operation === 'revise-candidate') {
-    stored.operation = 'refine-candidate';
-  }
-  stored.operation ??= stored.revisionOf ? 'refine-candidate' : 'explore';
+  normalizeProductExplorationRun(stored as never);
   const record = stored as WhatsNextRunRecord;
-  record.activity ??= [];
-  record.intention ??= 'mvp-exploration';
-  record.motion ??= 'diverge';
-  if (record.input) {
-    record.input.intention ??= record.intention;
-    record.input.motion ??= record.motion;
-  }
   if (record.result?.outcome === 'proposal') {
     for (const candidate of record.result.candidates) {
       candidate.layer ??= 'discovery';
@@ -708,21 +703,6 @@ export async function readWhatsNextRun(
       GRAPH_ROOT,
       record.result.candidates,
     );
-  }
-  if (record.result && !record.result.reflection) {
-    record.result.reflection = {
-      markdown: record.result.exploration?.notes?.length
-        ? `# Reflection\n\n${record.result.exploration.notes.join('\n\n')}`
-        : '# Reflection\n\nThis Run did not record a Reflection.',
-      continuationAdvice: {
-        action: 'continue',
-        recommendedFocus: 'expand',
-        reason: 'This legacy Run predates explicit continuation advice.',
-      },
-    };
-  }
-  if (record.result?.reflection.continuationAdvice) {
-    record.result.reflection.continuationAdvice.recommendedFocus ??= 'expand';
   }
   if (record.result?.outcome === 'proposal') {
     for (const candidate of record.result.candidates) {
@@ -843,129 +823,6 @@ export async function cancelWhatsNextRun(
   await writeRunRecord(project, canceledRecord);
   if (reservation) await settleRun(reservation, { classification });
   return canceledRecord;
-}
-
-export async function discardWhatsNextCandidate(
-  project: RegisteredProject,
-  runId: string,
-  candidateId: string,
-) {
-  return mutateWhatsNext(project, () =>
-    discardWhatsNextCandidateUnlocked(project, runId, candidateId),
-  );
-}
-
-async function discardWhatsNextCandidateUnlocked(
-  project: RegisteredProject,
-  runId: string,
-  candidateId: string,
-) {
-  const allRuns = await readAllWhatsNextRuns(project);
-  const availableRun = allRuns.find((run) => run.runId === runId);
-  if (!availableRun)
-    throw new PublicApiError(
-      'The Candidate proposal is no longer available.',
-      400,
-    );
-  if (
-    [...activeRuns.values()].some(
-      (active) =>
-        active.record.revisionOf === candidateId &&
-        ['running', 'validating'].includes(active.record.status),
-    )
-  ) {
-    throw new PublicApiError(
-      'Cancel or finish the active Candidate revision first.',
-      400,
-    );
-  }
-  const requestedRun = await readWhatsNextRun(project, runId);
-  if (requestedRun.result?.outcome !== 'proposal') {
-    throw new PublicApiError('The Candidate proposal is unavailable.', 400);
-  }
-  if (
-    !requestedRun.result.candidates.some(
-      (candidate) => candidate.candidateId === candidateId,
-    )
-  ) {
-    throw new PublicApiError('The Candidate could not be found.', 400);
-  }
-  const accepted = (await listTaskGraphNodes(project, GRAPH_ROOT)).some(
-    (node) => node.provenance?.candidateId === candidateId,
-  );
-  if (accepted) {
-    throw new PublicApiError(
-      'An accepted Candidate must be managed as a formal Node.',
-      400,
-    );
-  }
-  const blockers = candidateDependencyBlockers(
-    candidateId,
-    await collectLatestUnacceptedCandidateStates(project),
-  );
-  if (blockers.length > 0) {
-    throw new Error(
-      `${candidateId} is still required by ${blockers.join(', ')}. Discard those directions first.`,
-    );
-  }
-
-  const candidateRuns = (await readAllWhatsNextRuns(project)).filter(
-    (run) =>
-      run.result?.outcome === 'proposal' &&
-      run.result.candidates.some(
-        (candidate) => candidate.candidateId === candidateId,
-      ),
-  );
-  let requestedRunDeleted = false;
-  const deletedRunIds: string[] = [];
-  const updatedRuns: WhatsNextRunRecord[] = [];
-  for (const run of candidateRuns) {
-    const runDeleted = await discardCandidateFromRun(project, run, candidateId);
-    if (runDeleted) deletedRunIds.push(run.runId);
-    else updatedRuns.push(run);
-    if (run.runId === runId) requestedRunDeleted = runDeleted;
-  }
-  return {
-    candidateId,
-    runDeleted: requestedRunDeleted,
-    deletedRunIds,
-    runs: updatedRuns,
-  };
-}
-
-async function discardCandidateFromRun(
-  project: RegisteredProject,
-  run: WhatsNextRunRecord,
-  candidateId: string,
-) {
-  if (run.result?.outcome !== 'proposal') return false;
-  const candidateIndex = run.result.candidates.findIndex(
-    (candidate) => candidate.candidateId === candidateId,
-  );
-  if (candidateIndex < 0) return false;
-  const runPath = whatsNextRunPath(project, run.runId);
-  if (run.result.candidates.length === 1) {
-    await trash(runPath);
-    return true;
-  }
-  const candidatePath = path.join(runPath, 'candidates', candidateId);
-  const stagedPath = path.join(
-    runPath,
-    'candidates',
-    `.${candidateId}-${randomUUID()}.discarding`,
-  );
-  await rename(candidatePath, stagedPath);
-  try {
-    run.result.candidates.splice(candidateIndex, 1);
-    run.updatedAt = new Date().toISOString();
-    await writeRunRecord(project, run);
-    await ensureCandidateArtifacts(project, run);
-  } catch (error) {
-    await rename(stagedPath, candidatePath);
-    throw error;
-  }
-  await trash(stagedPath);
-  return false;
 }
 
 async function finishWhatsNextRun(
@@ -1307,18 +1164,6 @@ function graphMapEntry(node: TaskGraphNode) {
     acceptedFromCandidateId: node.provenance?.candidateId ?? null,
     resourcePaths: node.resources.map((resource) => resource.path),
   };
-}
-
-async function writeRunRecord(
-  project: RegisteredProject,
-  record: WhatsNextRunRecord,
-) {
-  const runPath = whatsNextRunPath(project, record.runId);
-  await mkdir(runPath, { recursive: true });
-  const filePath = path.join(runPath, 'run.json');
-  const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
-  await writeFile(temporaryPath, `${JSON.stringify(record, null, 2)}\n`);
-  await rename(temporaryPath, filePath);
 }
 
 function renderWhatsNextUserInput(
@@ -1700,50 +1545,6 @@ async function writeProducerEvidence(
     await writeFile(temporaryResponsePath, responseMarkdown, { flag: 'wx' });
     await rename(temporaryResponsePath, responsePath);
   }
-}
-
-async function ensureCandidateArtifacts(
-  project: RegisteredProject,
-  record: WhatsNextRunRecord,
-) {
-  if (!record.result) return;
-  const runPath = whatsNextRunPath(project, record.runId);
-  await writeAgentGraphRunEvidence(runPath, {
-    activity: record.activity ?? [],
-    summary: renderWhatsNextSummaryMarkdown(record.result),
-    response: renderWhatsNextResponseMarkdown(record.result),
-  });
-  const reflectionPath = path.join(runPath, 'reflection.md');
-  if (
-    !(await access(reflectionPath)
-      .then(() => true)
-      .catch(() => false))
-  ) {
-    await writeFile(
-      reflectionPath,
-      `${record.result.reflection.markdown.trim()}\n`,
-      {
-        flag: 'wx',
-      },
-    );
-  }
-  const responsePath = path.join(runPath, 'response.md');
-  const responseMarkdown = renderWhatsNextResponseMarkdown(record.result);
-  const existingResponse = await readFile(responsePath, 'utf8').catch(() => '');
-  if (existingResponse !== responseMarkdown) {
-    const temporaryResponsePath = `${responsePath}.${randomUUID()}.tmp`;
-    await writeFile(temporaryResponsePath, responseMarkdown, { flag: 'wx' });
-    await rename(temporaryResponsePath, responsePath);
-  }
-  if (record.result.outcome !== 'proposal') return;
-  await stageCandidateDocuments(
-    runPath,
-    record.result.candidates.map((candidate) => ({
-      candidateId: candidate.candidateId,
-      markdown:
-        candidate.outputMarkdown ?? renderLegacyCandidateMarkdown(candidate),
-    })),
-  );
 }
 
 async function writeWhatsNextCheckpoint(

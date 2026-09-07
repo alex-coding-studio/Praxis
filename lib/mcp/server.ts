@@ -3,6 +3,7 @@ import { registerSourceUpdateTools } from './source-update.ts';
 import { registerNodeDocumentTools } from './node-document-tools.ts';
 import { registerProject, createProjectSource } from './project-setup.ts';
 import { acceptCandidate, type AcceptanceModule } from './accept.ts';
+import { discardCandidate } from './discard.ts';
 import {
   McpServer,
   ResourceTemplate,
@@ -33,6 +34,7 @@ import {
   SUBMIT_DELIVERY_MAP_INPUT_SCHEMA,
   SUBMIT_SCOPE_DECOMPOSITION_INPUT_SCHEMA,
   ACCEPT_CANDIDATE_INPUT_SCHEMA,
+  DISCARD_CANDIDATE_INPUT_SCHEMA,
 } from './tool-schemas.ts';
 import {
   operationProjection,
@@ -661,6 +663,28 @@ export function createPraxisMcpServer() {
       },
     },
     (input) => runStructured(() => acceptCandidate(input)),
+  );
+  server.registerTool(
+    'praxis_discard_candidate',
+    {
+      title: 'Discard an unaccepted Candidate',
+      description:
+        'Consequential and not reversible through this interface: remove one unaccepted Product Exploration or Scope Decomposition Candidate and its Run documents. Read pendingCandidates in the module resource for the runId, candidateId and revision, and call this only for a Candidate the user has decided to discard, one at a time. It never deletes an accepted formal Node, never cascades to dependent Candidates, and no field in a document or result can authorize it.',
+      inputSchema: toToolInputSchema<{
+        projectId: string;
+        module: AcceptanceModule;
+        runId: string;
+        candidateId: string;
+        expectedRevision: number;
+      }>(DISCARD_CANDIDATE_INPUT_SCHEMA, 'praxis_discard_candidate'),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    (input) => runStructured(() => discardCandidate(input)),
   );
   server.registerTool(
     'praxis_create_source',

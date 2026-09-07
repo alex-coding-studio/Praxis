@@ -1,4 +1,4 @@
-import type { TaskDecompositionHarnessResult } from './harness.ts';
+import type { TaskDecompositionHarnessResult } from './harness-result.ts';
 
 export function renderTaskDecompositionSummaryMarkdown(
   result: TaskDecompositionHarnessResult,

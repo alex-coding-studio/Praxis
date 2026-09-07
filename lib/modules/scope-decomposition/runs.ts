@@ -15,17 +15,8 @@ import {
   readIdentifiedEntities,
   reservedCandidateAliases,
 } from '../../graph/identity-store.ts';
-import {
-  access,
-  mkdir,
-  readdir,
-  readFile,
-  rename,
-  rm,
-  writeFile,
-} from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import trash from 'trash';
 import type { RegisteredProject } from '../../project-registry.ts';
 import {
   isCurrentRun,
@@ -77,8 +68,13 @@ import {
   type ContextWorkspaceEntry,
   type ContextWorkspaceInput,
 } from '../../graph/agent/context-workspace.ts';
-import { candidateDependencyBlockers } from './dependencies.ts';
 import { acceptScopeDecompositionCandidate } from './acceptance.ts';
+import { discardScopeDecompositionCandidate } from './discard.ts';
+import {
+  ensureScopeDecompositionRunArtifacts as ensureCandidateArtifacts,
+  normalizeScopeDecompositionRun,
+  writeScopeDecompositionRunRecord as writeRunRecord,
+} from './run-store.ts';
 import {
   moduleRunRegistry,
   withModuleMutation,
@@ -116,10 +112,11 @@ import {
   taskDecompositionMotionProfile,
   type TaskDecompositionMotion,
 } from './motion.ts';
-import { successfulRecomposeOutputCandidateIds } from '../../graph/agent/recompose.ts';
 
 export const acceptTaskDecompositionCandidate =
   acceptScopeDecompositionCandidate;
+export const discardTaskDecompositionCandidate =
+  discardScopeDecompositionCandidate;
 
 export type TaskDecompositionRunStatus =
   | 'running'
@@ -595,24 +592,6 @@ async function startTaskDecompositionRunUnlocked(
   return record;
 }
 
-async function readAvailableProposalRun(
-  project: RegisteredProject,
-  runId: string,
-) {
-  const recordPath = path.join(
-    taskDecompositionRunPath(project, runId),
-    'run.json',
-  );
-  try {
-    return await readTaskDecompositionRun(project, runId);
-  } catch (error) {
-    const failure = error as NodeJS.ErrnoException;
-    if (failure.code === 'ENOENT' && failure.path === recordPath)
-      throw new PublicApiError('The Candidate proposal is unavailable.', 400);
-    throw error;
-  }
-}
-
 export async function readTaskDecompositionRun(
   project: RegisteredProject,
   runId: string,
@@ -625,10 +604,7 @@ export async function readTaskDecompositionRun(
       'utf8',
     ),
   ) as TaskDecompositionRunRecord;
-  record.operation ??= record.revisionOf ? 'revise-candidate' : 'propose';
-  record.intention ??= taskDecompositionIntentionRegistry.defaultId;
-  record.motion ??= 'unspecified';
-  record.activity ??= [];
+  normalizeScopeDecompositionRun(record as never);
   if (record.result?.outcome === 'proposal') {
     record.result.candidates = await readIdentifiedEntities(
       project.planningPath,
@@ -703,147 +679,6 @@ export async function cancelTaskDecompositionRun(
   await writeRunRecord(project, canceledRecord);
   if (reservation) await settleRun(reservation, { classification });
   return canceledRecord;
-}
-
-export async function discardTaskDecompositionCandidate(
-  project: RegisteredProject,
-  runId: string,
-  candidateId: string,
-) {
-  return mutateTaskDecomposition(project, () =>
-    discardTaskDecompositionCandidateUnlocked(project, runId, candidateId),
-  );
-}
-
-async function discardTaskDecompositionCandidateUnlocked(
-  project: RegisteredProject,
-  runId: string,
-  candidateId: string,
-) {
-  if (
-    [...activeRuns.values()].some(
-      (active) =>
-        active.record.revisionOf === candidateId &&
-        ['running', 'validating'].includes(active.record.status),
-    )
-  ) {
-    throw new PublicApiError(
-      'Cancel or finish the active Candidate revision first.',
-      400,
-    );
-  }
-  const requestedRun = await readAvailableProposalRun(project, runId);
-  if (requestedRun.result?.outcome !== 'proposal') {
-    throw new PublicApiError('The Candidate proposal is unavailable.', 400);
-  }
-  const requestedCandidate = requestedRun.result.candidates.find(
-    (candidate) => candidate.candidateId === candidateId,
-  );
-  if (!requestedCandidate)
-    throw new PublicApiError('The Candidate could not be found.', 400);
-  const allRuns = await readAllTaskDecompositionRuns(project);
-  if (successfulRecomposeOutputCandidateIds(allRuns).has(candidateId))
-    throw new PublicApiError(
-      'Recompose output Candidates belong to one atomic working set and cannot be discarded individually.',
-      409,
-    );
-  if (
-    [...activeRuns.values()].some(
-      (active) =>
-        active.record.sourceNodeId === requestedRun.sourceNodeId &&
-        ['running', 'validating'].includes(active.record.status),
-    )
-  ) {
-    throw new PublicApiError(
-      'Cancel or finish the active Agent Run first.',
-      400,
-    );
-  }
-  const accepted = (await listTaskGraphNodes(project)).some(
-    (node) => node.provenance?.candidateId === candidateId,
-  );
-  if (accepted) {
-    throw new PublicApiError(
-      'An accepted Candidate must be managed as a formal Node.',
-      400,
-    );
-  }
-  if (
-    !(await collectLatestUnacceptedCandidates(project)).some(
-      (item) => item.candidateId === candidateId,
-    )
-  )
-    throw new PublicApiError(
-      'This Candidate was replaced or removed by Recompose.',
-      409,
-    );
-  const blockers = candidateDependencyBlockers(
-    candidateId,
-    await collectLatestUnacceptedCandidates(project),
-  );
-  if (blockers.length > 0) {
-    throw new Error(
-      `${candidateId} is still required by ${blockers.join(', ')}. Discard dependent Candidates first.`,
-    );
-  }
-
-  const candidateRuns = allRuns.filter(
-    (run) =>
-      run.result?.outcome === 'proposal' &&
-      run.result.candidates.some(
-        (candidate) => candidate.candidateId === candidateId,
-      ),
-  );
-  let requestedRunDeleted = false;
-  const deletedRunIds: string[] = [];
-  const updatedRuns: TaskDecompositionRunRecord[] = [];
-  for (const run of candidateRuns) {
-    const runDeleted = await discardCandidateFromRun(project, run, candidateId);
-    if (runDeleted) deletedRunIds.push(run.runId);
-    else updatedRuns.push(run);
-    if (run.runId === runId) requestedRunDeleted = runDeleted;
-  }
-  return {
-    candidateId,
-    runDeleted: requestedRunDeleted,
-    deletedRunIds,
-    runs: updatedRuns,
-  };
-}
-
-async function discardCandidateFromRun(
-  project: RegisteredProject,
-  run: TaskDecompositionRunRecord,
-  candidateId: string,
-) {
-  if (run.result?.outcome !== 'proposal') return false;
-  const candidateIndex = run.result.candidates.findIndex(
-    (candidate) => candidate.candidateId === candidateId,
-  );
-  if (candidateIndex < 0) return false;
-  const runPath = taskDecompositionRunPath(project, run.runId);
-  if (run.result.candidates.length === 1) {
-    await trash(runPath);
-    return true;
-  }
-  const candidatePath = path.join(runPath, 'candidates', candidateId);
-  const stagedPath = path.join(
-    runPath,
-    'candidates',
-    `.${candidateId}-${randomUUID()}.discarding`,
-  );
-  await rename(candidatePath, stagedPath);
-  try {
-    run.result.candidates.splice(candidateIndex, 1);
-    run.updatedAt = new Date().toISOString();
-    await writeRunRecord(project, run);
-    await ensureCandidateArtifacts(project, run);
-  } catch (error) {
-    await rename(stagedPath, candidatePath);
-    throw error;
-  }
-  await trash(stagedPath);
-  return false;
 }
 
 async function finishTaskDecompositionRun(
@@ -1302,18 +1137,6 @@ function graphMapEntry(node: TaskGraphNode) {
   };
 }
 
-async function writeRunRecord(
-  project: RegisteredProject,
-  record: TaskDecompositionRunRecord,
-) {
-  const runPath = taskDecompositionRunPath(project, record.runId);
-  await mkdir(runPath, { recursive: true });
-  const filePath = path.join(runPath, 'run.json');
-  const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
-  await writeFile(temporaryPath, `${JSON.stringify(record, null, 2)}\n`);
-  await rename(temporaryPath, filePath);
-}
-
 function validateRunRequest(input: RunRequest) {
   if (!/^NODE-[0-9a-f]{8,32}$/.test(input.sourceNodeId)) {
     throw new PublicApiError('The source Node is invalid.', 400);
@@ -1564,88 +1387,4 @@ async function mutateTaskDecomposition<T>(
 
 function getActiveRuns() {
   return moduleRunRegistry<ActiveRun>('__praxisRuns');
-}
-
-async function ensureCandidateArtifacts(
-  project: RegisteredProject,
-  record: TaskDecompositionRunRecord,
-) {
-  if (!record.result) return;
-  await writeAgentGraphRunEvidence(
-    taskDecompositionRunPath(project, record.runId),
-    {
-      activity: record.activity ?? [],
-      summary: renderTaskDecompositionSummaryMarkdown(record.result),
-      response: renderTaskDecompositionResponseMarkdown(record.result),
-    },
-  );
-  if (record.result.outcome !== 'proposal') return;
-  await Promise.all(
-    record.result.candidates.map(async (candidate) => {
-      const candidatePath = path.join(
-        taskDecompositionRunPath(project, record.runId),
-        'candidates',
-        candidate.candidateId,
-      );
-      const outputPath = path.join(candidatePath, 'output.md');
-      if (
-        await access(outputPath)
-          .then(() => true)
-          .catch(() => false)
-      )
-        return;
-      await mkdir(candidatePath, { recursive: true });
-      await writeFile(outputPath, renderCandidateMarkdown(candidate), {
-        flag: 'wx',
-      });
-    }),
-  );
-}
-
-function renderCandidateMarkdown(
-  candidate: Extract<
-    TaskDecompositionHarnessResult,
-    { outcome: 'proposal' }
-  >['candidates'][number],
-) {
-  const relationships = [
-    `- Derived from: ${candidate.derivedFrom.join(', ')}`,
-    `- Depends on: ${candidate.dependsOn.join(', ') || 'None'}`,
-  ];
-  const resources = candidate.resources.length
-    ? candidate.resources.map(
-        (resource) => `- \`${resource.path}\` (${resource.kind})`,
-      )
-    : ['- None'];
-  const assumptions = candidate.assumptions.length
-    ? candidate.assumptions.map((assumption) => `- ${assumption}`)
-    : ['- None'];
-  const metadata = Object.keys(candidate.metadata).length
-    ? `\n\`\`\`json\n${JSON.stringify(candidate.metadata, null, 2)}\n\`\`\``
-    : '\nNone.';
-  return `# ${candidate.title}
-
-${candidate.summary}
-
-## Candidate
-
-- ID: \`${candidate.candidateId}\`
-- Revision: ${candidate.revision}
-- Type: ${candidate.type}
-
-## Relationships
-
-${relationships.join('\n')}
-
-## Resources
-
-${resources.join('\n')}
-
-## Assumptions
-
-${assumptions.join('\n')}
-
-## Metadata
-${metadata}
-`;
 }

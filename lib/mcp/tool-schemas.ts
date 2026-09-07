@@ -329,3 +329,15 @@ export const ACCEPT_CANDIDATE_INPUT_SCHEMA = {
     },
   },
 } as const;
+
+export const DISCARD_CANDIDATE_INPUT_SCHEMA = {
+  ...ACCEPT_CANDIDATE_INPUT_SCHEMA,
+  properties: {
+    ...ACCEPT_CANDIDATE_INPUT_SCHEMA.properties,
+    expectedRevision: {
+      ...ACCEPT_CANDIDATE_INPUT_SCHEMA.properties.expectedRevision,
+      description:
+        'The Candidate revision this discard was decided against. A Candidate revised after the read is refused rather than removed silently.',
+    },
+  },
+} as const;

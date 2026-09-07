@@ -1,22 +1,20 @@
-import { randomUUID } from 'node:crypto';
-import {
-  appendFile,
-  mkdir,
-  readFile,
-  rename,
-  writeFile,
-} from 'node:fs/promises';
+import { appendFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   redactActivity,
   redactRecord,
   type LocalAgentActivity,
 } from '../../agents/activity.ts';
+import {
+  runActivityJsonl,
+  writeRunEvidence,
+  writeRunEvidenceText,
+  type RunActivityEntry,
+} from '../run-evidence.ts';
 
-export type AgentGraphActivity = {
-  at: string;
-  summary: string;
-};
+export type AgentGraphActivity = RunActivityEntry;
+
+export { writeRunEvidence as writeAgentGraphRunEvidence };
 
 export type AgentGraphActivityRecorder = {
   onActivity: (event: LocalAgentActivity) => void;
@@ -39,9 +37,9 @@ export async function initializeAgentGraphActivity(
   runPath: string,
   activity: AgentGraphActivity[],
 ) {
-  await writeAgentGraphText(
+  await writeRunEvidenceText(
     path.join(runPath, 'activity.jsonl'),
-    activityJsonl(activity),
+    runActivityJsonl(activity),
   );
 }
 
@@ -72,45 +70,4 @@ export function createAgentGraphActivityRecorder(
       await pending;
     },
   };
-}
-
-export async function writeAgentGraphRunEvidence(
-  runPath: string,
-  input: {
-    activity: AgentGraphActivity[];
-    agentOutput?: string | null;
-    summary?: string | null;
-    response?: string | null;
-  },
-) {
-  await mkdir(runPath, { recursive: true });
-  await writeAgentGraphText(
-    path.join(runPath, 'activity.jsonl'),
-    activityJsonl(input.activity),
-  );
-  if (input.agentOutput)
-    await writeAgentGraphText(
-      path.join(runPath, 'agent-output.txt'),
-      `${redactRecord(input.agentOutput).slice(0, 1_500_000)}\n`,
-    );
-  if (input.summary)
-    await writeAgentGraphText(path.join(runPath, 'summary.md'), input.summary);
-  if (input.response)
-    await writeAgentGraphText(
-      path.join(runPath, 'response.md'),
-      input.response,
-    );
-}
-
-async function writeAgentGraphText(file: string, content: string) {
-  await mkdir(path.dirname(file), { recursive: true });
-  const normalized = content.endsWith('\n') ? content : `${content}\n`;
-  if ((await readFile(file, 'utf8').catch(() => '')) === normalized) return;
-  const temporary = `${file}.${randomUUID()}.tmp`;
-  await writeFile(temporary, normalized, { flag: 'wx' });
-  await rename(temporary, file);
-}
-
-function activityJsonl(activity: AgentGraphActivity[]) {
-  return activity.map((item) => JSON.stringify(item)).join('\n') + '\n';
 }

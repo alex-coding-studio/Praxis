@@ -1,5 +1,23 @@
 import Ajv2020 from 'ajv/dist/2020.js';
-import type { AgentGraphRecomposeEffect } from '../../graph/agent/recompose.ts';
+import {
+  TASK_DECOMPOSITION_HARNESS_ID,
+  TASK_DECOMPOSITION_HARNESS_REVISION,
+  type HarnessCandidate,
+  type HarnessRequestIdentity,
+  type TaskDecompositionHarnessResult,
+} from './harness-result.ts';
+
+export {
+  TASK_DECOMPOSITION_HARNESS_ID,
+  TASK_DECOMPOSITION_HARNESS_REVISION,
+} from './harness-result.ts';
+export type {
+  HarnessCandidate,
+  HarnessImpactReview,
+  HarnessRequestIdentity,
+  HarnessResourceReference,
+  TaskDecompositionHarnessResult,
+} from './harness-result.ts';
 import {
   CLARIFICATION_SCHEMA,
   GRAPH_CANDIDATE_RECORD_PROPERTIES,
@@ -10,19 +28,12 @@ import {
   RESOURCE_REFERENCE_SCHEMA,
   STRING_ARRAY_SCHEMA,
 } from '../../graph/proposal/contract.ts';
-import {
-  SCOPE_DECOMPOSITION_HARNESS_RECOMPOSITION_SCHEMA,
-  type ScopeDecompositionCandidateInput,
-  type ScopeDecompositionResourceReference,
-} from './contract.ts';
+import { SCOPE_DECOMPOSITION_HARNESS_RECOMPOSITION_SCHEMA } from './contract.ts';
 import {
   validateGraphProposal,
   type GraphProposalDependencyState,
 } from '../../graph/proposal/validate.ts';
 import { toScopeDecompositionSemanticResult } from './producer-adapter.ts';
-
-export const TASK_DECOMPOSITION_HARNESS_ID = 'praxis.task-decomposition';
-export const TASK_DECOMPOSITION_HARNESS_REVISION = 8;
 
 export const TASK_DECOMPOSITION_HARNESS_PROMPT = `You are Praxis's Decomposition Agent. Turn selected evidence into a useful proposal under its Intention Profile. Do not decompose an entire product to leaf items in one run.
 
@@ -45,56 +56,6 @@ For append-candidates, existing children are immutable. Return only new siblings
 For recompose-candidates, workingSet is the complete set the user selected. Return the resulting new Candidates plus recomposition.effects covering every selected and output Candidate exactly once. Use retain, replace, split, merge, add and remove literally. Retained Candidates map to themselves and are not repeated in candidates. Never change accepted Nodes or omit a selected Candidate without an explicit remove effect.
 
 Keep assumptions explicit, preserve accepted product meaning, and prefer a smaller supported proposal over a complete-looking invention.`;
-
-export type HarnessRequestIdentity = {
-  sessionId: string;
-  requestId: string;
-  inputFingerprint: string;
-};
-
-export type HarnessResourceReference = ScopeDecompositionResourceReference;
-
-export type HarnessCandidate = ScopeDecompositionCandidateInput;
-
-export type HarnessImpactReview = {
-  reviewedNodeIds: string[];
-  affectedNodeIds: string[];
-  notes: string[];
-};
-
-type HarnessResultBase = {
-  candidateAliases?: Record<string, string>;
-  schemaVersion: 1;
-  harness: {
-    id: typeof TASK_DECOMPOSITION_HARNESS_ID;
-    revision: typeof TASK_DECOMPOSITION_HARNESS_REVISION;
-  };
-  request: HarnessRequestIdentity;
-  impactReview: HarnessImpactReview;
-};
-
-export type TaskDecompositionHarnessResult = HarnessResultBase &
-  (
-    | {
-        outcome: 'proposal';
-        candidates: HarnessCandidate[];
-        recomposition?: { effects: AgentGraphRecomposeEffect[] };
-      }
-    | {
-        outcome: 'clarification';
-        clarification: {
-          question: string;
-          options: Array<{
-            id: string;
-            label: string;
-            effect: string;
-            recommended: boolean;
-          }>;
-        };
-      }
-    | { outcome: 'insufficient-evidence'; missingEvidence: string[] }
-    | { outcome: 'no-change'; reason: string }
-  );
 
 export type HarnessValidationContext = {
   request: HarnessRequestIdentity;

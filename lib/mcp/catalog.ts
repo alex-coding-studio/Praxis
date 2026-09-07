@@ -99,6 +99,7 @@ export const MCP_IMPLEMENTED_TOOLS = [
   'praxis_get_operation',
   'praxis_read_log',
   'praxis_accept_candidate',
+  'praxis_discard_candidate',
 ] as const;
 
 export type McpResourceContent = {
@@ -186,6 +187,7 @@ export function readCapabilities(options: McpReadOptions = {}) {
           module === 'product-exploration' || module === 'scope-decomposition'
             ? {
                 tool: 'praxis_accept_candidate',
+                discardTool: 'praxis_discard_candidate',
                 readback:
                   'pendingCandidates in this module resource carries the runId, candidateId, revision and acceptance eligibility this tool requires.',
                 authorization:
@@ -331,6 +333,7 @@ async function moduleEntities(project: RegisteredProject, module: McpModule) {
       ),
       pendingCandidates: await listPendingProductExplorationCandidates(project),
       acceptanceTool: 'praxis_accept_candidate' as const,
+      discardTool: 'praxis_discard_candidate' as const,
     };
   if (module === 'scope-decomposition')
     return {
@@ -341,6 +344,7 @@ async function moduleEntities(project: RegisteredProject, module: McpModule) {
       ),
       pendingCandidates: await listPendingScopeDecompositionCandidates(project),
       acceptanceTool: 'praxis_accept_candidate' as const,
+      discardTool: 'praxis_discard_candidate' as const,
     };
   if (module === 'domain-modeling') {
     const view = await readDomainModelView(project);

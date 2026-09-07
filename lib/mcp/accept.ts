@@ -27,7 +27,7 @@ const ACCEPT = {
   'scope-decomposition': acceptScopeDecompositionCandidate,
 } as const;
 
-function acceptanceFailure(error: unknown) {
+export function candidateOperationFailure(error: unknown, unchanged: string) {
   if (error instanceof CandidateAcceptanceError) {
     if (error.reason === 'active-revision')
       return activeRunConflict(error.message);
@@ -35,15 +35,25 @@ function acceptanceFailure(error: unknown) {
       error.reason === 'stale-revision' ||
       error.reason === 'replaced-by-recompose'
     )
-      return resourceChanged(
-        `${error.message} The Candidate was not accepted and the graph is unchanged.`,
-      );
-    if (error.reason === 'no-stable-identity')
-      return publicationFailed(error.message);
+      return resourceChanged(`${error.message} ${unchanged}`);
+    if (
+      error.reason === 'no-stable-identity' ||
+      error.reason === 'already-accepted' ||
+      error.reason === 'dependency-blocked' ||
+      error.reason === 'recompose-output'
+    )
+      return publicationFailed(`${error.message} ${unchanged}`);
     return resourceNotFound(error.message);
   }
   if (error instanceof PublicApiError) return invalidArgument(error.message);
   return error;
+}
+
+function acceptanceFailure(error: unknown) {
+  return candidateOperationFailure(
+    error,
+    'The Candidate was not accepted and the graph is unchanged.',
+  );
 }
 
 function nodeProjection(project: RegisteredProject, node: TaskGraphNode) {
