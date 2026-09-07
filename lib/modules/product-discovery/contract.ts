@@ -56,7 +56,7 @@ export const PRODUCT_EXPLORATION_CANDIDATE_EXTENSION_REQUIRED = [
 ] as const;
 
 export const PRODUCT_EXPLORATION_CANDIDATE_EXTENSION_PROPERTIES = {
-  outputMarkdown: { ...NON_EMPTY_STRING_SCHEMA, maxLength: 4_000 },
+  outputMarkdown: { ...NON_EMPTY_STRING_SCHEMA, maxLength: 100_000 },
   layer: { enum: whatsNextLayers },
   artifactKind: { enum: productExplorationArtifactKinds },
 } as const;
