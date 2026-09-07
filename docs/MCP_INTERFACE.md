@@ -762,3 +762,7 @@ The inspect revision binds the node metadata and resource contents. Publication 
 perform a fallible graph reread after Trash succeeds; it returns the already-locked
 remaining set. A subsequent logging failure is reported with the completed result rather
 than claiming the deletion rolled back.
+
+## Discovery and graph coverage
+
+Use `praxis_list_context` for paged current Product Context documents and `praxis_list_candidates` for paged pending Candidate identities/body URIs. These are existing-state catalogs, not keyword search. See [MCP discovery and graph-operation coverage](MCP_DISCOVERY.md) for the route/service matrix, Scope split/retain/merge examples, contextIds module boundaries, UTF-8 pagination and client refresh limitations.

@@ -67,7 +67,7 @@ export const READ_RESOURCE_INPUT_SCHEMA = {
       type: 'integer',
       minimum: 1,
       maximum: MAX_READ_BYTES,
-      description: `Maximum bytes of content to return (default ${DEFAULT_READ_BYTES}).`,
+      description: `Maximum UTF-8 bytes per page: ${MAX_READ_BYTES}; default ${DEFAULT_READ_BYTES}. Follow nextCursor on the same URI and concatenate text before parsing paged JSON. This is separate from the 100,000-character Product Exploration body limit.`,
     },
   },
 } as const;
@@ -184,7 +184,7 @@ export const PREPARE_INPUT_SCHEMA = {
           items: { type: 'string', minLength: 1 },
           maxItems: 50,
           description:
-            'Artifact handles from the project catalog to freeze as context evidence.',
+            'domain-modeling and delivery-planning only: artifactId handles returned by praxis_list_context, frozen as context evidence. Product Exploration and Scope use selected node resources instead.',
         },
       },
     },

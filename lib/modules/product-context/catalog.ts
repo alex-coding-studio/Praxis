@@ -3,7 +3,6 @@ import { listDeliveryRecords } from '../delivery/storage.ts';
 import { ensureDeliveryArtifacts } from '../delivery/artifacts.ts';
 import path from 'node:path';
 import { readDomainModel } from '../domain-modeling/model.ts';
-import type { PlanningCard } from '../implementation/planning-service.ts';
 import { readPlanningFile } from '../../planning-documents.ts';
 import {
   PRODUCT_CONTEXT_DOCUMENT_SHAPES,
@@ -17,6 +16,25 @@ import {
 import type { RegisteredProject } from '../../project-registry.ts';
 import { listTaskGraphNodes } from '../../graph/task/nodes.ts';
 import { readWhatToDoCurrentMap } from '../delivery-planning/storage.ts';
+
+type ContextPlanningCard = {
+  schemaVersion: number;
+  id: string;
+  revision: number;
+  source: { title: string };
+  plan?: { status: string; overview: string } | null;
+  planRef?: string | null;
+  actions: Array<{ id: string; title: string }>;
+  execution?: {
+    acceptedActionIds: string[];
+    runs: Array<{
+      actionId: string;
+      status: string;
+      outputRef?: string | null;
+      result?: { summary: string } | null;
+    }>;
+  } | null;
+};
 
 export type ContextSection = {
   slug: string;
@@ -357,7 +375,7 @@ async function listPlanningCardsForContext(project: RegisteredProject) {
     if (error.code === 'ENOENT') return [];
     throw error;
   });
-  const cards: PlanningCard[] = [];
+  const cards: ContextPlanningCard[] = [];
   for (const cardId of cardIds) {
     if (
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
@@ -374,7 +392,7 @@ async function listPlanningCardsForContext(project: RegisteredProject) {
         log.revision,
         'planning-state.json',
       ),
-    ) as PlanningCard;
+    ) as ContextPlanningCard;
     if (
       card.schemaVersion !== 1 ||
       card.id !== cardId ||
