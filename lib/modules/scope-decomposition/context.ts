@@ -1,4 +1,9 @@
 import { PublicApiError, retainCleanupFailures } from '../../api-errors.ts';
+import {
+  assertInstructionsRevision,
+  withInstructionsMutation,
+  type SaveInstructionsOptions,
+} from '../module-instructions.ts';
 import { randomUUID } from 'node:crypto';
 import {
   mkdir,
@@ -74,7 +79,22 @@ export async function readTaskDecompositionContext(
 export async function saveTaskDecompositionInstructions(
   project: RegisteredProject,
   instructions: string,
+  options?: SaveInstructionsOptions,
 ) {
+  return withInstructionsMutation(project, () =>
+    saveTaskDecompositionInstructionsUnlocked(project, instructions, options),
+  );
+}
+
+async function saveTaskDecompositionInstructionsUnlocked(
+  project: RegisteredProject,
+  instructions: string,
+  options?: SaveInstructionsOptions,
+) {
+  assertInstructionsRevision(
+    (await readTaskDecompositionContext(project)).instructions,
+    options,
+  );
   if (instructions.length > 100_000) {
     throw new PublicApiError(
       'Decomposition instructions must be 100 KB or smaller.',

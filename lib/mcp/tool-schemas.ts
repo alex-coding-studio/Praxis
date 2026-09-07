@@ -8,6 +8,7 @@ import {
   whatsNextMotions,
 } from '../modules/product-discovery/intention.ts';
 import { CANDIDATE_ALIAS_PATTERN } from '../graph/identity.ts';
+import { MCP_MODULES } from './modules.ts';
 import { PROPOSAL_RUN_ID } from '../graph/proposal/run-state.ts';
 import { ACCEPTANCE_MODULES } from './accept.ts';
 import { MCP_OPERATION_ID_PATTERN } from './operations.ts';
@@ -346,6 +347,37 @@ export const DISCARD_CANDIDATE_INPUT_SCHEMA = {
       ...ACCEPT_CANDIDATE_INPUT_SCHEMA.properties.expectedRevision,
       description:
         'The Candidate revision this discard was decided against. A Candidate revised after the read is refused rather than removed silently.',
+    },
+  },
+} as const;
+
+export const UPDATE_INSTRUCTIONS_INPUT_SCHEMA = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  additionalProperties: false,
+  required: ['projectId', 'module', 'instructions', 'expectedRevision'],
+  properties: {
+    projectId: {
+      type: 'string',
+      minLength: 1,
+      description: 'A project id from praxis://projects.',
+    },
+    module: {
+      type: 'string',
+      enum: [...MCP_MODULES],
+      description: 'The module whose Instructions this call replaces.',
+    },
+    instructions: {
+      type: 'string',
+      maxLength: 100_000,
+      description:
+        'The complete replacement Instructions. This is a whole-document replacement, not a patch. An empty string clears them, which is why the field is required rather than optional. The per-module limit is reported by the module resource; a longer document is refused.',
+    },
+    expectedRevision: {
+      type: 'string',
+      minLength: 1,
+      description:
+        'The revision reported by the module resource when these Instructions were read. A concurrent edit is refused rather than overwritten.',
     },
   },
 } as const;

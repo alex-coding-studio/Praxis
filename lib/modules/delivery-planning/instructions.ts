@@ -10,6 +10,11 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import { PublicApiError } from '../../api-errors.ts';
+import {
+  assertInstructionsRevision,
+  withInstructionsMutation,
+  type SaveInstructionsOptions,
+} from '../module-instructions.ts';
 import type { RegisteredProject } from '../../project-registry.ts';
 
 async function instructionsDirectory(
@@ -56,14 +61,26 @@ export async function readWhatToDoInstructions(project: RegisteredProject) {
 export async function saveWhatToDoInstructions(
   project: RegisteredProject,
   instructions: string,
+  options?: SaveInstructionsOptions,
+) {
+  return withInstructionsMutation(project, () =>
+    saveWhatToDoInstructionsUnlocked(project, instructions, options),
+  );
+}
+
+async function saveWhatToDoInstructionsUnlocked(
+  project: RegisteredProject,
+  instructions: string,
+  options?: SaveInstructionsOptions,
 ) {
   if (typeof instructions !== 'string' || instructions.length > 20_000)
     throw new PublicApiError(
       'Instructions must be at most 20000 characters.',
       400,
     );
-  if ((await readWhatToDoInstructions(project)) === instructions)
-    return { instructions };
+  const current = await readWhatToDoInstructions(project);
+  assertInstructionsRevision(current, options);
+  if (current === instructions) return { instructions };
   const directory = await instructionsDirectory(project, true);
   const temporary = path.join(directory, `instructions-${randomUUID()}.tmp`);
   try {

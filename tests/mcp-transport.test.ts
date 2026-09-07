@@ -130,6 +130,7 @@ void test(
       'praxis_submit_domain_model',
       'praxis_submit_product_exploration',
       'praxis_submit_scope_decomposition',
+      'praxis_update_instructions',
       'praxis_update_node_document',
       'praxis_update_source',
     ]);
@@ -140,6 +141,7 @@ void test(
     );
     const writeTools = [
       'praxis_delete_node',
+      'praxis_update_instructions',
       'praxis_update_source',
       'praxis_update_node_document',
       'praxis_accept_candidate',

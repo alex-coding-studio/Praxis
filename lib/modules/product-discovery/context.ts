@@ -1,5 +1,10 @@
 import { PublicApiError } from '../../api-errors.ts';
 import {
+  assertInstructionsRevision,
+  withInstructionsMutation,
+  type SaveInstructionsOptions,
+} from '../module-instructions.ts';
+import {
   readFile,
   readdir,
   stat,
@@ -77,14 +82,26 @@ export async function readWhatsNextInstructions(project: RegisteredProject) {
 export async function saveWhatsNextInstructions(
   project: RegisteredProject,
   instructions: string,
+  options?: SaveInstructionsOptions,
+) {
+  return withInstructionsMutation(project, () =>
+    saveWhatsNextInstructionsUnlocked(project, instructions, options),
+  );
+}
+
+async function saveWhatsNextInstructionsUnlocked(
+  project: RegisteredProject,
+  instructions: string,
+  options?: SaveInstructionsOptions,
 ) {
   if (typeof instructions !== 'string' || instructions.length > 20_000)
     throw new PublicApiError(
       'Instructions must be at most 20000 characters.',
       400,
     );
-  if ((await readWhatsNextInstructions(project)) === instructions)
-    return { instructions };
+  const current = await readWhatsNextInstructions(project);
+  assertInstructionsRevision(current, options);
+  if (current === instructions) return { instructions };
   const directory = await instructionsDirectory(project, true);
   const temporary = path.join(directory, `instructions-${randomUUID()}.tmp`);
   try {

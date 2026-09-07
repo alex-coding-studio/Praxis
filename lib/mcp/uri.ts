@@ -8,6 +8,7 @@ export type McpResourceRef =
   | { kind: 'projects' }
   | { kind: 'module'; projectId: string; module: McpModule }
   | { kind: 'latest-response'; projectId: string; module: McpModule }
+  | { kind: 'instructions'; projectId: string; module: McpModule }
   | { kind: 'artifact'; projectId: string; artifactId: string }
   | { kind: 'operation'; projectId: string; operationId: string }
   | { kind: 'operation-log'; projectId: string; operationId: string }
@@ -92,6 +93,16 @@ export function parseMcpUri(uri: string): McpResourceRef {
         projectId,
         module: assertModule(parts[3]),
       };
+    if (
+      parts[2] === 'modules' &&
+      parts.length === 5 &&
+      parts[4] === 'instructions'
+    )
+      return {
+        kind: 'instructions',
+        projectId,
+        module: assertModule(parts[3]),
+      };
     if (parts[2] === 'operations' && parts.length === 4)
       return {
         kind: 'operation',
@@ -142,6 +153,10 @@ export function moduleUri(projectId: string, module: McpModule) {
 
 export function latestResponseUri(projectId: string, module: McpModule) {
   return `${moduleUri(projectId, module)}/latest-response`;
+}
+
+export function instructionsUri(projectId: string, module: McpModule) {
+  return `${moduleUri(projectId, module)}/instructions`;
 }
 
 export function artifactUri(projectId: string, artifactId: string) {

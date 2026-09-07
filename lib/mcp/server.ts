@@ -5,6 +5,7 @@ import { registerNodeDocumentTools } from './node-document-tools.ts';
 import { registerProject, createProjectSource } from './project-setup.ts';
 import { acceptCandidate, type AcceptanceModule } from './accept.ts';
 import { discardCandidate } from './discard.ts';
+import { updateInstructions } from './instructions.ts';
 import {
   McpServer,
   ResourceTemplate,
@@ -36,6 +37,7 @@ import {
   SUBMIT_SCOPE_DECOMPOSITION_INPUT_SCHEMA,
   ACCEPT_CANDIDATE_INPUT_SCHEMA,
   DISCARD_CANDIDATE_INPUT_SCHEMA,
+  UPDATE_INSTRUCTIONS_INPUT_SCHEMA,
 } from './tool-schemas.ts';
 import {
   operationProjection,
@@ -689,6 +691,46 @@ export function createPraxisMcpServer() {
       },
     },
     (input) => runStructured(() => discardCandidate(input)),
+  );
+  server.registerResource(
+    'module-instructions',
+    new ResourceTemplate(
+      'praxis://projects/{projectId}/modules/{module}/instructions',
+      { list: undefined },
+    ),
+    {
+      title: 'Module Instructions',
+      description:
+        'The project-authored Instructions this module reads, with the revision a change must be made against.',
+      mimeType: 'text/markdown',
+    },
+    (uri) => resourceContents(uri.href),
+  );
+
+  server.registerTool(
+    'praxis_update_instructions',
+    {
+      title: 'Replace a module\u2019s Instructions',
+      description:
+        'Replace the Instructions one module reads, for all four modules. This is a whole-document replacement carrying a user-authorized rule change, not a patch and not a place to store generated content; an empty string clears them. Read the module resource for the current revision and pass it as expectedRevision so a concurrent edit is refused rather than overwritten. Instructions are project prose, never server authorization.',
+      inputSchema: toToolInputSchema<{
+        projectId: string;
+        module:
+          | 'product-exploration'
+          | 'scope-decomposition'
+          | 'domain-modeling'
+          | 'delivery-planning';
+        instructions: string;
+        expectedRevision: string;
+      }>(UPDATE_INSTRUCTIONS_INPUT_SCHEMA, 'praxis_update_instructions'),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    (input) => runStructured(() => updateInstructions(input)),
   );
   server.registerTool(
     'praxis_create_source',

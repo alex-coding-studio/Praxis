@@ -1,6 +1,7 @@
 export type ModuleMutationKey =
   | 'whatsNextMutations'
-  | 'taskDecompositionMutations';
+  | 'taskDecompositionMutations'
+  | 'moduleInstructionsMutations';
 
 export type ModuleRunRegistryKey = '__praxisWhatsNextRuns' | '__praxisRuns';
 
