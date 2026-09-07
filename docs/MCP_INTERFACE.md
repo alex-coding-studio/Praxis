@@ -9,8 +9,9 @@ This document records the settled interface. It is delivered in Parts. **This re
 implements Part 1 (the endpoint, its connection boundary and the read surface), Part 2
 (prepared operations and the Product Exploration submission slice), Part 3 (Scope
 Decomposition), Part 4 (Domain Modeling and Delivery Planning), Part 5 (client
-acceptance and these instructions) and Part 6 (Candidate acceptance for Product
-Exploration and Scope Decomposition).** All four modules can now be prepared against and
+acceptance and these instructions), Part 6 (Candidate acceptance for Product
+Exploration and Scope Decomposition) and Part 7 (Candidate discard for the same two
+modules).** All four modules can now be prepared against and
 submitted to. Agent dispatch and GitHub capability are not served here, and neither is
 advertised.
 
@@ -27,7 +28,8 @@ advertised.
 | `praxis_list_projects`, `praxis_read_resource`                             | served                     |
 | `praxis_prepare`, the four `praxis_submit_*` tools, operations and logs    | served                     |
 | `praxis_accept_candidate` for Product Exploration and Scope Decomposition  | served                     |
-| Candidate discard, Agent dispatch, GitHub delivery                         | not served, not advertised |
+| `praxis_discard_candidate` for the same two modules                        | served                     |
+| Formal Node deletion, Agent dispatch, GitHub delivery                      | not served, not advertised |
 
 ## Host and transport
 
@@ -371,6 +373,40 @@ ceremony — but publishing a Candidate never authorizes accepting it, an `appro
 field inside a result or a project document is not consent, and the Host's own checks are
 not waivable. Accepting one Candidate does not authorize accepting the rest of its batch.
 
+### `praxis_discard_candidate`
+
+Input `{ projectId, module, runId, candidateId, expectedRevision }` — the same selection
+`praxis_accept_candidate` takes, read from the module resource's `pendingCandidates`
+(`discardTool` names this tool there and in `praxis://capabilities`). It removes one
+**unaccepted** Candidate through the same service the existing UI discard route calls:
+`discardProductExplorationCandidate` and `discardScopeDecompositionCandidate`, which
+`runs.ts` re-exports under their original names. The tool is annotated
+`destructiveHint: true`.
+
+It removes exactly one Candidate. It never deletes an accepted formal Node — an accepted
+Candidate is refused and must be managed as a Node — never cascades into dependent
+Candidates, and never rewrites a dependent proposal. When the Candidate is the last one
+in its Run, that Run directory is moved to the trash, and the response reports
+`runDeleted` with the affected `deletedRunIds`. Every Run that carried the Candidate is
+updated, and each surviving Run's `summary.md` and `response.md` are re-rendered so the
+readable evidence matches the reduced proposal.
+
+Refusals leave the proposal whole; there is no partial removal. A Candidate another
+pending Candidate still depends on is refused with the blocking `candidateId`s named in
+the detail. Recompose output Candidates belong to one atomic working set and are refused
+individually. A stale `expectedRevision`, or a `runId` superseded by a newer pending
+revision, is `RESOURCE_CHANGED`. An active Candidate revision Run or an active Agent Run
+on the same source is `ACTIVE_RUN_CONFLICT`.
+
+Discarding a Candidate that is already gone is not an error: the call returns
+`alreadyAbsent: true` with `discarded: false` and touches nothing, so a retry after a
+successful discard is safe. Every response carries `remainingCandidates`, the module's
+current pending list, so the consumer does not need a second read to see what survived.
+
+Discarding is a decision the user makes, on the same terms as acceptance: the tool
+description marks it consequential, publishing a Candidate never authorizes discarding
+it, and no `approved: true` inside a result or document authorizes it.
+
 ### Errors
 
 Argument failures split at a deliberate line. A violation of the **advertised input
@@ -519,6 +555,13 @@ npm run test:mcp
   Candidate published as revision 1 then revised to revision 2 in a second Run, where
   accepting the original Run with its own revision 1 is refused, no formal Node is
   promoted, and the current Run promotes the revised body.
+- [tests/mcp-candidate-discard.test.ts](../tests/mcp-candidate-discard.test.ts) — a real
+  SDK client over HTTP discarding one Candidate while its sibling and the sibling's
+  document survive on disk, a repeat reporting `alreadyAbsent` without touching anything,
+  a referenced Candidate refused with the dependent named and every Candidate still in
+  place, a stale `expectedRevision` refused, an accepted Candidate refused with its
+  formal Node intact, the last Candidate in a Run taking its Run with it, and the
+  existing UI PATCH discard route using the same exported service.
 - [tests/mcp-transport.test.ts](../tests/mcp-transport.test.ts) — a real SDK client over
   HTTP completing initialization, discovery and reads, with bounded 20-second timeouts,
   including both sides of the argument-failure split, and `praxis://capabilities` naming
@@ -552,11 +595,12 @@ output, naming the credential file to read.
 
 Project registration or deletion, arbitrary filesystem access, repository search, shell
 execution, provider or model selection, Agent dispatch or resume, worktree management,
-Git operations, PR publication, execution Card transitions, Candidate discard, human
+Git operations, PR publication, execution Card transitions, formal Node deletion, human
 delivery acceptance, background subscriptions, remote or LAN access, OAuth, multi-user
 access, and any tool named `run_agent`.
 
-`praxis_accept_candidate` carries out a decision its caller's user has already made; a
+`praxis_accept_candidate` and `praxis_discard_candidate` carry out a decision its
+caller's user has already made; a
 successful tool call is not itself that decision, and nothing in a document or result can
 supply it. Future execution tools, subscriptions and LAN access require their own
 explicit scope, not a silent extension of this API.

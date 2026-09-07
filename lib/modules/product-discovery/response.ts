@@ -1,4 +1,4 @@
-import type { WhatsNextHarnessResult } from '@/lib/modules/product-discovery/harness';
+import type { WhatsNextHarnessResult } from './harness-result.ts';
 
 export function renderWhatsNextResponseMarkdown(
   result: WhatsNextHarnessResult,

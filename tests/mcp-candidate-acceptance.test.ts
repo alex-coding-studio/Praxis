@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createServer, type Server as HttpServer } from 'node:http';
 import { mkdtempSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { AddressInfo } from 'node:net';
 
 const REGISTRY_HOME = mkdtempSync(path.join(os.tmpdir(), 'mcp-accept-home-'));
 process.env.PRAXIS_HOME = REGISTRY_HOME;
@@ -14,7 +12,6 @@ const registry = await import('../lib/project-registry.ts');
 const { createStartNode } = await import('../lib/graph/task/model.ts');
 const { enableMcpEndpoint, readMcpCredentials } =
   await import('../lib/mcp/credentials.ts');
-const route = await import('../app/api/mcp/route.ts');
 const whatsNextRoute =
   await import('../app/api/projects/[projectId]/whats-next-runs/route.ts');
 const { listTaskGraphNodes } = await import('../lib/graph/task/nodes.ts');
@@ -37,9 +34,11 @@ const { WHATS_NEXT_HARNESS_ID, WHATS_NEXT_HARNESS_REVISION } =
   await import('../lib/modules/product-discovery/harness.ts');
 const { deferredLaunch, settledRun } =
   await import('./helpers/graph-materialization-golden.ts');
-const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
-const { StreamableHTTPClientTransport } =
-  await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+const { connectMcpClient, readMcpJson } =
+  await import('./helpers/mcp-sdk-host.ts');
+
+const connect = (t: test.TestContext) =>
+  connectMcpClient(t, token, 'praxis-accept-client');
 
 test.after(() => rm(REGISTRY_HOME, { recursive: true, force: true }));
 
@@ -47,68 +46,6 @@ await enableMcpEndpoint();
 const credentials = await readMcpCredentials();
 assert.ok(credentials);
 const token = credentials.token;
-
-async function listen(t: test.TestContext) {
-  let port = 0;
-  const server: HttpServer = createServer((incoming, outgoing) => {
-    const chunks: Buffer[] = [];
-    incoming.on('data', (chunk: Buffer) => chunks.push(chunk));
-    incoming.on('end', () => {
-      void (async () => {
-        const headers = new Headers();
-        for (const [name, value] of Object.entries(incoming.headers))
-          if (typeof value === 'string') headers.set(name, value);
-          else if (Array.isArray(value)) headers.set(name, value.join(','));
-        const method = incoming.method ?? 'GET';
-        const request = new Request(
-          `http://127.0.0.1:${port}${incoming.url ?? '/'}`,
-          {
-            method,
-            headers,
-            body:
-              method === 'GET' || method === 'HEAD' || chunks.length === 0
-                ? undefined
-                : Buffer.concat(chunks),
-          },
-        );
-        const handler =
-          method === 'POST'
-            ? route.POST
-            : method === 'DELETE'
-              ? route.DELETE
-              : route.GET;
-        try {
-          const response = await handler(request);
-          outgoing.statusCode = response.status;
-          response.headers.forEach((value, name) =>
-            outgoing.setHeader(name, value),
-          );
-          outgoing.end(Buffer.from(await response.arrayBuffer()));
-        } catch (error) {
-          outgoing.statusCode = 500;
-          outgoing.end(String(error));
-        }
-      })();
-    });
-  });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  port = (server.address() as AddressInfo).port;
-  t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
-  return `http://127.0.0.1:${port}/api/mcp`;
-}
-
-async function connect(t: test.TestContext) {
-  const client = new Client({ name: 'praxis-accept-client', version: '1.0.0' });
-  const transport = new StreamableHTTPClientTransport(
-    new URL(await listen(t)),
-    {
-      requestInit: { headers: { authorization: `Bearer ${token}` } },
-    },
-  );
-  await client.connect(transport);
-  t.after(() => client.close());
-  return client;
-}
 
 async function fixture(
   t: test.TestContext,
@@ -237,10 +174,10 @@ async function readModule(
   projectId: string,
   module: string,
 ) {
-  const read = await client.readResource({
-    uri: `praxis://projects/${projectId}/modules/${module}`,
-  });
-  return JSON.parse((read.contents[0] as { text: string }).text) as ModuleState;
+  return readMcpJson<ModuleState>(
+    client,
+    `praxis://projects/${projectId}/modules/${module}`,
+  );
 }
 
 void test(

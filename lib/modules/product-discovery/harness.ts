@@ -1,4 +1,24 @@
 import { PRODUCT_EXPLORATION_DOCUMENT_GUIDANCE } from './contract.ts';
+import {
+  WHATS_NEXT_HARNESS_ID,
+  WHATS_NEXT_HARNESS_REVISION,
+  type WhatsNextCandidate,
+  type WhatsNextHarnessResult,
+  type WhatsNextRequestIdentity,
+} from './harness-result.ts';
+
+export {
+  WHATS_NEXT_HARNESS_ID,
+  WHATS_NEXT_HARNESS_REVISION,
+} from './harness-result.ts';
+export type {
+  WhatsNextCandidate,
+  WhatsNextExploration,
+  WhatsNextHarnessResult,
+  WhatsNextReflection,
+  WhatsNextRequestIdentity,
+  WhatsNextResourceReference,
+} from './harness-result.ts';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { candidatePromptView } from '../../graph/identity.ts';
 import {
@@ -14,8 +34,6 @@ import {
 import {
   PRODUCT_EXPLORATION_CANDIDATE_EXTENSION_PROPERTIES,
   PRODUCT_EXPLORATION_CANDIDATE_EXTENSION_REQUIRED,
-  type ProductExplorationCandidateInput,
-  type ProductExplorationResourceReference,
 } from './contract.ts';
 import {
   whatsNextIntentionProfile,
@@ -31,9 +49,6 @@ import {
   toProductExplorationCandidate,
   toProductExplorationSemanticResult,
 } from './producer-adapter.ts';
-
-export const WHATS_NEXT_HARNESS_ID = 'praxis.whats-next';
-export const WHATS_NEXT_HARNESS_REVISION = 8;
 
 export const WHATS_NEXT_HARNESS_PROMPT = `You are Praxis's What's Next Agent. Advance one user's selected product meaning under the explicit Intention and Motion in the current request.
 
@@ -60,12 +75,6 @@ export function whatsNextHarnessPrompt(
   return `${WHATS_NEXT_HARNESS_PROMPT}\n\n${whatsNextIntentionProfile(intention).prompt}\n\n${whatsNextMotionProfile(motion).prompt}`;
 }
 
-export type WhatsNextRequestIdentity = {
-  sessionId: string;
-  requestId: string;
-  inputFingerprint: string;
-};
-
 export function canReuseWhatsNextSession(
   run: {
     agentSessionMode?: 'persistent';
@@ -81,60 +90,12 @@ export function canReuseWhatsNextSession(
   );
 }
 
-export type WhatsNextResourceReference = ProductExplorationResourceReference;
-
-export type WhatsNextCandidate = ProductExplorationCandidateInput;
-
 export function createWhatsNextRevisionTarget(candidate: WhatsNextCandidate) {
   return {
     ...candidatePromptView(candidate),
     requiredRevision: candidate.revision + 1,
   };
 }
-
-export type WhatsNextReflection = {
-  markdown: string;
-  continuationAdvice: {
-    action: 'continue' | 'consider-closing' | 'consider-branching';
-    recommendedFocus: 'clarify' | 'concretize' | 'expand' | 'compare' | 'close';
-    reason: string;
-  };
-};
-
-export type WhatsNextExploration = {
-  consideredNodeIds: string[];
-  notes: string[];
-};
-
-type WhatsNextResultBase = {
-  candidateAliases?: Record<string, string>;
-  schemaVersion: 1;
-  harness: {
-    id: typeof WHATS_NEXT_HARNESS_ID;
-    revision: typeof WHATS_NEXT_HARNESS_REVISION;
-  };
-  request: WhatsNextRequestIdentity;
-  reflection: WhatsNextReflection;
-  exploration: WhatsNextExploration;
-};
-
-export type WhatsNextHarnessResult = WhatsNextResultBase &
-  (
-    | { outcome: 'proposal'; candidates: WhatsNextCandidate[] }
-    | {
-        outcome: 'clarification';
-        clarification: {
-          question: string;
-          options: Array<{
-            id: string;
-            label: string;
-            effect: string;
-            recommended: boolean;
-          }>;
-        };
-      }
-    | { outcome: 'no-change'; reason: string }
-  );
 
 export type WhatsNextValidationContext = {
   request: WhatsNextRequestIdentity;

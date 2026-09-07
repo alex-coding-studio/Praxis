@@ -167,6 +167,9 @@ export const CANDIDATE_ACCEPTANCE_REASONS = [
   'stale-revision',
   'replaced-by-recompose',
   'no-stable-identity',
+  'already-accepted',
+  'dependency-blocked',
+  'recompose-output',
 ] as const;
 
 export type CandidateAcceptanceReason =
