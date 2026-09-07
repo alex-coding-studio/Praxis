@@ -137,3 +137,6 @@ export const PRODUCT_EXPLORATION_MINIMAL_EXAMPLE: ProductExplorationResult = {
     },
   ],
 };
+
+export const PRODUCT_EXPLORATION_DOCUMENT_GUIDANCE =
+  'Each Candidate owns one readable Markdown document. It starts with the Candidate title, gives a one- or two-sentence description, includes a "Why this direction" section with two to four short ordered bullets, and always includes an "Assumptions" section containing only material uncertainty. When no material uncertainty remains, keep the section and write exactly one bullet, "- None", while returning an empty assumptions array. The assumptions array must otherwise mirror that section for validation. The summary is a compact graph-card description of the same meaning. Markdown owns the human meaning; JSON owns identity, graph relationships, provenance, and validation.';

@@ -520,3 +520,24 @@ access require their own explicit scope, not a silent extension of this API.
 - [MCP 2025-11-25 transports](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
   — the published transport baseline. This document selects a compatibility target;
   Part 5 verifies actual Codex and Claude client compatibility rather than assuming it.
+
+## First project and complete source documents
+
+Use `praxis_register_project` with an existing absolute local directory, name and kind.
+It returns an existing registration on retries; it does not initialize Git, scaffold code
+or start an Agent. Use `praxis_create_source` with the project id, title and full Markdown
+(up to 100,000 characters) to create the initial source and store its document through
+the existing source service. It returns `sourceNodeId` and readable artifact links.
+Existing sources are not overwritten; an error identifies the source to reuse.
+
+Read the module resource before preparation. Product Exploration exposes intention and
+motion guidance plus the same document-format rules used by the internal Harness.
+Preparation without an explicit source selection returns an actionable instruction,
+rather than issuing an operation whose Candidate lineage cannot be satisfied.
+
+Document capture is not Feature decomposition. Keep the complete product/architecture
+brief as source context. When decomposition is requested, generate independently useful
+business capabilities, explain their coverage of the source requirements, and leave
+shared architecture in the source document. Do not present one aggregate Feature as a
+completed decomposition or invent technical Features merely to store architecture.
+Human acceptance of generated Candidates remains separate.

@@ -105,11 +105,13 @@ void test(
     assert.equal(version?.name, 'praxis');
     const tools = await client.listTools();
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [
+      'praxis_create_source',
       'praxis_get_operation',
       'praxis_list_projects',
       'praxis_prepare',
       'praxis_read_log',
       'praxis_read_resource',
+      'praxis_register_project',
       'praxis_submit_delivery_map',
       'praxis_submit_domain_model',
       'praxis_submit_product_exploration',
@@ -122,6 +124,8 @@ void test(
     );
     const writeTools = [
       'praxis_prepare',
+      'praxis_register_project',
+      'praxis_create_source',
       'praxis_submit_product_exploration',
       'praxis_submit_scope_decomposition',
       'praxis_submit_domain_model',
@@ -222,12 +226,27 @@ void test(
         `${expected} must be registered as a resource template`,
       );
 
+    const source = await client.callTool({
+      name: 'praxis_create_source',
+      arguments: {
+        projectId: project.id,
+        title: 'Brief',
+        markdown: '# Complete source',
+      },
+    });
+    assert.notEqual(source.isError, true);
+    const sourceId = (source.structuredContent as { sourceNodeId: string })
+      .sourceNodeId;
     const prepare = await client.callTool({
       name: 'praxis_prepare',
       arguments: {
         projectId: project.id,
         module: 'product-exploration',
-        request: { userInput: 'Explore one bounded MVP.', layer: 'discovery' },
+        request: {
+          userInput: 'Explore one bounded MVP.',
+          layer: 'discovery',
+          sourceNodeIds: [sourceId],
+        },
       },
     });
     assert.notEqual(prepare.isError, true);
@@ -414,5 +433,115 @@ void test(
     assert.equal(await send({ origin: 'https://example.com' }), 403);
     assert.equal(await send({ origin: 'http://127.0.0.1:3000' }), 403);
     assert.equal(await send({ origin: `http://${endpoint.host}` }), 200);
+  },
+);
+
+void test(
+  'a client registers a project, captures a full source and submits without private APIs',
+  { timeout: 20000 },
+  async (t) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'mcp-first-project-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const client = await connect(t, await listen(t));
+    const registered = await client.callTool({
+      name: 'praxis_register_project',
+      arguments: { rootPath: root, name: 'First project', kind: 'standalone' },
+    });
+    assert.notEqual(registered.isError, true);
+    const projectId = (registered.structuredContent as { projectId: string })
+      .projectId;
+    const retry = await client.callTool({
+      name: 'praxis_register_project',
+      arguments: { rootPath: root, name: 'First project', kind: 'standalone' },
+    });
+    assert.equal(
+      (retry.structuredContent as { projectId: string }).projectId,
+      projectId,
+    );
+    const missing = await client.callTool({
+      name: 'praxis_prepare',
+      arguments: {
+        projectId,
+        module: 'product-exploration',
+        request: { layer: 'discovery', userInput: 'Decompose' },
+      },
+    });
+    assert.equal(missing.isError, true);
+    assert.match(JSON.stringify(missing), /praxis_create_source/);
+    const markdown =
+      '# Full product and architecture brief\n' +
+      'Preserve business details. '.repeat(300);
+    const created = await client.callTool({
+      name: 'praxis_create_source',
+      arguments: { projectId, title: 'Source', markdown },
+    });
+    assert.notEqual(created.isError, true);
+    const source = created.structuredContent as {
+      sourceNodeId: string;
+      resources: Array<{ uri: string; path: string }>;
+    };
+    const read = await client.readResource({ uri: source.resources[0]!.uri });
+    assert.equal((read.contents[0] as { text: string }).text, markdown);
+    const duplicate = await client.callTool({
+      name: 'praxis_create_source',
+      arguments: { projectId, title: 'Overwrite', markdown: 'Different' },
+    });
+    assert.equal(duplicate.isError, true);
+    assert.match(JSON.stringify(duplicate), new RegExp(source.sourceNodeId));
+    const state = await client.callTool({
+      name: 'praxis_read_resource',
+      arguments: {
+        uri: `praxis://projects/${projectId}/modules/product-exploration`,
+        limitBytes: 131072,
+      },
+    });
+    const stateText = (state.structuredContent as { text: string }).text;
+    assert.match(stateText, /feature-synthesis/);
+    assert.match(stateText, /independently meaningful business capabilities/);
+    const prepare = await client.callTool({
+      name: 'praxis_prepare',
+      arguments: {
+        projectId,
+        module: 'product-exploration',
+        request: {
+          layer: 'discovery',
+          sourceNodeIds: [source.sourceNodeId],
+          userInput: 'Propose one capability',
+        },
+      },
+    });
+    assert.notEqual(prepare.isError, true);
+    const operation = prepare.structuredContent as {
+      operationId: string;
+      contract: object;
+    };
+    const { PRODUCT_EXPLORATION_MINIMAL_EXAMPLE } =
+      await import('../lib/modules/product-discovery/contract.ts');
+    const result = structuredClone(PRODUCT_EXPLORATION_MINIMAL_EXAMPLE);
+    assert.equal(result.outcome, 'proposal');
+    if (result.outcome !== 'proposal')
+      throw new Error('Expected proposal fixture');
+    result.candidates[0]!.type = 'mvp';
+    result.candidates[0]!.artifactKind = 'mvp';
+    result.candidates[0]!.derivedFrom = [
+      { kind: 'node', id: source.sourceNodeId },
+    ];
+    result.candidates[0]!.outputMarkdown +=
+      '\n\n## Details\n' +
+      'Full design detail. '.repeat(300) +
+      '\n\n## Assumptions\n\n- None\n';
+    const submitted = await client.callTool({
+      name: 'praxis_submit_product_exploration',
+      arguments: {
+        operationId: operation.operationId,
+        contract: operation.contract,
+        result,
+      },
+    });
+    assert.notEqual(submitted.isError, true, JSON.stringify(submitted));
+    assert.equal(
+      (submitted.structuredContent as { status: string }).status,
+      'completed',
+    );
   },
 );

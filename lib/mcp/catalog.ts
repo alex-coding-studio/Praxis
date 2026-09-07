@@ -1,3 +1,8 @@
+import { PRODUCT_EXPLORATION_DOCUMENT_GUIDANCE } from '../modules/product-discovery/contract.ts';
+import {
+  whatsNextIntentionRegistry,
+  whatsNextMotionRegistry,
+} from '../modules/product-discovery/intention.ts';
 import { canonicalJson, sha256Hex } from '../materialization/hash.ts';
 import {
   activeRunRegistryOwnership,
@@ -76,6 +81,8 @@ export const MCP_LOG_MEDIA_TYPE = 'text/plain';
 
 export const MCP_IMPLEMENTED_TOOLS = [
   'praxis_list_projects',
+  'praxis_register_project',
+  'praxis_create_source',
   'praxis_read_resource',
   'praxis_prepare',
   'praxis_submit_product_exploration',
@@ -150,6 +157,22 @@ export function readCapabilities(options: McpReadOptions = {}) {
         module,
         responseOwner: definition.responseOwner,
         layers: definition.layers,
+        workflow:
+          module === 'product-exploration'
+            ? {
+                documentRules: PRODUCT_EXPLORATION_DOCUMENT_GUIDANCE,
+                intentions: whatsNextIntentionRegistry.profiles.map((p) => ({
+                  id: p.id,
+                  description: p.description,
+                  instructions: p.prompt,
+                })),
+                motions: whatsNextMotionRegistry.profiles,
+                firstStep:
+                  'If there is no source node, call praxis_create_source with the full brief. A source stores original requirements and architecture; it is not a Feature.',
+                decomposition:
+                  'When asked to decompose, propose independently meaningful business capabilities and explain where each source capability is covered. Do not treat a single aggregate document node as completed decomposition. Shared architecture remains source context, not a fabricated business Feature.',
+              }
+            : undefined,
         implementationPath: definition.implementationPath,
         contract: {
           id: definition.contract.id,
@@ -368,6 +391,22 @@ export async function readModuleState(
     module,
     responseOwner: definition.responseOwner,
     layers: definition.layers,
+    workflow:
+      module === 'product-exploration'
+        ? {
+            documentRules: PRODUCT_EXPLORATION_DOCUMENT_GUIDANCE,
+            intentions: whatsNextIntentionRegistry.profiles.map((p) => ({
+              id: p.id,
+              description: p.description,
+              instructions: p.prompt,
+            })),
+            motions: whatsNextMotionRegistry.profiles,
+            firstStep:
+              'If there is no source node, call praxis_create_source with the full brief. A source stores original requirements and architecture; it is not a Feature.',
+            decomposition:
+              'When asked to decompose, propose independently meaningful business capabilities and explain where each source capability is covered. Do not treat a single aggregate document node as completed decomposition. Shared architecture remains source context, not a fabricated business Feature.',
+          }
+        : undefined,
     contract: {
       id: definition.contract.id,
       version: definition.contract.version,

@@ -1,3 +1,4 @@
+import { PRODUCT_EXPLORATION_DOCUMENT_GUIDANCE } from './contract.ts';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { candidatePromptView } from '../../graph/identity.ts';
 import {
@@ -42,7 +43,7 @@ Return one concise, user-facing Reflection as Markdown. It should explain your c
 
 Intention owns the destination Layer and artifact kind. Motion owns whether the result expands alternatives or honestly aggregates selected sources. Do not silently replace earlier Nodes; ordinary explore Runs append meaning from the same Source. Redo is the only proposal-replacement operation.
 
-Each Candidate owns one readable Markdown document. It starts with the Candidate title, gives a one- or two-sentence description, includes a "Why this direction" section with two to four short ordered bullets, and always includes an "Assumptions" section containing only material uncertainty. When no material uncertainty remains, keep the section and write exactly one bullet, "- None", while returning an empty assumptions array. The assumptions array must otherwise mirror that section for validation. The summary is a compact graph-card description of the same meaning. Markdown owns the human meaning; JSON owns identity, graph relationships, provenance, and validation.
+${PRODUCT_EXPLORATION_DOCUMENT_GUIDANCE}
 
 For refine-candidate, return exactly the requested Candidate identifier at the packet's requiredRevision. Do not infer or copy that number from the previous Candidate. Refine its Markdown in place. Do not create siblings, children, new dependencies, or a different direction. Preserve its type, origins, dependencies, Resources, type template, metadata, and presentation. Preserve its semantic role and relative resolution by default. Broaden or narrow it only when the user's feedback supports that movement, and state the scope movement in the Reflection. Existing sibling Candidates are protected comparison Context; do not absorb their distinct value loops unless the user explicitly requests synthesis. If the feedback implies a different direction, mention that in the Reflection but refine only the selected Candidate.
 
