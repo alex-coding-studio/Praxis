@@ -261,7 +261,7 @@
           "type": "string",
           "minLength": 1,
           "pattern": "\\S",
-          "maxLength": 4000
+          "maxLength": 100000
         },
         "layer": { "enum": ["discovery", "product-design"] },
         "artifactKind": { "enum": ["direction", "mvp", "feature"] }
