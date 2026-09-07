@@ -1,3 +1,4 @@
+import { withModuleMutation } from '../proposal/module-runtime.ts';
 import { semanticResultHash, sha256Hex } from '../../materialization/hash.ts';
 import { resolvePlanningPath } from '../../planning-paths.ts';
 import { PublicApiError } from '../../api-errors.ts';
@@ -35,6 +36,7 @@ import type { RegisteredProject } from '../../project-registry.ts';
 import {
   assertCanvasCanCreateStartNode,
   assertTaskGraphNodeCanBeDeleted,
+  getTaskGraphRelationships,
 } from './rules.ts';
 
 export async function createStartNode(
@@ -462,13 +464,62 @@ async function updateStartNodeWithinCanvas(
   }
 }
 
+async function deletionRevision(
+  project: RegisteredProject,
+  node: TaskGraphNode,
+) {
+  return semanticResultHash({
+    node,
+    contentRevision: await sourceRevision(project, node),
+  });
+}
+
+export async function inspectTaskGraphNodeDeletion(
+  project: RegisteredProject,
+  nodeId: string,
+  graphRoot: GraphRoot,
+) {
+  return mutateCanvas(project, graphRoot, async () => {
+    const nodes = await listCanvasNodesWithinCanvas(project, graphRoot);
+    const node = nodes.find(
+      (n) => n.id === nodeId && n.role === 'node' && n.status === 'accepted',
+    );
+    if (!node)
+      throw new PublicApiError(
+        'An accepted formal node was not found. Source nodes and pending Candidates use separate operations.',
+        400,
+      );
+    const related = getTaskGraphRelationships(nodes, nodeId);
+    const blockers = [
+      ...new Set(
+        [...related.derivedNodes, ...related.dependents].map((n) => n.id),
+      ),
+    ];
+    return {
+      nodeId,
+      title: node.title,
+      revision: await deletionRevision(project, node),
+      canDelete: blockers.length === 0,
+      blockerNodeIds: blockers,
+    };
+  });
+}
+
 export async function deleteTaskGraphNode(
   project: RegisteredProject,
   nodeId: string,
   graphRoot: GraphRoot = 'task-graph',
+  options?: { expectedRevision: string },
 ) {
-  return mutateCanvas(project, graphRoot, () =>
-    deleteTaskGraphNodeWithinCanvas(project, nodeId, graphRoot),
+  return withModuleMutation(
+    graphRoot === 'whats-next'
+      ? 'whatsNextMutations'
+      : 'taskDecompositionMutations',
+    project.planningPath,
+    () =>
+      mutateCanvas(project, graphRoot, () =>
+        deleteTaskGraphNodeWithinCanvas(project, nodeId, graphRoot, options),
+      ),
   );
 }
 
@@ -476,20 +527,38 @@ async function deleteTaskGraphNodeWithinCanvas(
   project: RegisteredProject,
   nodeId: string,
   graphRoot: GraphRoot,
+  options?: { expectedRevision: string },
 ) {
   if (!/^NODE-[0-9a-f]{8,32}$/.test(nodeId)) {
     throw new PublicApiError('The node is invalid.', 400);
   }
 
   const nodes = await listCanvasNodesWithinCanvas(project, graphRoot);
-  if (!nodes.some((node) => node.id === nodeId)) {
+  const node = nodes.find((n) => n.id === nodeId);
+  if (!node) {
+    if (options) return { nodes, alreadyAbsent: true };
     throw new PublicApiError('The node could not be found.', 400);
+  }
+  if (options) {
+    if (node.role !== 'node' || node.status !== 'accepted')
+      throw new PublicApiError(
+        'Only accepted formal nodes can be deleted through this operation.',
+        400,
+      );
+    if ((await deletionRevision(project, node)) !== options.expectedRevision)
+      throw new PublicApiError(
+        'The node changed. Inspect its deletion state again before deleting it.',
+        409,
+      );
   }
   assertTaskGraphNodeCanBeDeleted(nodes, nodeId);
 
   const nodePath = path.join(project.planningPath, graphRoot, 'nodes', nodeId);
   await trash(nodePath);
-  return { nodes: await listCanvasNodesWithinCanvas(project, graphRoot) };
+  return {
+    nodes: nodes.filter((node) => node.id !== nodeId),
+    alreadyAbsent: false,
+  };
 }
 
 async function validateContextRefs(

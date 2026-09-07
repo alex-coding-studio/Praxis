@@ -86,6 +86,8 @@ export const MCP_IMPLEMENTED_TOOLS = [
   'praxis_register_project',
   'praxis_create_source',
   'praxis_read_resource',
+  'praxis_inspect_node_deletion',
+  'praxis_delete_node',
   'praxis_read_source',
   'praxis_update_source',
   'praxis_update_node_document',
@@ -427,6 +429,15 @@ export async function readModuleState(
             updateTool: 'praxis_update_source',
             scope:
               'Start/source nodes only. Read the source revision, then explicitly add, replace or remove attachments. Unspecified documents and frozen evidence are preserved.',
+          }
+        : null,
+    nodeDeletion:
+      module === 'product-exploration' || module === 'scope-decomposition'
+        ? {
+            inspectTool: 'praxis_inspect_node_deletion',
+            deleteTool: 'praxis_delete_node',
+            scope:
+              'Accepted formal nodes only; requires user intent. Inspect the current revision and blockers first. No cascade or Candidate discard.',
           }
         : null,
     layers: definition.layers,

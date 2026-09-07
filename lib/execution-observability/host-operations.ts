@@ -7,6 +7,7 @@ import { hostOperationLogUrlPath } from './types.ts';
 
 export const HOST_OPERATION_KINDS = [
   'node-document-update',
+  'node-delete',
   'sync-main',
   'undo-action',
   'reread-result',
